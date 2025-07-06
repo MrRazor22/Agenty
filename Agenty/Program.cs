@@ -2,6 +2,7 @@
 
 
 using Agenty;
+using OpenAI.Chat;
 using System.ComponentModel;
 
 public class Program
@@ -15,11 +16,15 @@ public class Program
         string output = llm.GenerateResponseAsync("What is the capital of France?").Result;
         Console.WriteLine(output);
 
-        // Use .Result to get the result of the Task synchronously.  
+        ToolRegistry toolRegistry = new ToolRegistry();
+        var weathertool = toolRegistry.RegisterTool(Weather);
+
+        output = llm.GenerateResponseAsync("What is the weather in France?", new List<ChatTool> { weathertool }).Result;
+        Console.WriteLine(output);
     }
 
     [Description("Get the weather for a given location.")]
-    public string Weather(
+    public static string Weather(
        [Description("City and state, e.g., Boston, MA")] string location,
        [Description("Temperature unit")][EnumValues("celsius", "fahrenheit")] string unit
     )
