@@ -1,13 +1,14 @@
-﻿using OpenAI;
+﻿using Agenty;
+using OpenAI;
 using OpenAI.Chat;
 using System.ClientModel;
-public class OpenAILLMClient
+public class OpenAILLMClient(ToolRegistry toolRegistry)
 {
-    private readonly OpenAIClient _client;
+    private OpenAIClient _client;
     private ChatClient _chatClient;
-    List<ChatMessage> _messages;
+    List<ChatMessage> _messages = new();
 
-    public OpenAILLMClient(string baseUrl, string apiKey, string modelName = "any_model")
+    public void Init(string baseUrl, string apiKey, string modelName = "any_model")
     {
         _client = new(
             credential: new ApiKeyCredential(apiKey),
@@ -18,7 +19,6 @@ public class OpenAILLMClient
         );
 
         _chatClient = _client.GetChatClient(modelName);
-        _messages = new();
     }
     public async Task<string> GenerateResponseAsync(string prompt)
     {
@@ -34,6 +34,8 @@ public class OpenAILLMClient
 
     public async Task<string> GenerateResponseAsync(string prompt, List<ChatTool> chatTools)
     {
+        if (chatTools == null || chatTools.Count == 0)
+            return "No Tools registered";
         _messages.Add(new UserChatMessage(prompt));
 
         ChatCompletionOptions options = new();
@@ -41,7 +43,6 @@ public class OpenAILLMClient
             options.Tools.Add(tool);
 
         var response = await _chatClient.CompleteChatAsync(_messages, options);
-
         _messages.Add(new AssistantChatMessage(response));
 
         var result = response.Value;
@@ -51,9 +52,17 @@ public class OpenAILLMClient
             foreach (var toolCall in result.ToolCalls)
             {
                 var name = toolCall.FunctionName;
-                var args = toolCall.FunctionArguments;
+                var argsJson = toolCall.FunctionArguments.ToString();
 
-                return $"[Tool call] Name: {name}, Args: {args}";
+                var toolResult = toolRegistry.InvokeTool(name, argsJson) ?? "[null result]";
+                _messages.Add(new ToolChatMessage(toolCall.Id, toolResult));
+
+                // Continue chat after tool call
+                var followUp = await _chatClient.CompleteChatAsync(_messages, options);
+                var followUpResult = followUp.Value;
+                _messages.Add(new AssistantChatMessage(followUpResult));
+
+                return string.Join("", followUpResult.Content?.Select(p => p.Text) ?? []);
             }
         }
 

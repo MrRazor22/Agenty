@@ -4,7 +4,9 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Xml.Linq;
 
 namespace Agenty
 {
@@ -17,9 +19,13 @@ namespace Agenty
 
     public class ToolRegistry
     {
+        private readonly Dictionary<string, Delegate> _toolMap = new();
         public ChatTool RegisterTool(Delegate func)
         {
             var method = func.Method;
+
+            // Store the delegate for later execution
+            _toolMap[method.Name.ToLowerInvariant()] = func;
 
             var funcDescription = method
                 .GetCustomAttribute<DescriptionAttribute>()?.Description ?? "No description";
@@ -72,6 +78,32 @@ namespace Agenty
                 functionDescription: funcDescription,
                 functionParameters: BinaryData.FromString(schema.ToJsonString())
             );
+        }
+
+        public string? InvokeTool(string name, string argumentsJson)
+        {
+            if (!_toolMap.TryGetValue(name.ToLowerInvariant(), out var func))
+                return $"Tool '{name}' not registered.";
+
+            var method = func.Method;
+            var methodParams = method.GetParameters();
+
+            var argsObj = JsonNode.Parse(argumentsJson)?.AsObject();
+            if (argsObj == null)
+                return "[Invalid JSON arguments]";
+
+            var paramValues = new object?[methodParams.Length];
+            for (int i = 0; i < methodParams.Length; i++)
+            {
+                var p = methodParams[i];
+                if (!argsObj.TryGetPropertyValue(p.Name!, out var node) || node == null)
+                    paramValues[i] = Type.Missing; // fallback for optional
+                else
+                    paramValues[i] = JsonSerializer.Deserialize(node.ToJsonString(), p.ParameterType);
+            }
+
+            var result = func.DynamicInvoke(paramValues);
+            return result?.ToString();
         }
 
         private string? MapClrTypeToJsonType(Type type)
