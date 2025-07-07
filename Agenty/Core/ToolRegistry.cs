@@ -6,9 +6,10 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Xml.Linq;
 
-namespace Agenty
+namespace Agenty.Core
 {
     [AttributeUsage(AttributeTargets.Parameter)]
     public class EnumValuesAttribute : Attribute
@@ -17,10 +18,32 @@ namespace Agenty
         public EnumValuesAttribute(params string[] values) => Values = values;
     }
 
-    public class ToolRegistry
+    public class ToolRegistry : IToolRegistry
     {
+        List<Tool> _registeredTools = new();
         private readonly Dictionary<string, Delegate> _toolMap = new();
-        public ChatTool RegisterTool(Delegate func)
+
+        public void Register(Delegate func, params string[] tags)
+        {
+            var tool = CreateToolFromDelegate(func);
+            if (tags != null && tags.Length > 0)
+                tool.Tags.AddRange(tags);
+            _toolMap[tool.Name.ToLowerInvariant()] = func;
+            _registeredTools.Add(tool);
+        }
+
+        public void RegisterAll(List<Delegate> funcs)
+        {
+            foreach (var f in funcs)
+                Register(f);
+        }
+
+        public List<Tool> GetRegisteredTools() => _registeredTools;
+
+        public List<Tool> GetToolsByTag(string tag) =>
+                 _registeredTools.Where(t => t.Tags.Contains(tag)).ToList();
+
+        public Tool CreateToolFromDelegate(Delegate func)
         {
             var method = func.Method;
 
@@ -73,24 +96,28 @@ namespace Agenty
                 ["required"] = required
             };
 
-            return ChatTool.CreateFunctionTool(
-                functionName: method.Name,
-                functionDescription: funcDescription,
-                functionParameters: BinaryData.FromString(schema.ToJsonString())
-            );
+            var tool = new Tool
+            {
+                Name = method.Name,
+                Description = funcDescription,
+                ParameterSchema = schema
+            };
+            _registeredTools.Add(tool);
+            return tool;
         }
 
-        public string? InvokeTool(string name, string argumentsJson)
+        public string? InvokeTool(ToolCallInfo toolCall)
         {
-            if (!_toolMap.TryGetValue(name.ToLowerInvariant(), out var func))
-                return $"Tool '{name}' not registered.";
+            if (!_toolMap.TryGetValue(toolCall.Name.ToLowerInvariant(), out var func))
+                return $"Tool '{toolCall.Name}' not registered.";
 
             var method = func.Method;
             var methodParams = method.GetParameters();
 
-            var argsObj = JsonNode.Parse(argumentsJson)?.AsObject();
+            var argsObj = toolCall.Parameters;
+
             if (argsObj == null)
-                return "[Invalid JSON arguments]";
+                return "[Invalid tool call paramater JSON]";
 
             var paramValues = new object?[methodParams.Length];
             for (int i = 0; i < methodParams.Length; i++)
@@ -99,7 +126,13 @@ namespace Agenty
                 if (!argsObj.TryGetPropertyValue(p.Name!, out var node) || node == null)
                     paramValues[i] = Type.Missing; // fallback for optional
                 else
-                    paramValues[i] = JsonSerializer.Deserialize(node.ToJsonString(), p.ParameterType);
+                    paramValues[i] = JsonSerializer.Deserialize(
+                            node.ToJsonString(),
+                            p.ParameterType,
+                            new JsonSerializerOptions
+                            {
+                                Converters = { new JsonStringEnumConverter() }
+                            });
             }
 
             var result = func.DynamicInvoke(paramValues);
