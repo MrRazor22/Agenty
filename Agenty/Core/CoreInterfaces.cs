@@ -8,8 +8,7 @@ namespace Agenty.Core
         public void Initialize(string url, string apiKey, string modelName);
         public Task<string> GenerateResponse(IPrompt prompt);
         public IAsyncEnumerable<string> GenerateStreamingResponse(IPrompt prompt);
-        Task<List<ToolCallInfo>> GetFunctionCallResponse(IPrompt prompt); // uses all registered
-        Task<List<ToolCallInfo>> GetFunctionCallResponse(IPrompt prompt, List<Tool> tools); // custom
+        Task<List<ToolCallInfo>> GetFunctionCallResponse(IPrompt prompt, List<Tool> tools);
         public JsonObject GetStructuredResponse(IPrompt prompt, JsonObject responseFormat);
     }
 
@@ -21,7 +20,6 @@ namespace Agenty.Core
         List<Tool> GetToolsByTag(string tag);
         string InvokeTool(ToolCallInfo toolCall);
     }
-
 
     public class Tool
     {
@@ -37,19 +35,29 @@ namespace Agenty.Core
         public string? AssistantMessage { get; set; }
         public string Name { get; set; }
         public JsonObject Parameters { get; set; }
+
+        public override string ToString()
+        {
+            var args = Parameters?.Select(kv => $"{kv.Key}: {kv.Value}") ?? Enumerable.Empty<string>();
+            var argString = string.Join(", ", args);
+            return $"Initiated tool '{Name}' (id: {Id}) with {argString}";
+        }
+
     }
 
     public enum ChatRole
     {
+        System,
         Assistant,
         User,
         Tool
     }
 
-    public record ChatInput(ChatRole Role, string Content, string? ToolId = null);
+    public record ChatInput(ChatRole Role, string Content, ToolCallInfo? toolCallInfo = null);
 
     public interface IPrompt
     {
         IEnumerable<ChatInput> Messages { get; }
+        void Add(ChatRole Role, string Content, ToolCallInfo? toolCallInfo = null);
     }
 }

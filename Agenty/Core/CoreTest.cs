@@ -12,6 +12,11 @@ public class AgentSdkTests
         {
             new ChatInput(ChatRole.User, message)
         };
+
+        public void Add(ChatRole Role, string Content, ToolCallInfo? toolCallInfo = null)
+        {
+            throw new NotImplementedException();
+        }
     }
 
     private static ILLMClient CreateClient(out IToolRegistry registry)
@@ -22,7 +27,7 @@ public class AgentSdkTests
             (Func<string, string>)Echo,
             (Func<DayOfWeek, string>)DescribeDay
         ]);
-        var client = new OpenAIClient((ToolRegistry)registry);
+        var client = new OpenAIClient();
         client.Initialize("http://127.0.0.1:1234/v1", "lm-studio", "gpt-3.5");
         return client;
     }
@@ -33,7 +38,7 @@ public class AgentSdkTests
         var llm = CreateClient(out var registry);
         var prompt = new SimplePrompt("Echo 'hello world'");
 
-        var toolCalls = await llm.GetFunctionCallResponse(prompt);
+        var toolCalls = await llm.GetFunctionCallResponse(prompt, registry.GetRegisteredTools());
         Assert.Single(toolCalls);
         Assert.Equal("Echo", toolCalls[0].Name, ignoreCase: true);
 

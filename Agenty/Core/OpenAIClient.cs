@@ -6,12 +6,10 @@ using System.Text.Json.Nodes;
 
 namespace Agenty.Core
 {
-    public class OpenAIClient(ToolRegistry toolRegistry) : ILLMClient
+    public class OpenAIClient() : ILLMClient
     {
         private OpenAI.OpenAIClient _client;
         private ChatClient _chatClient;
-        private List<ChatMessage> _messages = new();
-        private string systemPrompt = "You are an helpfull assistant";
 
         public void Initialize(string baseUrl, string apiKey, string modelName = "any_model")
         {
@@ -47,12 +45,6 @@ namespace Agenty.Core
             }
         }
 
-        public async Task<List<ToolCallInfo>> GetFunctionCallResponse(IPrompt prompt)
-        {
-            var allTools = toolRegistry.GetRegisteredTools();
-            return await GetFunctionCallResponse(prompt, allTools);
-        }
-
         public async Task<List<ToolCallInfo>> GetFunctionCallResponse(IPrompt prompt, List<Tool> tools)
         {
             if (tools == null || tools.Count == 0)
@@ -67,7 +59,10 @@ namespace Agenty.Core
 
             ChatCompletionOptions options = new();
             foreach (var tool in chatTools)
+            {
                 options.Tools.Add(tool);
+            }
+            //options.ToolChoice = ChatToolChoice.CreateRequiredChoice();
 
             var response = await _chatClient.CompleteChatAsync(ToChatMessages(prompt), options);
 
@@ -80,9 +75,6 @@ namespace Agenty.Core
             {
                 foreach (var toolCall in result.ToolCalls)
                 {
-                    var name = toolCall.FunctionName;
-                    var argsJson = toolCall.FunctionArguments.ToObjectFromJson<JsonObject>();
-
                     toolCalls.Add(new ToolCallInfo
                     {
                         Id = toolCall.Id,
@@ -91,6 +83,13 @@ namespace Agenty.Core
                         Parameters = toolCall.FunctionArguments.ToObjectFromJson<JsonObject>()
                     });
                 }
+            }
+            else
+            {
+                toolCalls.Add(new ToolCallInfo
+                {
+                    AssistantMessage = assistantResponse
+                });
             }
 
             return toolCalls;
@@ -118,16 +117,20 @@ namespace Agenty.Core
             {
                 yield return msg.Role switch
                 {
+                    ChatRole.System => ChatMessage.CreateSystemMessage(msg.Content),
                     ChatRole.User => ChatMessage.CreateUserMessage(msg.Content),
+                    ChatRole.Assistant when msg.toolCallInfo is not null =>
+                        ChatMessage.CreateAssistantMessage(msg.toolCallInfo.ToString()),
                     ChatRole.Assistant => ChatMessage.CreateAssistantMessage(msg.Content),
-                    ChatRole.Tool when msg.ToolId is not null =>
-                        ChatMessage.CreateToolMessage(msg.ToolId, msg.Content),
+                    ChatRole.Tool when msg.toolCallInfo is not null =>
+                        ChatMessage.CreateToolMessage(msg.toolCallInfo.Id, msg.Content),
                     ChatRole.Tool =>
                         throw new InvalidOperationException("ToolCallId required for tool message."),
                     _ => throw new InvalidOperationException("Invalid message role.")
                 };
             }
         }
+
     }
 }
 

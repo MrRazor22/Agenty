@@ -107,6 +107,7 @@ namespace Agenty.Core
 
         public string? InvokeTool(ToolCallInfo toolCall)
         {
+            if (toolCall == null) throw new ArgumentNullException("No tool call info");
             if (!_toolMap.TryGetValue(toolCall.Name.ToLowerInvariant(), out var func))
                 return $"Tool '{toolCall.Name}' not registered.";
 
