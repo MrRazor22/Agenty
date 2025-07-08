@@ -102,7 +102,6 @@ namespace Agenty.Core
                 Description = funcDescription,
                 ParameterSchema = schema
             };
-            _registeredTools.Add(tool);
             return tool;
         }
 

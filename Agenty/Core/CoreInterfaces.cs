@@ -6,12 +6,11 @@ namespace Agenty.Core
     public interface ILLMClient
     {
         public void Initialize(string url, string apiKey, string modelName);
-        public Task<string> GenerateResponse(string prompt);
-        public IAsyncEnumerable<string> GenerateStreamingResponse(string prompt);
-        Task<List<ToolCallInfo>> GetFunctionCallResponse(string prompt); // uses all registered
-        Task<List<ToolCallInfo>> GetFunctionCallResponse(string prompt, List<Tool> tools); // custom
-        public JsonObject GetStructuredResponse(string prompt, JsonObject responseFormat);
-        public void SetSystemPrompt(string prompt);
+        public Task<string> GenerateResponse(IPrompt prompt);
+        public IAsyncEnumerable<string> GenerateStreamingResponse(IPrompt prompt);
+        Task<List<ToolCallInfo>> GetFunctionCallResponse(IPrompt prompt); // uses all registered
+        Task<List<ToolCallInfo>> GetFunctionCallResponse(IPrompt prompt, List<Tool> tools); // custom
+        public JsonObject GetStructuredResponse(IPrompt prompt, JsonObject responseFormat);
     }
 
     public interface IToolRegistry
@@ -35,7 +34,22 @@ namespace Agenty.Core
     public class ToolCallInfo
     {
         public string Id { get; set; }
+        public string? AssistantMessage { get; set; }
         public string Name { get; set; }
         public JsonObject Parameters { get; set; }
+    }
+
+    public enum ChatRole
+    {
+        Assistant,
+        User,
+        Tool
+    }
+
+    public record ChatInput(ChatRole Role, string Content, string? ToolId = null);
+
+    public interface IPrompt
+    {
+        IEnumerable<ChatInput> Messages { get; }
     }
 }

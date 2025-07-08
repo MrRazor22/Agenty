@@ -25,21 +25,19 @@ namespace Agenty.Core
 
             _chatClient = _client.GetChatClient(modelName);
         }
-        public async Task<string> GenerateResponse(string prompt)
+        public async Task<string> GenerateResponse(IPrompt prompt)
         {
-            var response = await _chatClient.CompleteChatAsync(new[]
-            {
-            ChatMessage.CreateUserMessage(prompt)
-        });
+            var response = await _chatClient.CompleteChatAsync(ToChatMessages(prompt));
 
             var contentParts = response.Value.Content;
             var textContent = string.Join("", contentParts.Select(part => part.Text));
             return textContent;
         }
 
-        public async IAsyncEnumerable<string> GenerateStreamingResponse(string prompt)
+        public async IAsyncEnumerable<string> GenerateStreamingResponse(IPrompt prompt)
         {
-            AsyncCollectionResult<StreamingChatCompletionUpdate> responseUpdates = _chatClient.CompleteChatStreamingAsync(prompt);
+            AsyncCollectionResult<StreamingChatCompletionUpdate> responseUpdates
+                = _chatClient.CompleteChatStreamingAsync(ToChatMessages(prompt));
             await foreach (var update in responseUpdates)
             {
                 foreach (var part in update.ContentUpdate)
@@ -49,18 +47,16 @@ namespace Agenty.Core
             }
         }
 
-        public async Task<List<ToolCallInfo>> GetFunctionCallResponse(string prompt)
+        public async Task<List<ToolCallInfo>> GetFunctionCallResponse(IPrompt prompt)
         {
             var allTools = toolRegistry.GetRegisteredTools();
             return await GetFunctionCallResponse(prompt, allTools);
         }
 
-        public async Task<List<ToolCallInfo>> GetFunctionCallResponse(string prompt, List<Tool> tools)
+        public async Task<List<ToolCallInfo>> GetFunctionCallResponse(IPrompt prompt, List<Tool> tools)
         {
             if (tools == null || tools.Count == 0)
                 new ArgumentNullException("No Tools provided fro function call respinse");
-
-            _messages.Add(new UserChatMessage(prompt));
 
             List<ChatTool> chatTools = tools!
                 .Select(tool => ChatTool.CreateFunctionTool(
@@ -73,10 +69,10 @@ namespace Agenty.Core
             foreach (var tool in chatTools)
                 options.Tools.Add(tool);
 
-            var response = await _chatClient.CompleteChatAsync(_messages, options);
-            _messages.Add(new AssistantChatMessage(response));
+            var response = await _chatClient.CompleteChatAsync(ToChatMessages(prompt), options);
 
             var result = response.Value;
+            var assistantResponse = result.Content.FirstOrDefault()?.Text;
 
             var toolCalls = new List<ToolCallInfo>();
 
@@ -90,6 +86,7 @@ namespace Agenty.Core
                     toolCalls.Add(new ToolCallInfo
                     {
                         Id = toolCall.Id,
+                        AssistantMessage = assistantResponse,
                         Name = toolCall.FunctionName,
                         Parameters = toolCall.FunctionArguments.ToObjectFromJson<JsonObject>()
                     });
@@ -99,15 +96,8 @@ namespace Agenty.Core
             return toolCalls;
         }
 
-        public void SetSystemPrompt(string prompt)
+        public JsonObject GetStructuredResponse(IPrompt prompt, JsonObject responseFormat)
         {
-            _messages.Add(new SystemChatMessage(systemPrompt));
-        }
-
-        public JsonObject GetStructuredResponse(string prompt, JsonObject responseFormat)
-        {
-            _messages.Add(new UserChatMessage(prompt));
-
             ChatCompletionOptions options = new()
             {
                 ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
@@ -116,10 +106,27 @@ namespace Agenty.Core
                     jsonSchemaIsStrict: true)
             };
 
-            ChatCompletion completion = _chatClient.CompleteChat(_messages, options);
+            ChatCompletion completion = _chatClient.CompleteChat(ToChatMessages(prompt), options);
 
             using JsonDocument structuredJson = JsonDocument.Parse(completion.Content[0].Text);
             return JsonNode.Parse(structuredJson.RootElement.GetRawText())!.AsObject();
+        }
+
+        private IEnumerable<ChatMessage> ToChatMessages(IPrompt prompt)
+        {
+            foreach (var msg in prompt.Messages)
+            {
+                yield return msg.Role switch
+                {
+                    ChatRole.User => ChatMessage.CreateUserMessage(msg.Content),
+                    ChatRole.Assistant => ChatMessage.CreateAssistantMessage(msg.Content),
+                    ChatRole.Tool when msg.ToolId is not null =>
+                        ChatMessage.CreateToolMessage(msg.ToolId, msg.Content),
+                    ChatRole.Tool =>
+                        throw new InvalidOperationException("ToolCallId required for tool message."),
+                    _ => throw new InvalidOperationException("Invalid message role.")
+                };
+            }
         }
     }
 }
