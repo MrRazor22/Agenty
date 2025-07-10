@@ -1,8 +1,11 @@
-﻿using Agenty.Core;
+﻿using Agenty.AgentCore;
+using Agenty.LLMCore;
 using HtmlAgilityPack;
 using Microsoft.VisualStudio.TestPlatform.CommunicationUtilities;
+using OpenAI;
 using OpenAI.Chat;
 using System.ComponentModel;
+using System.Data;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
@@ -16,71 +19,31 @@ namespace Agenty
         {
             Console.WriteLine("== Chatbot Started ==\nType 'exit' to quit.");
 
-            var tlReg = new ToolRegistry();
-            tlReg.Register(Tools.WikiSummary, "wiki");
-
-            var llm = new OpenAIClient();
-            llm.Initialize("http://127.0.0.1:1234/v1", "lm-studio", "qwen 2.5b");
-
-            var prompt = new SimplePrompt();
-            prompt.Add(ChatRole.System, """
-                You are a helpful assistant. Use tools when needed.
-                Use 'WikiSummary' for any known person, place, event, or topic. Do not guess or hallucinate explanations if a tool is available. Only use internal knowledge if all tools fail or return empty.
-        
-                Format:
-                <reasoning>...</reasoning>
-                <answer>...</answer>
-                """);
-
-            var tools = tlReg.GetRegisteredTools();
+            var agent = new Agent("WikipediaAgent")
+                .WithModel("http://localhost:1234/v1", "lm-studio", "qwen:7b")
+                .WithTools([Tools.WikiSummary])
+                .WithGoal("""
+                            You are a helpful chatbot who tries to solve the user's query as accurately as possible.
+                            You can use the 'WikiSummary' tool for any known person, place, event, or topic. 
+                            Do not rely on your own knowledge unless the tool fails or gives an empty or useless result.
+                            After receiving tool output, always compare it directly to the user's original query. 
+                            If the result only partially matches, or lacks detail expected from the user's wording, 
+                            re-call the tool with improved input.
+                            You must not stop at the first non-empty result. You must judge whether it is truly sufficient, 
+                            based on the user's actual intent. 
+                        """);
 
             while (true)
             {
                 Console.Write("\n> ");
-                var userInput = Console.ReadLine();
-                if (string.IsNullOrWhiteSpace(userInput)) continue;
-                if (userInput.ToLower() == "exit") break;
+                string input = Console.ReadLine()?.Trim() ?? string.Empty;
+                if (input.Equals("exit", StringComparison.OrdinalIgnoreCase))
+                    break;
 
-                prompt.Add(ChatRole.User, userInput);
-
-                while (true)
-                {
-                    var toolCalls = await llm.GetFunctionCallResponse(prompt, tools);
-                    var call = toolCalls.FirstOrDefault();
-
-                    if (string.IsNullOrEmpty(call?.Name))
-                    {
-                        Console.Write("[Assistant]: ");
-                        var stream = llm.GenerateStreamingResponse(prompt);
-                        await foreach (var chunk in stream)
-                            Console.Write(chunk);
-                        Console.WriteLine();
-                        break;
-                    }
-
-                    Console.WriteLine($"\n[ToolCall] => {call}");
-                    prompt.Add(ChatRole.Assistant, null, call);
-
-                    var result = tlReg.InvokeTool(call);
-                    Console.WriteLine($"[ToolResult] => {result}\n");
-                    prompt.Add(ChatRole.Tool, result, call);
-                }
+                var output = await agent.Execute(input);
+                Console.WriteLine(output);
             }
         }
-
-    }
-}
-
-public class SimplePrompt : IPrompt
-{
-    private readonly List<ChatInput> _messages = new();
-
-    public IEnumerable<ChatInput> Messages => _messages;
-
-    public void Add(ChatRole role, string content, ToolCallInfo? toolCallInfo = null)
-    {
-        _messages.Add(new ChatInput(role, content, toolCallInfo));
-        //Console.WriteLine($"[{role}]: {content} {toolCallInfo}");
     }
 }
 
@@ -115,8 +78,5 @@ class Tools
             return "Failed to fetch Wikipedia data.";
         }
     }
-
-
-
 }
 

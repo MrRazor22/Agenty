@@ -1,13 +1,14 @@
 ﻿using System;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
-namespace Agenty.Core
+namespace Agenty.LLMCore
 {
     public interface ILLMClient
     {
         public void Initialize(string url, string apiKey, string modelName);
-        public Task<string> GenerateResponse(IPrompt prompt);
-        public IAsyncEnumerable<string> GenerateStreamingResponse(IPrompt prompt);
+        public Task<string> GetResponse(IPrompt prompt);
+        public IAsyncEnumerable<string> GetStreamingResponse(IPrompt prompt);
         Task<List<ToolCallInfo>> GetFunctionCallResponse(IPrompt prompt, List<Tool> tools);
         public JsonObject GetStructuredResponse(IPrompt prompt, JsonObject responseFormat);
     }
@@ -18,7 +19,11 @@ namespace Agenty.Core
         void RegisterAll(List<Delegate> funcs);
         List<Tool> GetRegisteredTools();
         List<Tool> GetToolsByTag(string tag);
-        string InvokeTool(ToolCallInfo toolCall);
+    }
+
+    public interface IToolExecutor
+    {
+        string? InvokeTool(ToolCallInfo toolCall);
     }
 
     public class Tool
@@ -27,6 +32,9 @@ namespace Agenty.Core
         public string Description { get; set; }
         public JsonObject ParameterSchema { get; set; }
         public List<string> Tags { get; set; } = new();
+
+        [JsonIgnore]
+        public Delegate? Function { get; set; }
     }
 
     public class ToolCallInfo
@@ -40,9 +48,8 @@ namespace Agenty.Core
         {
             var args = Parameters?.Select(kv => $"{kv.Key}: {kv.Value}") ?? Enumerable.Empty<string>();
             var argString = string.Join(", ", args);
-            return $"Initiated tool '{Name}' (id: {Id}) with {argString}";
+            return $"Tool Call Info: '{Name}' (id: {Id}) with {argString}";
         }
-
     }
 
     public enum ChatRole
@@ -59,5 +66,9 @@ namespace Agenty.Core
     {
         IEnumerable<ChatInput> Messages { get; }
         void Add(ChatRole Role, string Content, ToolCallInfo? toolCallInfo = null);
+        void AddMany(params (ChatRole role, string content, ToolCallInfo? toolCallInfo)[] messages);
+        bool RemoveLast(ChatRole? role = null); // optional filter
+        bool RemoveMessage(Predicate<ChatInput> match);
+        void Clear();
     }
 }

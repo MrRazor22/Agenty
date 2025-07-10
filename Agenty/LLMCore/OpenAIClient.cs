@@ -4,7 +4,7 @@ using System.ClientModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace Agenty.Core
+namespace Agenty.LLMCore
 {
     public class OpenAIClient() : ILLMClient
     {
@@ -23,7 +23,7 @@ namespace Agenty.Core
 
             _chatClient = _client.GetChatClient(modelName);
         }
-        public async Task<string> GenerateResponse(IPrompt prompt)
+        public async Task<string> GetResponse(IPrompt prompt)
         {
             var response = await _chatClient.CompleteChatAsync(ToChatMessages(prompt));
 
@@ -32,7 +32,7 @@ namespace Agenty.Core
             return textContent;
         }
 
-        public async IAsyncEnumerable<string> GenerateStreamingResponse(IPrompt prompt)
+        public async IAsyncEnumerable<string> GetStreamingResponse(IPrompt prompt)
         {
             AsyncCollectionResult<StreamingChatCompletionUpdate> responseUpdates
                 = _chatClient.CompleteChatStreamingAsync(ToChatMessages(prompt));
@@ -119,8 +119,17 @@ namespace Agenty.Core
                 {
                     ChatRole.System => ChatMessage.CreateSystemMessage(msg.Content),
                     ChatRole.User => ChatMessage.CreateUserMessage(msg.Content),
-                    ChatRole.Assistant when msg.toolCallInfo is not null =>
-                        ChatMessage.CreateAssistantMessage(msg.toolCallInfo.ToString()),
+                    ChatRole.Assistant when msg.toolCallInfo != null && msg.toolCallInfo.Name != null =>
+                        ChatMessage.CreateAssistantMessage(
+                            toolCalls: new[]
+                            {
+                                ChatToolCall.CreateFunctionToolCall(
+                                    id: msg.toolCallInfo.Id,
+                                    functionName: msg.toolCallInfo.Name,
+                                    functionArguments: BinaryData.FromObjectAsJson(msg.toolCallInfo.Parameters))
+                            }),
+                    ChatRole.Assistant when msg.toolCallInfo != null && msg.toolCallInfo.AssistantMessage != null =>
+                        ChatMessage.CreateAssistantMessage(msg.toolCallInfo.AssistantMessage ?? ""),
                     ChatRole.Assistant => ChatMessage.CreateAssistantMessage(msg.Content),
                     ChatRole.Tool when msg.toolCallInfo is not null =>
                         ChatMessage.CreateToolMessage(msg.toolCallInfo.Id, msg.Content),
@@ -130,7 +139,6 @@ namespace Agenty.Core
                 };
             }
         }
-
     }
 }
 
