@@ -45,7 +45,7 @@ namespace Agenty.LLMCore
             }
         }
 
-        public async Task<List<ToolCallInfo>> GetFunctionCallResponse(IPrompt prompt, List<Tool> tools)
+        public async Task<ToolCallResponse> GetFunctionCallResponse(IPrompt prompt, List<Tool> tools)
         {
             if (tools == null || tools.Count == 0)
                 new ArgumentNullException("No Tools provided fro function call respinse");
@@ -58,44 +58,28 @@ namespace Agenty.LLMCore
                 .ToList();
 
             ChatCompletionOptions options = new();
-            foreach (var tool in chatTools)
-            {
-                options.Tools.Add(tool);
-            }
+            chatTools.ForEach(t => options.Tools.Add(t));
             //options.ToolChoice = ChatToolChoice.CreateRequiredChoice();
 
             var response = await _chatClient.CompleteChatAsync(ToChatMessages(prompt), options);
-
             var result = response.Value;
             var assistantResponse = result.Content.FirstOrDefault()?.Text;
 
-            var toolCalls = new List<ToolCallInfo>();
-
-            if (result.ToolCalls.Count > 0)
+            var toolCalls = result.ToolCalls.Select(call => new ToolCallInfo
             {
-                foreach (var toolCall in result.ToolCalls)
-                {
-                    toolCalls.Add(new ToolCallInfo
-                    {
-                        Id = toolCall.Id,
-                        AssistantMessage = assistantResponse,
-                        Name = toolCall.FunctionName,
-                        Parameters = toolCall.FunctionArguments.ToObjectFromJson<JsonObject>()
-                    });
-                }
-            }
-            else
-            {
-                toolCalls.Add(new ToolCallInfo
-                {
-                    AssistantMessage = assistantResponse
-                });
-            }
+                Id = call.Id,
+                Name = call.FunctionName,
+                Parameters = call.FunctionArguments.ToObjectFromJson<JsonObject>()
+            }).ToList();
 
-            return toolCalls;
+            return new ToolCallResponse
+            {
+                AssistantMessage = toolCalls.Count == 0 ? assistantResponse : null,
+                ToolCalls = toolCalls
+            };
         }
 
-        public JsonObject GetStructuredResponse(IPrompt prompt, JsonObject responseFormat)
+        public async Task<JsonObject> GetStructuredResponse(IPrompt prompt, JsonObject responseFormat)
         {
             ChatCompletionOptions options = new()
             {
@@ -105,7 +89,7 @@ namespace Agenty.LLMCore
                     jsonSchemaIsStrict: true)
             };
 
-            ChatCompletion completion = _chatClient.CompleteChat(ToChatMessages(prompt), options);
+            ChatCompletion completion = await _chatClient.CompleteChatAsync(ToChatMessages(prompt), options);
 
             using JsonDocument structuredJson = JsonDocument.Parse(completion.Content[0].Text);
             return JsonNode.Parse(structuredJson.RootElement.GetRawText())!.AsObject();
@@ -128,8 +112,6 @@ namespace Agenty.LLMCore
                                     functionName: msg.toolCallInfo.Name,
                                     functionArguments: BinaryData.FromObjectAsJson(msg.toolCallInfo.Parameters))
                             }),
-                    ChatRole.Assistant when msg.toolCallInfo != null && msg.toolCallInfo.AssistantMessage != null =>
-                        ChatMessage.CreateAssistantMessage(msg.toolCallInfo.AssistantMessage ?? ""),
                     ChatRole.Assistant => ChatMessage.CreateAssistantMessage(msg.Content),
                     ChatRole.Tool when msg.toolCallInfo is not null =>
                         ChatMessage.CreateToolMessage(msg.toolCallInfo.Id, msg.Content),

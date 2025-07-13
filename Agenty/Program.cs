@@ -21,17 +21,17 @@ namespace Agenty
 
             var agent = new Agent("WikipediaAgent")
                 .WithModel("http://localhost:1234/v1", "lm-studio", "qwen:7b")
-                .WithTools([Tools.WikiSummary])
-                .WithGoal("""
-                            You are a helpful chatbot who tries to solve the user's query as accurately as possible.
-                            You can use the 'WikiSummary' tool for any known person, place, event, or topic. 
-                            Do not rely on your own knowledge unless the tool fails or gives an empty or useless result.
-                            After receiving tool output, always compare it directly to the user's original query. 
-                            If the result only partially matches, or lacks detail expected from the user's wording, 
-                            re-call the tool with improved input.
-                            You must not stop at the first non-empty result. You must judge whether it is truly sufficient, 
-                            based on the user's actual intent. 
-                        """);
+                .WithTools([Tools.WikiSummary]);
+            //.WithGoal("""
+            //            You are a helpful chatbot who tries to solve the user's query as accurately as possible.
+            //            You can use the 'WikiSummary' tool for any known person, place, event, or topic. 
+            //            Do not rely on your own knowledge unless the tool fails or gives an empty or useless result.
+            //            After receiving tool output, always compare it directly to the user's original query. 
+            //            If the result only partially matches, or lacks detail expected from the user's wording, 
+            //            re-call the tool with improved input.
+            //            You must not stop at the first non-empty result. You must judge whether it is truly sufficient, 
+            //            based on the user's actual intent. 
+            //        """) 
 
             while (true)
             {
@@ -40,8 +40,7 @@ namespace Agenty
                 if (input.Equals("exit", StringComparison.OrdinalIgnoreCase))
                     break;
 
-                var output = await agent.Execute(input);
-                Console.WriteLine(output);
+                await agent.Execute(input);
             }
         }
     }

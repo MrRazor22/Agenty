@@ -6,11 +6,11 @@ namespace Agenty.LLMCore
 {
     public interface ILLMClient
     {
-        public void Initialize(string url, string apiKey, string modelName);
-        public Task<string> GetResponse(IPrompt prompt);
-        public IAsyncEnumerable<string> GetStreamingResponse(IPrompt prompt);
-        Task<List<ToolCallInfo>> GetFunctionCallResponse(IPrompt prompt, List<Tool> tools);
-        public JsonObject GetStructuredResponse(IPrompt prompt, JsonObject responseFormat);
+        void Initialize(string url, string apiKey, string modelName);
+        Task<string> GetResponse(IPrompt prompt);
+        IAsyncEnumerable<string> GetStreamingResponse(IPrompt prompt);
+        Task<ToolCallResponse> GetFunctionCallResponse(IPrompt prompt, List<Tool> tools);
+        Task<JsonObject> GetStructuredResponse(IPrompt prompt, JsonObject responseFormat);
     }
 
     public interface IToolRegistry
@@ -26,6 +26,13 @@ namespace Agenty.LLMCore
         string? InvokeTool(ToolCallInfo toolCall);
     }
 
+    public class ToolCallResponse
+    {
+        public string? AssistantMessage { get; set; } // non-null if no tool call
+        public List<ToolCallInfo> ToolCalls { get; set; } = new();
+    }
+
+
     public class Tool
     {
         public string Name { get; set; }
@@ -35,12 +42,16 @@ namespace Agenty.LLMCore
 
         [JsonIgnore]
         public Delegate? Function { get; set; }
+
+        public override string ToString()
+        {
+            return $"'{Name}' - {Description}";
+        }
     }
 
     public class ToolCallInfo
     {
         public string Id { get; set; }
-        public string? AssistantMessage { get; set; }
         public string Name { get; set; }
         public JsonObject Parameters { get; set; }
 
