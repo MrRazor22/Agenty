@@ -11,7 +11,7 @@ using System.Xml.Linq;
 
 namespace Agenty.LLMCore
 {
-    [AttributeUsage(AttributeTargets.Parameter)]
+    [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property)]
     public class EnumValuesAttribute : Attribute
     {
         public string[] Values { get; }
@@ -48,10 +48,27 @@ namespace Agenty.LLMCore
             var funcDescription = method
                 .GetCustomAttribute<DescriptionAttribute>()?.Description ?? "No description";
 
+            var funcParam = method.GetParameters();
+
+            JsonObject schema = ExtractParameterJson(funcParam);
+
+
+            var tool = new Tool
+            {
+                Name = method.Name,
+                Description = funcDescription,
+                ParameterSchema = schema,
+                Function = func
+            };
+            return tool;
+        }
+
+        private JsonObject ExtractParameterJson(ParameterInfo[] parameters)
+        {
             var properties = new JsonObject();
             var required = new JsonArray();
 
-            foreach (var param in method.GetParameters())
+            foreach (var param in parameters)
             {
                 var paramDesc = param.GetCustomAttribute<DescriptionAttribute>()?.Description ?? "No description";
 
@@ -60,17 +77,25 @@ namespace Agenty.LLMCore
                     ["description"] = paramDesc
                 };
 
-                if (param.ParameterType.IsArray)
+                var paramType = param.ParameterType;
+
+                if (paramType.IsArray)
                 {
-                    var elementType = param.ParameterType.GetElementType();
+                    var elementType = paramType.GetElementType();
                     var itemType = MapClrTypeToJsonType(elementType!);
                     paramJson["type"] = "array";
                     paramJson["items"] = new JsonObject { ["type"] = itemType };
                 }
+                else if (IsSimpleType(paramType))
+                {
+                    paramJson["type"] = MapClrTypeToJsonType(paramType);
+                }
                 else
                 {
-                    var typeStr = MapClrTypeToJsonType(param.ParameterType);
-                    paramJson["type"] = typeStr;
+                    var nestedSchema = GenerateObjectSchema(paramType);
+                    paramJson["type"] = "object";
+                    paramJson["properties"] = nestedSchema["properties"]!.DeepClone();
+                    paramJson["required"] = nestedSchema["required"]!.DeepClone();
                 }
 
                 var enumAttr = param.GetCustomAttribute<EnumValuesAttribute>();
@@ -86,19 +111,71 @@ namespace Agenty.LLMCore
 
             var schema = new JsonObject
             {
+                ["type"] = "object", //this obj wrap all parameters
+                ["properties"] = properties,
+                ["required"] = required
+            };
+            return schema;
+        }
+        private JsonObject GenerateObjectSchema(Type type)
+        {
+            var properties = new JsonObject();
+            var required = new JsonArray();
+
+            foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                var propType = prop.PropertyType;
+
+                var propJson = new JsonObject
+                {
+                    ["description"] = prop.GetCustomAttribute<DescriptionAttribute>()?.Description ?? "No description"
+                };
+
+                if (propType.IsArray)
+                {
+                    var elementType = propType.GetElementType();
+                    propJson["type"] = "array";
+                    propJson["items"] = new JsonObject { ["type"] = MapClrTypeToJsonType(elementType!) };
+                }
+                else if (IsSimpleType(propType))
+                {
+                    propJson["type"] = MapClrTypeToJsonType(propType);
+                }
+                else
+                {
+                    var nested = GenerateObjectSchema(propType);
+                    propJson["type"] = "object";
+                    var cloned = nested.DeepClone() as JsonObject;
+                    propJson["properties"] = cloned!["properties"]!.Deserialize<JsonObject>();
+                    propJson["required"] = cloned!["required"]!.Deserialize<JsonArray>();
+                }
+
+                var enumAttr = prop.GetCustomAttribute<EnumValuesAttribute>();
+                if (enumAttr != null)
+                    propJson["enum"] = new JsonArray(enumAttr.Values.Select(value => JsonValue.Create(value)).ToArray());
+
+                properties[prop.Name!] = propJson;
+
+                if (!IsOptionalProperty(prop))
+                    required.Add(prop.Name!);
+            }
+
+            return new JsonObject
+            {
                 ["type"] = "object",
                 ["properties"] = properties,
                 ["required"] = required
             };
-
-            var tool = new Tool
-            {
-                Name = method.Name,
-                Description = funcDescription,
-                ParameterSchema = schema,
-                Function = func
-            };
-            return tool;
+        }
+        private bool IsSimpleType(Type type)
+        {
+            return type.IsPrimitive || type == typeof(string) || type == typeof(decimal) || type == typeof(DateTime) || type.IsEnum;
+        }
+        private bool IsOptionalProperty(PropertyInfo prop)
+        {
+            var type = prop.PropertyType;
+            return Nullable.GetUnderlyingType(type) != null ||
+                   (type.IsClass && type != typeof(string)); // treat ref types (except string) as optional
         }
 
         private string? MapClrTypeToJsonType(Type type)
@@ -108,7 +185,7 @@ namespace Agenty.LLMCore
             if (type == typeof(float) || type == typeof(double) || type == typeof(decimal)) return "number";
             if (type == typeof(bool)) return "boolean";
             if (type.IsArray || typeof(System.Collections.IEnumerable).IsAssignableFrom(type)) return "array";
-            return "Unknown"; // unsupported or complex types
+            return "object"; // unsupported or complex types
         }
     }
 }
