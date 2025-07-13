@@ -1,5 +1,7 @@
-﻿using OpenAI.Chat;
+﻿using Agenty.Utils;
+using OpenAI.Chat;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -29,8 +31,13 @@ namespace Agenty.LLMCore
                 tool.Tags.AddRange(tags);
             _registeredTools.Add(tool);
         }
-
         public void RegisterAll(List<Delegate> funcs)
+        {
+            foreach (var f in funcs)
+                Register(f);
+        }
+
+        public void RegisterAll(params Delegate[] funcs)
         {
             foreach (var f in funcs)
                 Register(f);
@@ -86,16 +93,24 @@ namespace Agenty.LLMCore
                     paramJson["type"] = "array";
                     paramJson["items"] = new JsonObject { ["type"] = itemType };
                 }
-                else if (IsSimpleType(paramType))
+                else if (paramType.IsGenericType &&
+                         paramType.GetGenericTypeDefinition() == typeof(Dictionary<,>) &&
+                         paramType.GetGenericArguments()[0] == typeof(string))
+                {
+                    var valueType = paramType.GetGenericArguments()[1];
+                    paramJson["type"] = "object";
+                    paramJson["additionalProperties"] = GetTypeSchema(valueType);
+                }
+                else if (Util.IsSimpleType(paramType))
                 {
                     paramJson["type"] = MapClrTypeToJsonType(paramType);
                 }
                 else
                 {
-                    var nestedSchema = GenerateObjectSchema(paramType);
                     paramJson["type"] = "object";
-                    paramJson["properties"] = nestedSchema["properties"]!.DeepClone();
-                    paramJson["required"] = nestedSchema["required"]!.DeepClone();
+                    var nested = GenerateObjectSchema(param.ParameterType);
+                    paramJson["properties"] = nested["properties"]!.Deserialize<JsonObject>();
+                    paramJson["required"] = nested["required"]!.Deserialize<JsonArray>();
                 }
 
                 var enumAttr = param.GetCustomAttribute<EnumValuesAttribute>();
@@ -117,47 +132,79 @@ namespace Agenty.LLMCore
             };
             return schema;
         }
-        private JsonObject GenerateObjectSchema(Type type)
+        private JsonObject GenerateObjectSchema(Type type, HashSet<Type>? visited = null)
         {
+            visited ??= new HashSet<Type>();
+            if (visited.Contains(type))
+                return new JsonObject(); // prevent infinite recursion
+
+            visited.Add(type);
+
             var properties = new JsonObject();
             var required = new JsonArray();
 
             foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
                 var propType = prop.PropertyType;
-
                 var propJson = new JsonObject
                 {
                     ["description"] = prop.GetCustomAttribute<DescriptionAttribute>()?.Description ?? "No description"
                 };
 
-                if (propType.IsArray)
+                // Handle Nullable<T>
+                var isNullable = Nullable.GetUnderlyingType(propType) != null;
+                if (isNullable)
+                    propType = Nullable.GetUnderlyingType(propType);
+
+                // Handle EnumValuesAttribute
+                var enumAttr = prop.GetCustomAttribute<EnumValuesAttribute>();
+                if (enumAttr != null)
+                {
+                    propJson["type"] = "string";
+                    propJson["enum"] = new JsonArray(enumAttr.Values.Select(value => JsonValue.Create(value)).ToArray());
+                }
+                else if (propType.IsEnum)
+                {
+                    propJson["type"] = "string";
+                    propJson["enum"] = new JsonArray(Enum.GetNames(propType).Select(value => JsonValue.Create(value)).ToArray());
+                }
+                else if (propType.IsArray)
                 {
                     var elementType = propType.GetElementType();
                     propJson["type"] = "array";
-                    propJson["items"] = new JsonObject { ["type"] = MapClrTypeToJsonType(elementType!) };
+                    propJson["items"] = GetTypeSchema(elementType!, visited);
                 }
-                else if (IsSimpleType(propType))
+                else if (typeof(IEnumerable).IsAssignableFrom(propType) && propType.IsGenericType)
+                {
+                    var elementType = propType.GetGenericArguments()[0];
+                    propJson["type"] = "array";
+                    propJson["items"] = GetTypeSchema(elementType, visited);
+                }
+                else if (propType.IsGenericType &&
+         propType.GetGenericTypeDefinition() == typeof(Dictionary<,>) &&
+         propType.GetGenericArguments()[0] == typeof(string))
+                {
+                    var valueType = propType.GetGenericArguments()[1];
+                    propJson["type"] = "object";
+                    propJson["additionalProperties"] = GetTypeSchema(valueType, visited);
+                }
+
+                else if (Util.IsSimpleType(propType))
                 {
                     propJson["type"] = MapClrTypeToJsonType(propType);
                 }
                 else
                 {
-                    var nested = GenerateObjectSchema(propType);
                     propJson["type"] = "object";
-                    var cloned = nested.DeepClone() as JsonObject;
-                    propJson["properties"] = cloned!["properties"]!.Deserialize<JsonObject>();
-                    propJson["required"] = cloned!["required"]!.Deserialize<JsonArray>();
+                    var nested = GenerateObjectSchema(propType, visited);
+                    propJson["properties"] = nested["properties"]!.Deserialize<JsonObject>();
+                    propJson["required"] = nested["required"]!.Deserialize<JsonArray>();
                 }
 
-                var enumAttr = prop.GetCustomAttribute<EnumValuesAttribute>();
-                if (enumAttr != null)
-                    propJson["enum"] = new JsonArray(enumAttr.Values.Select(value => JsonValue.Create(value)).ToArray());
+                properties[prop.Name] = propJson;
 
-                properties[prop.Name!] = propJson;
-
-                if (!IsOptionalProperty(prop))
-                    required.Add(prop.Name!);
+                if (!isNullable && !IsOptionalProperty(prop))
+                    required.Add(prop.Name);
             }
 
             return new JsonObject
@@ -167,10 +214,22 @@ namespace Agenty.LLMCore
                 ["required"] = required
             };
         }
-        private bool IsSimpleType(Type type)
+
+        private JsonObject GetTypeSchema(Type type)
         {
-            return type.IsPrimitive || type == typeof(string) || type == typeof(decimal) || type == typeof(DateTime) || type.IsEnum;
+            var visited = new HashSet<Type>();
+            return GetTypeSchema(type, visited);
         }
+
+        private JsonObject GetTypeSchema(Type type, HashSet<Type> visited)
+        {
+            if (Util.IsSimpleType(type))
+                return new JsonObject { ["type"] = MapClrTypeToJsonType(type) };
+
+            return GenerateObjectSchema(type, visited);
+        }
+
+
         private bool IsOptionalProperty(PropertyInfo prop)
         {
             var type = prop.PropertyType;

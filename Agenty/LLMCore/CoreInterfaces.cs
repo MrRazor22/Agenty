@@ -17,6 +17,7 @@ namespace Agenty.LLMCore
     {
         void Register(Delegate func, params string[] tags);
         void RegisterAll(List<Delegate> funcs);
+        void RegisterAll(params Delegate[] funcs);
         List<Tool> GetRegisteredTools();
         List<Tool> GetToolsByTag(string tag);
     }

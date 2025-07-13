@@ -1,4 +1,6 @@
-﻿using System.Text.Json;
+﻿using Agenty.Utils;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace Agenty.LLMCore
@@ -24,6 +26,18 @@ namespace Agenty.LLMCore
                 return "[Invalid tool call parameter JSON]";
 
             var paramValues = new object?[methodParams.Length];
+            if (methodParams.Length == 1 &&
+            !Util.IsSimpleType(methodParams[0].ParameterType) &&
+            argsObj is JsonObject rawRoot &&
+            !rawRoot.ContainsKey(methodParams[0].Name!))
+            {
+                // Wrap it manually under the param name
+                argsObj = new JsonObject
+                {
+                    [methodParams[0].Name!] = rawRoot
+                };
+            }
+
             for (int i = 0; i < methodParams.Length; i++)
             {
                 var p = methodParams[i];
@@ -42,6 +56,7 @@ namespace Agenty.LLMCore
             var result = func.DynamicInvoke(paramValues);
             return result?.ToString();
         }
+
     }
 
 }
