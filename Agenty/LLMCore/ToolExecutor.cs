@@ -44,17 +44,54 @@ namespace Agenty.LLMCore
                 if (!argsObj.TryGetPropertyValue(p.Name!, out var node) || node == null)
                     paramValues[i] = Type.Missing;
                 else
-                    paramValues[i] = JsonSerializer.Deserialize(
-                        node.ToJsonString(),
-                        p.ParameterType,
-                        new JsonSerializerOptions
+                {
+                    try
+                    {
+                        paramValues[i] = JsonSerializer.Deserialize(
+                            node.ToJsonString(),
+                            p.ParameterType,
+                            new JsonSerializerOptions
+                            {
+                                Converters = { new JsonStringEnumConverter() }
+                            });
+                    }
+                    catch
+                    {
+                        if (node is JsonValue val)
                         {
-                            Converters = { new JsonStringEnumConverter() }
-                        });
+                            object? fallback = TryCoerceValue(val, p.ParameterType);
+                            if (fallback != null)
+                                paramValues[i] = fallback;
+                            else
+                                throw new JsonException($"Failed to coerce '{val}' to {p.ParameterType.Name} for '{p.Name}'");
+                        }
+                        else throw;
+                    }
+                }
             }
 
             var result = func.DynamicInvoke(paramValues);
             return result?.ToString();
+        }
+
+        private static object? TryCoerceValue(JsonValue val, Type targetType)
+        {
+            targetType = Nullable.GetUnderlyingType(targetType) ?? targetType;
+
+            if (val.TryGetValue(out string str))
+            {
+                try
+                {
+                    if (targetType == typeof(long)) return long.Parse(str);
+                    if (targetType == typeof(int)) return int.Parse(str);
+                    if (targetType == typeof(bool)) return bool.Parse(str);
+                    if (targetType == typeof(float)) return float.Parse(str);
+                    if (targetType == typeof(double)) return double.Parse(str);
+                }
+                catch { }
+            }
+
+            return null;
         }
 
     }
