@@ -11,8 +11,9 @@ namespace Agenty.AgentCore
     {
         private readonly List<ChatInput> _messages = new();
         private readonly Func<Action<string>?> _onUpdate = null;
-        public Prompt()
+        public Prompt(string message)
         {
+            Add(ChatRole.User, message);
         }
         public Prompt(Func<Action<string>?> onUpdate)
         {
