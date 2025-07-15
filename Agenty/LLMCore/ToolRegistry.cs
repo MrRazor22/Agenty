@@ -5,6 +5,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -12,16 +13,10 @@ using System.Text.Json.Serialization;
 
 namespace Agenty.LLMCore;
 
-[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property)]
-public class EnumValuesAttribute : Attribute
-{
-    public string[] Values { get; }
-    public EnumValuesAttribute(params string[] values) => Values = values;
-}
-
 public class ToolRegistry : IToolRegistry
 {
     private readonly List<Tool> _registeredTools = new();
+
     public void RegisterAll(List<Delegate> funcs) => funcs.ForEach(f => Register(f));
     public void RegisterAll(params Delegate[] funcs) => funcs.ToList().ForEach(f => Register(f));
 
@@ -32,10 +27,32 @@ public class ToolRegistry : IToolRegistry
             tool.Tags.AddRange(tags);
         _registeredTools.Add(tool);
     }
-    public List<Tool> GetRegisteredTools() => _registeredTools;
+    public void RegisterAllFromType(Type type)
+    {
+        var methods = type
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(m => m.GetCustomAttribute<DescriptionAttribute>() != null);
+
+        foreach (var method in methods)
+        {
+            var del = Delegate.CreateDelegate(
+                Expression.GetDelegateType(
+                    method.GetParameters()
+                        .Select(p => p.ParameterType)
+                        .Concat(new[] { method.ReturnType })
+                        .ToArray()), method);
+
+            Register(del);
+        }
+    }
+
+    public List<Tool> GetRegisteredTools() => _registeredTools.ToList();
+
+    public List<Tool> GetAllTools() => _registeredTools;
 
     public List<Tool> GetToolsByTag(string tag) =>
         _registeredTools.Where(t => t.Tags.Contains(tag)).ToList();
+
 
     public Tool CreateToolFromDelegate(Delegate func)
     {
@@ -56,10 +73,6 @@ public class ToolRegistry : IToolRegistry
             var desc = param.GetCustomAttribute<DescriptionAttribute>()?.Description ?? "No description";
             var typeSchema = GetSchemaForType(param.ParameterType);
             typeSchema["description"] = desc;
-
-            var enumAttr = param.GetCustomAttribute<EnumValuesAttribute>();
-            if (enumAttr != null)
-                typeSchema["enum"] = new JsonArray(enumAttr.Values.Select(value => JsonValue.Create(value)).ToArray());
 
             ((JsonObject)schema["properties"]!)[name] = typeSchema;
             if (!param.IsOptional) ((JsonArray)schema["required"]!).Add(name);
@@ -113,10 +126,6 @@ public class ToolRegistry : IToolRegistry
             var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
             var propSchema = GetSchemaForType(propType, visited);
             propSchema["description"] = prop.GetCustomAttribute<DescriptionAttribute>()?.Description ?? "No description";
-
-            var enumAttr = prop.GetCustomAttribute<EnumValuesAttribute>();
-            if (enumAttr != null)
-                propSchema["enum"] = new JsonArray(enumAttr.Values.Select(value => JsonValue.Create(value)).ToArray());
 
             props[prop.Name] = propSchema;
             if (!IsOptional(prop)) required.Add(prop.Name);

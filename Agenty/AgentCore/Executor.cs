@@ -1,13 +1,15 @@
 ﻿using Agenty.AgentCore;
 using Agenty.LLMCore;
 
-public class Executor : IAgentExecutor
+public class Executor : IExecutor
 {
     private readonly ILLMClient _llmClient;
     private readonly IPlanner _planner;
     private readonly IAgentMemory _agentMemory;
     private readonly IToolExecutor _toolExecutor;
     private readonly IToolRegistry _toolRegistry;
+    private readonly PromptBuilder _promptBuilder;
+    private readonly BuiltInTools _builtInTools;
     private readonly IAgentLogger? _logger;
 
     public Func<ToolCallInfo, Task<string>>? OnToolInvoking { get; set; }
@@ -19,6 +21,8 @@ public class Executor : IAgentExecutor
         IAgentMemory agentMemory,
         IToolExecutor toolExecutor,
         IToolRegistry toolRegistry,
+        PromptBuilder promptBuilder,
+        BuiltInTools builtInTools,
         IAgentLogger? logger = null)
     {
         _llmClient = llmClient;
@@ -26,6 +30,8 @@ public class Executor : IAgentExecutor
         _agentMemory = agentMemory;
         _toolExecutor = toolExecutor;
         _toolRegistry = toolRegistry;
+        _promptBuilder = promptBuilder;
+        _builtInTools = builtInTools;
         _logger = logger;
 
         OnToolInvoking = info =>
@@ -47,17 +53,18 @@ public class Executor : IAgentExecutor
 
         chat.Add(ChatRole.User, goal);
 
-        var plan = await _planner.GeneratePlan(goal, tools);
+        var plan = await _planner.GeneratePlan(tools);
 
-        while (plan == null || plan.Steps.Count == 0)
+        while (plan == null || plan.StepsWithResult.Count == 0)
         {
             chat.Add(ChatRole.User, "You generated no plan.");
             var noPlanFeedback = await _llmClient.GetResponse(chat);
-            plan = await _planner.RefinePlan(plan, noPlanFeedback, tools);
+            plan = await _planner.RefinePlan(noPlanFeedback, tools);
         }
 
-        var currentStep = plan.Steps[plan.CurrentStepIndex].Description;
+        var currentStep = plan.GetCurrentStep();
         OnFinalResponseReady?.Invoke(currentStep);
-        return currentStep;
+        return currentStep ?? "No current step.";
     }
+
 }

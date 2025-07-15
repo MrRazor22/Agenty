@@ -9,7 +9,8 @@ namespace Agenty.LLMCore
         void Initialize(string url, string apiKey, string modelName);
         Task<string> GetResponse(IPrompt prompt);
         IAsyncEnumerable<string> GetStreamingResponse(IPrompt prompt);
-        Task<ToolCallResponse> GetFunctionCallResponse(IPrompt prompt, List<Tool> tools);
+        Task<ToolCallResponse> GetFunctionCallResponse(IPrompt prompt, List<Tool> tools, bool forceToolCall = false);
+        Task<ToolCallResponse> GetFunctionCallResponse(IPrompt prompt, bool forceToolCall = false, params Tool[] tools);
         Task<JsonObject> GetStructuredResponse(IPrompt prompt, JsonObject responseFormat);
     }
 
@@ -18,13 +19,19 @@ namespace Agenty.LLMCore
         void Register(Delegate func, params string[] tags);
         void RegisterAll(List<Delegate> funcs);
         void RegisterAll(params Delegate[] funcs);
+        void RegisterAllFromType(Type type);
+
         List<Tool> GetRegisteredTools();
+        List<Tool> GetAllTools();
         List<Tool> GetToolsByTag(string tag);
+        Tool CreateToolFromDelegate(Delegate func);
     }
+
 
     public interface IToolExecutor
     {
         string? InvokeTool(ToolCallInfo toolCall);
+        T? InvokeTypedTool<T>(ToolCallInfo toolCall);
     }
 
     public class ToolCallResponse
@@ -46,7 +53,7 @@ namespace Agenty.LLMCore
 
         public override string ToString()
         {
-            return $"'{Name}' - {Description}";
+            return $"'[{Name}]' - {Description}";
         }
     }
 

@@ -1,5 +1,6 @@
 ﻿using Agenty.LLMCore;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -7,10 +8,11 @@ using System.Threading.Tasks;
 
 namespace Agenty.AgentCore
 {
-    public class Prompt : IPrompt
+    public class Prompt : IPrompt, IEnumerable<ChatInput>
     {
         private readonly List<ChatInput> _messages = new();
         private readonly Func<Action<string>?> _onUpdate = null;
+        public Prompt() { }
         public Prompt(string message)
         {
             Add(ChatRole.User, message);
@@ -55,5 +57,15 @@ namespace Agenty.AgentCore
             return true;
         }
         public void Clear() => _messages.Clear();
+
+        public IEnumerator<ChatInput> GetEnumerator()
+        {
+            return Messages.GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return ((IEnumerable)Messages).GetEnumerator();
+        }
     }
 }

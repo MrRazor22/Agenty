@@ -44,11 +44,19 @@ namespace Agenty.LLMCore
                 }
             }
         }
+        public async Task<ToolCallResponse> GetFunctionCallResponse(IPrompt prompt, bool forceToolCall = false, params Tool[] tools)
+        {
+            if (tools == null || tools.Length == 0)
+                throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
 
-        public async Task<ToolCallResponse> GetFunctionCallResponse(IPrompt prompt, List<Tool> tools)
+            // Convert array to list and delegate to the original method
+            return await GetFunctionCallResponse(prompt, tools.ToList(), forceToolCall);
+        }
+
+        public async Task<ToolCallResponse> GetFunctionCallResponse(IPrompt prompt, List<Tool> tools, bool forceToolCall = false)
         {
             if (tools == null || tools.Count == 0)
-                new ArgumentNullException("No Tools provided fro function call respinse");
+                throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
 
             List<ChatTool> chatTools = tools!
                 .Select(tool => ChatTool.CreateFunctionTool(
@@ -59,7 +67,7 @@ namespace Agenty.LLMCore
 
             ChatCompletionOptions options = new();
             chatTools.ForEach(t => options.Tools.Add(t));
-            //options.ToolChoice = ChatToolChoice.CreateRequiredChoice();
+            if (forceToolCall) options.ToolChoice = ChatToolChoice.CreateRequiredChoice();
 
             var response = await _chatClient.CompleteChatAsync(ToChatMessages(prompt), options);
             var result = response.Value;

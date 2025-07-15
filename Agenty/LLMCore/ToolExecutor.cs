@@ -74,6 +74,56 @@ namespace Agenty.LLMCore
             return result?.ToString();
         }
 
+        public T? InvokeTypedTool<T>(ToolCallInfo toolCall)
+        {
+            if (toolCall == null) throw new ArgumentNullException(nameof(toolCall));
+
+            var tool = registry.GetRegisteredTools()
+                .FirstOrDefault(t => t.Name.Equals(toolCall.Name, StringComparison.OrdinalIgnoreCase));
+
+            if (tool == null || tool.Function == null)
+                throw new InvalidOperationException($"Tool '{toolCall.Name}' not registered or has no function.");
+
+            var func = tool.Function;
+            var method = func.Method;
+            var methodParams = method.GetParameters();
+            var argsObj = toolCall.Parameters ?? throw new ArgumentException("ToolCallInfo.Parameters is null");
+
+            var paramValues = new object?[methodParams.Length];
+
+            if (methodParams.Length == 1 &&
+                !Util.IsSimpleType(methodParams[0].ParameterType) &&
+                !argsObj.ContainsKey(methodParams[0].Name!))
+            {
+                argsObj = new JsonObject { [methodParams[0].Name!] = argsObj };
+            }
+
+            for (int i = 0; i < methodParams.Length; i++)
+            {
+                var p = methodParams[i];
+                if (!argsObj.TryGetPropertyValue(p.Name!, out var node) || node == null)
+                    paramValues[i] = Type.Missing;
+                else
+                {
+                    paramValues[i] = JsonSerializer.Deserialize(
+                        node.ToJsonString(),
+                        p.ParameterType,
+                        new JsonSerializerOptions
+                        {
+                            Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+                        });
+                }
+            }
+
+            var result = func.DynamicInvoke(paramValues);
+
+            if (result == null) return default;
+
+            if (result is T typedResult) return typedResult;
+
+            throw new InvalidCastException($"Expected result of type {typeof(T).Name}, got {result.GetType().Name}.");
+        }
+
         private static object? TryCoerceValue(JsonValue val, Type targetType)
         {
             targetType = Nullable.GetUnderlyingType(targetType) ?? targetType;
