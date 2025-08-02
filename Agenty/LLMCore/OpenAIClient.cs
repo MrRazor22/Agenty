@@ -67,6 +67,7 @@ namespace Agenty.LLMCore
             ChatCompletionOptions options = new();
             chatTools.ForEach(t => options.Tools.Add(t));
             if (forceToolCall) options.ToolChoice = ChatToolChoice.CreateRequiredChoice();
+            else options.ToolChoice = ChatToolChoice.CreateAutoChoice();
 
             var response = await _chatClient.CompleteChatAsync(ToChatMessages(prompt), options);
             var result = response.Value;

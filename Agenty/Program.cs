@@ -49,7 +49,7 @@ namespace Agenty
                 if (!string.IsNullOrWhiteSpace(toolCall.AssistantMessage))
                 {
                     Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine($"🤖 LLM: {toolCall.AssistantMessage}");
+                    Console.WriteLine($"🤖 LLM: {toolCall.AssistantMessage.Trim()}");
                     Console.ResetColor();
                     chat.Add(Role.Assistant, toolCall.AssistantMessage);
                     continue;
