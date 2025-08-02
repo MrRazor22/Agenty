@@ -71,7 +71,7 @@ namespace Agenty.LLMCore
             var result = response.Value;
 
             var toolCall = result.ToolCalls.FirstOrDefault();
-            if (toolCall == null) return new Tool { AssistantMessage = result.Content.FirstOrDefault()?.Text; };
+            if (toolCall == null) return new Tool { AssistantMessage = result.Content.FirstOrDefault()?.Text };
 
             return new Tool
             {
