@@ -79,7 +79,7 @@ namespace Agenty.LLMCore
             {
                 Id = firstToolCall.Id,
                 Name = firstToolCall.FunctionName,
-                Parameters = firstToolCall.FunctionArguments.ToObjectFromJson<JsonObject>(),
+                Parameters = firstToolCall.FunctionArguments.ToObjectFromJson<JsonObject>() ?? new JsonObject(),
                 AssistantMessage = assistantResponse
             };
         }

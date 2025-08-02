@@ -6,17 +6,10 @@ using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Agenty.LLMCore
 {
-    public enum Role
-    {
-        System,
-        Assistant,
-        User,
-        Tool
-    }
+    public enum Role { System, Assistant, User, Tool }
     public record Chat(Role Role, string Content, Tool? toolCallInfo = null);
-    public class ChatHistory : List<Chat>
+    public class ChatHistory() : List<Chat>
     {
-        public ChatHistory() { }
         public ChatHistory Add(Role role, string content, Tool? tool = null)
         {
             Add(new Chat(role, content, tool));

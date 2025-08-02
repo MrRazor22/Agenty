@@ -1,16 +1,10 @@
 ﻿using Agenty.AgentCore;
 using Agenty.LLMCore;
-using HtmlAgilityPack;
-using Microsoft.VisualStudio.TestPlatform.CommunicationUtilities;
-using OpenAI;
 using OpenAI.Chat;
 using System;
 using System.ComponentModel;
-using System.Data;
-using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace Agenty
@@ -24,7 +18,7 @@ namespace Agenty
 
             // Register tools
             ITools tools = new Tools();
-            tools.Register(AdvancedTools.DescribePerson, UserTools.WikiSummary);
+            tools.Register(UserTools.WikiSummary, UserTools.CurrencyConverter);
 
             var chat = new ChatHistory();
             Console.WriteLine("🤖 Welcome to Agenty ChatBot! Type 'exit' to quit.\n");
@@ -48,11 +42,11 @@ namespace Agenty
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error fetching tool response: {ex.Message}");
+                    Console.WriteLine($"❌ Error fetching tool response: {ex.Message}");
                     continue;
                 }
 
-                if (!string.IsNullOrEmpty(toolCall.AssistantMessage))
+                if (!string.IsNullOrWhiteSpace(toolCall.AssistantMessage))
                 {
                     Console.ForegroundColor = ConsoleColor.Green;
                     Console.WriteLine($"🤖 LLM: {toolCall.AssistantMessage}");
@@ -65,21 +59,15 @@ namespace Agenty
                 try
                 {
                     Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine($"🔧 Tool Call Detected → {toolCall}");
+                    Console.WriteLine($"🔧 Tool Call → {toolCall}");
                     Console.ResetColor();
 
                     object? result = tools.Invoke<object>(toolCall);
 
-                    if (result is Person person)
-                    {
-                        Console.WriteLine($"👤 {person.Name}, {person.Age} years old, Gender: {person.Gender}, Lives in: {person.Address.Street}, {person.Address.City}, {person.Address.Country}");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"📄 Result: {result}");
-                    }
+                    Console.ForegroundColor = ConsoleColor.White;
+                    Console.WriteLine($"📄 Result: {result}");
+                    Console.ResetColor();
 
-                    // Add tool call to chat history
                     chat.Add(Role.Tool, $"Result from {toolCall.Name}: {result}", toolCall);
                 }
                 catch (Exception ex)
@@ -93,70 +81,15 @@ namespace Agenty
             Console.WriteLine("👋 Exiting Agenty ChatBot.");
         }
 
-
-
-        public class AdvancedTools
+        static class UserTools
         {
-            [Description("Gives a brief about the person including address and age group.")]
-            public static Person DescribePerson(
-                [Description("Details about the person")] Person person)
-            {
-                var ageGroup = person.Age < 18 ? "a minor" :
-                               person.Age < 60 ? "an adult" : "a senior citizen";
-
-                var address = $"{person.Address.Street}, {person.Address.City}, {person.Address.Country}";
-                Console.WriteLine($"{person.Name} is {ageGroup}, aged {person.Age}, gender: {person.Gender}, living at {address}.");
-                person.Name = "tONY";
-                return person;
-            }
-        }
-        public enum Gender
-        {
-            Male,
-            Female,
-            NonBinary,
-            Other
-        }
-        public class Person
-        {
-            [Description("Full name of the person")]
-            public string Name { get; set; }
-
-            [Description("Age of the person")]
-            public int Age { get; set; }
-
-            [Description("Where the person lives")]
-            public Address Address { get; set; }
-
-            [Description("Gender of the person")]
-            public Gender Gender { get; set; } // NEW
-        }
-
-        public class Address
-        {
-            [Description("Street name")]
-            public string Street { get; set; }
-
-            [Description("City")]
-            public string City { get; set; }
-
-            [Description("Country")]
-            public string Country { get; set; }
-        }
-
-
-        class UserTools
-        {
-
             [Description("Gets a summary of a Wikipedia topic.")]
-            public static string WikiSummary(
-             [Description("Title of the Wikipedia article")] string topic)
+            public static string WikiSummary([Description("Title of the Wikipedia article")] string topic)
             {
                 using var client = new HttpClient();
 
                 try
                 {
-                    // Search for the best matching article title
                     var searchUrl = $"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={Uri.EscapeDataString(topic)}&format=json";
                     var searchJson = client.GetStringAsync(searchUrl).Result;
                     var searchObj = JsonNode.Parse(searchJson);
@@ -165,7 +98,6 @@ namespace Agenty
                     if (string.IsNullOrWhiteSpace(title))
                         return "No matching Wikipedia article found.";
 
-                    // Get summary using the resolved title
                     var summaryUrl = $"https://en.wikipedia.org/api/rest_v1/page/summary/{Uri.EscapeDataString(title)}";
                     var summaryJson = client.GetStringAsync(summaryUrl).Result;
                     var summaryObj = JsonNode.Parse(summaryJson);
@@ -176,7 +108,30 @@ namespace Agenty
                     return "Failed to fetch Wikipedia data.";
                 }
             }
+
+            [Description("Converts an amount from one currency to another using exchange rates.")]
+            public static string CurrencyConverter(
+                [Description("Currency code to convert from (e.g., USD)")] string from,
+                [Description("Currency code to convert to (e.g., INR)")] string to,
+                [Description("Amount to convert")] decimal amount)
+            {
+                using var client = new HttpClient();
+                try
+                {
+                    var url = $"https://api.exchangerate.host/convert?from={from}&to={to}&amount={amount}";
+                    var json = client.GetStringAsync(url).Result;
+                    var obj = JsonNode.Parse(json);
+                    var result = obj?["result"]?.ToString();
+
+                    return result != null
+                        ? $"{amount} {from} = {result} {to}"
+                        : "Conversion failed.";
+                }
+                catch
+                {
+                    return "Currency conversion API failed.";
+                }
+            }
         }
     }
 }
-

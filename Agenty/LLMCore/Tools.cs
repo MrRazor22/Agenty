@@ -12,15 +12,13 @@ using System.Text.Json.Serialization;
 
 namespace Agenty.LLMCore;
 
-public class Tools : ITools
+public class Tools(IEnumerable<Tool> tools = null) : ITools
 {
     private List<Tool> _registeredTools = new();
     IReadOnlyList<Tool> ITools.RegisteredTools => _registeredTools;
-    public Tools() { }
-    public Tools(IEnumerable<Tool> tools) => _registeredTools.AddRange(tools);
-
     public IEnumerator<Tool> GetEnumerator() => _registeredTools.GetEnumerator();
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    public static implicit operator Tools(List<Tool> tools) => new Tools(tools);
 
     public void Register(params Delegate[] funcs)
     {
@@ -30,7 +28,6 @@ public class Tools : ITools
             _registeredTools.Add(tool);
         }
     }
-
     public void RegisterAll(Type type)
     {
         var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Static)
@@ -54,7 +51,6 @@ public class Tools : ITools
             }
         }
     }
-
     public Tool? Get(Delegate func)
     {
         if (func == null) throw new ArgumentNullException(nameof(func));
