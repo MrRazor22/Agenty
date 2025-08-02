@@ -12,9 +12,9 @@ using System.Text.Json.Serialization;
 
 namespace Agenty.LLMCore;
 
-public class Tools(IEnumerable<Tool> tools = null) : ITools
+public class Tools(IEnumerable<Tool>? tools = null) : ITools
 {
-    private List<Tool> _registeredTools = new();
+    private List<Tool> _registeredTools = tools?.ToList() ?? new();
     IReadOnlyList<Tool> ITools.RegisteredTools => _registeredTools;
     public IEnumerator<Tool> GetEnumerator() => _registeredTools.GetEnumerator();
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();

@@ -45,21 +45,14 @@ namespace Agenty.LLMCore
         public string Name { get; set; }
         public string Description { get; set; }
         public JsonObject Parameters { get; set; }
+        [JsonIgnore]
         public string? AssistantMessage { get; set; } // non-null if no tool call
+        [JsonIgnore]
         public bool forceToolCall { get; set; } = false;
-
         [JsonIgnore]
         public Delegate? Function { get; set; }
         [JsonIgnore]
         private object? _toolResponse;
-        public void SetToolResponse<T>(T response) => _toolResponse = response;
-        public T GetToolResponse<T>() => (T)_toolResponse!;
-        public override string ToString()
-        {
-            var args = Parameters?.Select(kv => $"{kv.Key}: {kv.Value}") ?? Enumerable.Empty<string>();
-            var argString = string.Join(", ", args);
-            return $"Tool Info: '{Name}' (id: {Id}) with {argString}";
-        }
     }
 
 }
