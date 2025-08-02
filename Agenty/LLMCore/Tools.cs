@@ -9,6 +9,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace Agenty.LLMCore;
 
@@ -213,52 +214,35 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
         if (type == typeof(float) || type == typeof(double) || type == typeof(decimal)) return "number";
         return "object";
     }
-    public JsonObject GetToolsSchema()
+
+    /// <summary>
+    /// The "enum" ensures the name is valid.
+    /// The "oneOf" ensures arguments matches exactly one tool schema.
+    /// </summary>
+    /// <returns>Returns registered tool schema format</returns>
+    public JsonObject GetToolsSchema() => new()
     {
-        var enumArray = new JsonArray();
-        foreach (var t in _registeredTools)
+        ["type"] = "object",
+        ["properties"] = new JsonObject
         {
-            enumArray.Add(JsonValue.Create(t.Name));
-        }
-
-        var oneOfArray = new JsonArray();
-        foreach (var t in _registeredTools)
-        {
-            var parameters = t.Parameters != null
-                ? CloneJsonObject(t.Parameters)
-                : new JsonObject();
-
-            oneOfArray.Add(parameters);
-        }
-
-        return new JsonObject
-        {
-            ["type"] = "object",
-            ["properties"] = new JsonObject
+            ["name"] = new JsonObject
             {
-                ["name"] = new JsonObject
-                {
-                    ["type"] = "string",
-                    ["enum"] = enumArray
-                },
-                ["arguments"] = new JsonObject
-                {
-                    ["type"] = "object",
-                    ["oneOf"] = oneOfArray
-                }
+                ["type"] = "string",
+                ["enum"] = new JsonArray(
+                _registeredTools.Select(t => JsonValue.Create(t.Name)).ToArray()
+            )
             },
-            ["required"] = new JsonArray
-        {
-            JsonValue.Create("name"),
-            JsonValue.Create("arguments")
-        }
-        };
-    }
-
-    private JsonObject CloneJsonObject(JsonObject original)
-    {
-        return JsonNode.Parse(original.ToJsonString())!.AsObject();
-    }
-
-
+            ["arguments"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["oneOf"] = new JsonArray(
+                _registeredTools.Select(t =>
+                    // THIS is the deep clone (we get json string of each paramater and get json node basically cloning explicly) to avoid parent reuse error
+                    JsonNode.Parse(t.Parameters?.ToJsonString() ?? "{}")!.AsObject()
+                ).ToArray()
+            )
+            }
+        },
+        ["required"] = new JsonArray { "name", "arguments" }
+    };
 }
