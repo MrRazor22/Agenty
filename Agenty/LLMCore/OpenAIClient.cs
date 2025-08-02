@@ -23,7 +23,7 @@ namespace Agenty.LLMCore
 
             _chatClient = _client.GetChatClient(modelName);
         }
-        public async Task<string> GetResponse(IPrompt prompt)
+        public async Task<string> GetResponse(ChatHistory prompt)
         {
             var response = await _chatClient.CompleteChatAsync(ToChatMessages(prompt));
 
@@ -32,7 +32,7 @@ namespace Agenty.LLMCore
             return textContent;
         }
 
-        public async IAsyncEnumerable<string> GetStreamingResponse(IPrompt prompt)
+        public async IAsyncEnumerable<string> GetStreamingResponse(ChatHistory prompt)
         {
             AsyncCollectionResult<StreamingChatCompletionUpdate> responseUpdates
                 = _chatClient.CompleteChatStreamingAsync(ToChatMessages(prompt));
@@ -44,25 +44,23 @@ namespace Agenty.LLMCore
                 }
             }
         }
-        public async Task<ToolCallResponse> GetFunctionCallResponse(IPrompt prompt, bool forceToolCall = false, params Tool[] tools)
-        {
-            if (tools == null || tools.Length == 0)
-                throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
 
-            // Convert array to list and delegate to the original method
-            return await GetFunctionCallResponse(prompt, tools.ToList(), forceToolCall);
-        }
+        public Task<Tool> GetToolCallResponse(ChatHistory prompt, ITools tools)
+            => ProcessToolCall(prompt, tools);
 
-        public async Task<ToolCallResponse> GetFunctionCallResponse(IPrompt prompt, List<Tool> tools, bool forceToolCall = false)
+        public Task<Tool> GetToolCallResponse(ChatHistory prompt, params Tool[] tools)
+            => ProcessToolCall(prompt, new Tools(tools));
+
+        public async Task<Tool> ProcessToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false)
         {
-            if (tools == null || tools.Count == 0)
+            if (tools == null || !tools.Any())
                 throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
 
             List<ChatTool> chatTools = tools!
                 .Select(tool => ChatTool.CreateFunctionTool(
                     tool.Name,
                     tool.Description,
-                    BinaryData.FromString(tool.ParameterSchema.ToJsonString())))
+                    BinaryData.FromString(tool.Parameters.ToJsonString())))
                 .ToList();
 
             ChatCompletionOptions options = new();
@@ -73,21 +71,20 @@ namespace Agenty.LLMCore
             var result = response.Value;
             var assistantResponse = result.Content.FirstOrDefault()?.Text;
 
-            var toolCalls = result.ToolCalls.Select(call => new ToolCallInfo
-            {
-                Id = call.Id,
-                Name = call.FunctionName,
-                Parameters = call.FunctionArguments.ToObjectFromJson<JsonObject>()
-            }).ToList();
+            var firstToolCall = result.ToolCalls.FirstOrDefault();
+            if (firstToolCall == null)
+                return new Tool { AssistantMessage = assistantResponse };
 
-            return new ToolCallResponse
+            return new Tool
             {
-                AssistantMessage = toolCalls.Count == 0 ? assistantResponse : null,
-                ToolCalls = toolCalls
+                Id = firstToolCall.Id,
+                Name = firstToolCall.FunctionName,
+                Parameters = firstToolCall.FunctionArguments.ToObjectFromJson<JsonObject>(),
+                AssistantMessage = assistantResponse
             };
         }
 
-        public async Task<JsonObject> GetStructuredResponse(IPrompt prompt, JsonObject responseFormat)
+        public async Task<JsonObject> GetStructuredResponse(ChatHistory prompt, JsonObject responseFormat)
         {
             ChatCompletionOptions options = new()
             {
@@ -103,15 +100,15 @@ namespace Agenty.LLMCore
             return JsonNode.Parse(structuredJson.RootElement.GetRawText())!.AsObject();
         }
 
-        private IEnumerable<ChatMessage> ToChatMessages(IPrompt prompt)
+        private IEnumerable<ChatMessage> ToChatMessages(ChatHistory prompt)
         {
-            foreach (var msg in prompt.Messages)
+            foreach (var msg in prompt)
             {
                 yield return msg.Role switch
                 {
-                    ChatRole.System => ChatMessage.CreateSystemMessage(msg.Content),
-                    ChatRole.User => ChatMessage.CreateUserMessage(msg.Content),
-                    ChatRole.Assistant when msg.toolCallInfo != null && msg.toolCallInfo.Name != null =>
+                    Role.System => ChatMessage.CreateSystemMessage(msg.Content),
+                    Role.User => ChatMessage.CreateUserMessage(msg.Content),
+                    Role.Assistant when msg.toolCallInfo != null && msg.toolCallInfo.Name != null =>
                         ChatMessage.CreateAssistantMessage(
                             toolCalls: new[]
                             {
@@ -120,10 +117,10 @@ namespace Agenty.LLMCore
                                     functionName: msg.toolCallInfo.Name,
                                     functionArguments: BinaryData.FromObjectAsJson(msg.toolCallInfo.Parameters))
                             }),
-                    ChatRole.Assistant => ChatMessage.CreateAssistantMessage(msg.Content),
-                    ChatRole.Tool when msg.toolCallInfo is not null =>
+                    Role.Assistant => ChatMessage.CreateAssistantMessage(msg.Content),
+                    Role.Tool when msg.toolCallInfo is not null =>
                         ChatMessage.CreateToolMessage(msg.toolCallInfo.Id, msg.Content),
-                    ChatRole.Tool =>
+                    Role.Tool =>
                         throw new InvalidOperationException("ToolCallId required for tool message."),
                     _ => throw new InvalidOperationException("Invalid message role.")
                 };

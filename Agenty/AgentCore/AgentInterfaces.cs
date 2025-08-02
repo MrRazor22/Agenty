@@ -30,9 +30,8 @@ namespace Agenty.AgentCore
         IAgent WithMemory(IAgentMemory memory);
         IAgent WithExecutor(IExecutor executor);
         IAgent WithPlanner(IPlanner? planner);
-        IAgent WithToolRegistry(IToolRegistry toolRegistry);
-        IAgent WithToolExecutor(IToolExecutor toolExecutor);
-        IAgent WithPromptBuilder(PromptBuilder promptBuilder);
+        IAgent WithToolRegistry(ITools toolRegistry);
+        //IAgent WithPromptBuilder(PromptBuilder promptBuilder);
         IAgent WithAgentTools(Type agentToolsType);
     }
 
@@ -43,7 +42,7 @@ namespace Agenty.AgentCore
         string Goal { get; set; }
         IPlan Plan { get; set; }
         IScratchpad Thoughts { get; }
-        IPrompt ChatHistory { get; }
+        ChatHistory ChatHistory { get; }
         void Clear();
     }
 
@@ -57,9 +56,9 @@ namespace Agenty.AgentCore
     }
     public interface IPlanner//takes in ILLMClient, IAgentMemory 
     {
-        Action<IPlan>? OnPlanUpdated { get; set; }
-        Task<IPlan?> GeneratePlan(List<Tool> availableTools = null);
-        Task<IPlan?> RefinePlan(string feedback, List<Tool>? availableTools = null);
+        //Action<IPlan>? OnPlanUpdated { get; set; }
+        //Task<IPlan?> GeneratePlan(List<Tool> availableTools = null);
+        //Task<IPlan?> RefinePlan(string feedback, List<Tool>? availableTools = null);
     }
     public interface IPlan
     {
@@ -149,7 +148,7 @@ namespace Agenty.AgentCore
 
     public interface IExecutor//takes in IPlanner, ILLMClient, IToolExecutor, IAgentMemory
     {
-        Func<ToolCallInfo, Task<string>>? OnToolInvoking { get; set; }
+        Func<Tool, Task<string>>? OnToolInvoking { get; set; }
         Action<string>? OnFinalResponseReady { get; set; }
         Task<string> Execute(string input);
     }

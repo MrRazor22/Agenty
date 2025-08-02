@@ -9,30 +9,6 @@ using System.Threading.Tasks;
 
 namespace Agenty.AgentCore
 {
-    public class BuiltInTools
-    {
-        private readonly Dictionary<MethodInfo, Tool> _toolMap;
-
-        public BuiltInTools(IToolRegistry registry, Type agentTool)
-        {
-            registry.RegisterAllFromType(agentTool);
-            _toolMap = registry.GetAllTools()
-                   .GroupBy(t => t.Function.Method)
-                   .ToDictionary(g => g.Key, g => g.First());
-
-        }
-
-        public Tool Get(Delegate method)
-        {
-            var methodInfo = method.Method;
-            return _toolMap.TryGetValue(methodInfo, out var tool)
-                ? tool
-                : throw new KeyNotFoundException($"No tool registered for method {methodInfo.Name}");
-        }
-
-    }
-
-
     public class AgentTools
     {
 

@@ -1,93 +1,71 @@
 ﻿using System;
+using System.Collections;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Agenty.LLMCore
 {
-    public interface ILLMClient
-    {
-        void Initialize(string url, string apiKey, string modelName);
-        Task<string> GetResponse(IPrompt prompt);
-        IAsyncEnumerable<string> GetStreamingResponse(IPrompt prompt);
-        Task<ToolCallResponse> GetFunctionCallResponse(IPrompt prompt, List<Tool> tools, bool forceToolCall = false);
-        Task<ToolCallResponse> GetFunctionCallResponse(IPrompt prompt, bool forceToolCall = false, params Tool[] tools);
-        Task<JsonObject> GetStructuredResponse(IPrompt prompt, JsonObject responseFormat);
-    }
-
-    public interface IToolRegistry
-    {
-        void Register(Delegate func, params string[] tags);
-        void RegisterAll(List<Delegate> funcs);
-        void RegisterAll(params Delegate[] funcs);
-        void RegisterAllFromType(Type type);
-
-        List<Tool> GetRegisteredTools();
-        List<Tool> GetAllTools();
-        List<Tool> GetToolsByTag(string tag);
-        Tool CreateToolFromDelegate(Delegate func);
-    }
-
-
-    public interface IToolExecutor
-    {
-        string? InvokeTool(ToolCallInfo toolCall);
-        T? InvokeTypedTool<T>(ToolCallInfo toolCall);
-    }
-
-    public class ToolCallResponse
-    {
-        public string? AssistantMessage { get; set; } // non-null if no tool call
-        public List<ToolCallInfo> ToolCalls { get; set; } = new();
-    }
-
-
-    public class Tool
-    {
-        public string Name { get; set; }
-        public string Description { get; set; }
-        public JsonObject ParameterSchema { get; set; }
-        public List<string> Tags { get; set; } = new();
-
-        [JsonIgnore]
-        public Delegate? Function { get; set; }
-
-        public override string ToString()
-        {
-            return $"'[{Name}]' - {Description}";
-        }
-    }
-
-    public class ToolCallInfo
-    {
-        public string Id { get; set; }
-        public string Name { get; set; }
-        public JsonObject Parameters { get; set; }
-
-        public override string ToString()
-        {
-            var args = Parameters?.Select(kv => $"{kv.Key}: {kv.Value}") ?? Enumerable.Empty<string>();
-            var argString = string.Join(", ", args);
-            return $"Tool Call Info: '{Name}' (id: {Id}) with {argString}";
-        }
-    }
-
-    public enum ChatRole
+    public enum Role
     {
         System,
         Assistant,
         User,
         Tool
     }
-
-    public record ChatInput(ChatRole Role, string Content, ToolCallInfo? toolCallInfo = null);
-
-    public interface IPrompt
+    public record Chat(Role Role, string Content, Tool? toolCallInfo = null);
+    public class ChatHistory : List<Chat>
     {
-        IEnumerable<ChatInput> Messages { get; }
-        void Add(ChatRole Role, string Content, ToolCallInfo? toolCallInfo = null);
-        void AddMany(params (ChatRole role, string content, ToolCallInfo? toolCallInfo)[] messages);
-        bool RemoveLast(ChatRole? role = null); // optional filter
-        bool RemoveMessage(Predicate<ChatInput> match);
-        void Clear();
+        public ChatHistory() { }
+        public ChatHistory Add(Role role, string content, Tool? tool = null)
+        {
+            Add(new Chat(role, content, tool));
+            return this;
+        }
     }
+
+    public interface ILLMClient
+    {
+        void Initialize(string url, string apiKey, string modelName);
+        Task<string> GetResponse(ChatHistory prompt);
+        IAsyncEnumerable<string> GetStreamingResponse(ChatHistory prompt);
+        Task<Tool> GetToolCallResponse(ChatHistory prompt, ITools tools);
+        Task<Tool> GetToolCallResponse(ChatHistory prompt, params Tool[] tools);
+        Task<JsonObject> GetStructuredResponse(ChatHistory prompt, JsonObject responseFormat);
+    }
+
+    public interface ITools : IEnumerable<Tool>
+    {
+        IReadOnlyList<Tool> RegisteredTools { get; }
+        void Register(params Delegate[] funcs);
+        void RegisterAll(Type type);
+        Tool? Get(Delegate func);
+
+        T? Invoke<T>(Tool toolCall);
+    }
+
+
+    public class Tool
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public JsonObject Parameters { get; set; }
+        public string? AssistantMessage { get; set; } // non-null if no tool call
+        public bool forceToolCall { get; set; } = false;
+
+        [JsonIgnore]
+        public Delegate? Function { get; set; }
+        [JsonIgnore]
+        private object? _toolResponse;
+        public void SetToolResponse<T>(T response) => _toolResponse = response;
+        public T GetToolResponse<T>() => (T)_toolResponse!;
+        public override string ToString()
+        {
+            var args = Parameters?.Select(kv => $"{kv.Key}: {kv.Value}") ?? Enumerable.Empty<string>();
+            var argString = string.Join(", ", args);
+            return $"Tool Info: '{Name}' (id: {Id}) with {argString}";
+        }
+    }
+
 }

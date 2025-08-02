@@ -10,11 +10,9 @@ public class Agent : IAgent
     private IPlanner? _planner;
     private IExecutor? _executor;
     private IAgentMemory? _memory;
-    private IToolRegistry? _toolRegistry;
-    private IToolExecutor? _toolExecutor;
-    private PromptBuilder? _promptBuilder;
+    private ITools? _toolRegistry;
     private IAgentLogger? _logger;
-    private BuiltInTools? _builtInTools;
+    private ITools? _builtInTools;
     private Type _agentToolType = typeof(AgentTools);
 
     public IAgentMemory? Memory => _memory;
@@ -33,16 +31,14 @@ public class Agent : IAgent
 
         _logger ??= new ConsoleLogger();
         _memory ??= new AgentMemory(_logger);
-        _toolRegistry ??= new ToolRegistry();
+        _toolRegistry ??= new Tools();
 
         // Register default or overridden agent tools
-        _toolRegistry.RegisterAllFromType(_agentToolType);
-        _builtInTools ??= new BuiltInTools(_toolRegistry, _agentToolType);
+        _builtInTools ??= new Tools();
 
-        _promptBuilder ??= new StandardPromptBuilder();
-        _toolExecutor ??= new ToolExecutor(_toolRegistry);
-        _planner ??= new Planner(_llm, _memory, _toolExecutor, _toolRegistry, _promptBuilder, _builtInTools, _logger);
-        _executor ??= new Executor(_llm, _planner, _memory, _toolExecutor, _toolRegistry, _promptBuilder, _builtInTools, _logger);
+        //_promptBuilder ??= new StandardPromptBuilder();
+        _planner ??= new Planner(_llm, _memory, _toolRegistry, _builtInTools, _logger);
+        _executor ??= new Executor(_llm, _planner, _memory, _toolRegistry, _builtInTools, _logger);
     }
 
     public Task<string> Execute(string userInput)
@@ -81,14 +77,14 @@ public class Agent : IAgent
 
     public IAgent WithTool(Delegate func, params string[] tags)
     {
-        EnsureToolRegistry().Register(func, tags: tags);
+        EnsureToolRegistry().Register(func);
         return this;
     }
 
     public IAgent WithTools(List<Delegate> tools)
     {
         var registry = EnsureToolRegistry();
-        registry.RegisterAll(tools);
+        registry.Register(tools.ToArray());
         return this;
     }
 
@@ -98,9 +94,9 @@ public class Agent : IAgent
         return this;
     }
 
-    private IToolRegistry EnsureToolRegistry()
+    private ITools EnsureToolRegistry()
     {
-        _toolRegistry ??= new ToolRegistry();
+        _toolRegistry ??= new Tools();
         return _toolRegistry;
     }
 
@@ -122,23 +118,17 @@ public class Agent : IAgent
         return this;
     }
 
-    public IAgent WithToolRegistry(IToolRegistry toolRegistry)
+    public IAgent WithToolRegistry(ITools toolRegistry)
     {
         _toolRegistry = toolRegistry;
         return this;
     }
 
-    public IAgent WithToolExecutor(IToolExecutor toolExecutor)
-    {
-        _toolExecutor = toolExecutor;
-        return this;
-    }
-
-    public IAgent WithPromptBuilder(PromptBuilder promptBuilder)
-    {
-        _promptBuilder = promptBuilder;
-        return this;
-    }
+    //public IAgent WithPromptBuilder(PromptBuilder promptBuilder)
+    //{
+    //    _promptBuilder = promptBuilder;
+    //    return this;
+    //}
 
     #endregion
 }
