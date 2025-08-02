@@ -71,15 +71,15 @@ namespace Agenty.LLMCore
             var result = response.Value;
             var assistantResponse = result.Content.FirstOrDefault()?.Text;
 
-            var firstToolCall = result.ToolCalls.FirstOrDefault();
-            if (firstToolCall == null)
+            var toolCall = result.ToolCalls.FirstOrDefault();
+            if (toolCall == null)
                 return new Tool { AssistantMessage = assistantResponse };
 
             return new Tool
             {
-                Id = firstToolCall.Id,
-                Name = firstToolCall.FunctionName,
-                Parameters = firstToolCall.FunctionArguments.ToObjectFromJson<JsonObject>() ?? new JsonObject(),
+                Id = toolCall.Id,
+                Name = toolCall.FunctionName,
+                Parameters = toolCall.FunctionArguments.ToObjectFromJson<JsonObject>() ?? new JsonObject(),
                 AssistantMessage = assistantResponse
             };
         }
