@@ -69,18 +69,15 @@ namespace Agenty.LLMCore
 
             var response = await _chatClient.CompleteChatAsync(ToChatMessages(prompt), options);
             var result = response.Value;
-            var assistantResponse = result.Content.FirstOrDefault()?.Text;
 
             var toolCall = result.ToolCalls.FirstOrDefault();
-            if (toolCall == null)
-                return new Tool { AssistantMessage = assistantResponse };
+            if (toolCall == null) return new Tool { AssistantMessage = result.Content.FirstOrDefault()?.Text; };
 
             return new Tool
             {
                 Id = toolCall.Id,
                 Name = toolCall.FunctionName,
                 Parameters = toolCall.FunctionArguments.ToObjectFromJson<JsonObject>() ?? new JsonObject(),
-                AssistantMessage = assistantResponse
             };
         }
 
