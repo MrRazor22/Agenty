@@ -58,6 +58,7 @@ namespace Agenty
                 // Call the tool
                 try
                 {
+                    chat.Add(Role.Assistant, tool: toolCall);
                     Console.ForegroundColor = ConsoleColor.Yellow;
                     Console.WriteLine($"🔧 Tool Call → {toolCall}");
                     Console.ResetColor();
@@ -68,7 +69,7 @@ namespace Agenty
                     Console.WriteLine($"📄 Result: {result}");
                     Console.ResetColor();
 
-                    chat.Add(Role.Tool, $"Result from {toolCall.Name}: {result}", toolCall);
+                    chat.Add(Role.Tool, result?.ToString(), toolCall);
                 }
                 catch (Exception ex)
                 {
@@ -115,21 +116,33 @@ namespace Agenty
                 [Description("Currency code to convert to (e.g., INR)")] string to,
                 [Description("Amount to convert")] decimal amount)
             {
-                using var client = new HttpClient();
                 try
                 {
-                    var url = $"https://api.exchangerate.host/convert?from={from}&to={to}&amount={amount}";
-                    var json = client.GetStringAsync(url).Result;
-                    var obj = JsonNode.Parse(json);
-                    var result = obj?["result"]?.ToString();
+                    from = from.ToUpperInvariant();
+                    to = to.ToUpperInvariant();
 
-                    return result != null
-                        ? $"{amount} {from} = {result} {to}"
-                        : "Conversion failed.";
+                    using var client = new HttpClient();
+                    var url = $"https://open.er-api.com/v6/latest/{from}";
+                    var response = client.GetStringAsync(url).GetAwaiter().GetResult();
+                    var json = JsonNode.Parse(response);
+
+                    var success = json?["result"]?.ToString();
+                    if (success != "success")
+                    {
+                        return $"API error: {json?["error-type"] ?? "Unknown error"}";
+                    }
+
+                    var rate = json["rates"]?[to]?.GetValue<decimal?>();
+
+                    if (rate == null)
+                        return $"Currency '{to}' not found in rates.";
+
+                    var converted = amount * rate.Value;
+                    return $"{amount} {from} = {converted:F2} {to}";
                 }
-                catch
+                catch (Exception ex)
                 {
-                    return "Currency conversion API failed.";
+                    return $"Currency conversion failed: {ex.Message}";
                 }
             }
         }

@@ -1,6 +1,7 @@
 ﻿using OpenAI;
 using OpenAI.Chat;
 using System.ClientModel;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -71,14 +72,41 @@ namespace Agenty.LLMCore
             var result = response.Value;
 
             var toolCall = result.ToolCalls.FirstOrDefault();
-            if (toolCall == null) return new Tool { AssistantMessage = result.Content.FirstOrDefault()?.Text };
+            string? content = result.Content.FirstOrDefault()?.Text;
 
-            return new Tool
+            if (toolCall != null && tools.Contains(toolCall.FunctionName)) return new Tool
             {
-                Id = toolCall.Id,
+                Id = toolCall!.Id ?? Guid.NewGuid().ToString(),
                 Name = toolCall.FunctionName,
                 Parameters = toolCall.FunctionArguments.ToObjectFromJson<JsonObject>() ?? new JsonObject(),
             };
+
+            if (!string.IsNullOrEmpty(content))
+            {
+                try
+                {
+                    if (LooksLikeStructuredContent(content))
+                    {
+                        var structured = await GetStructuredResponse(new ChatHistory().Add(Role.User, "Return the tool call here" + content), tools.GetResponseFormatSchema());
+                        return new Tool
+                        {
+                            Id = Guid.NewGuid().ToString(),
+                            Name = structured["name"]?.ToString() ?? "",
+                            Parameters = structured["arguments"]?.AsObject() ?? new JsonObject(),
+                        };
+                    }
+                }
+                catch { }
+            }
+            return new Tool { AssistantMessage = content };
+
+        }
+
+        bool LooksLikeStructuredContent(string? content)
+        {
+            return !string.IsNullOrWhiteSpace(content)
+                   && content.Contains("\"name\"")     // crude check
+                   && content.Contains("\"arguments\""); // helps reduce hallucinated calls
         }
 
         public async Task<JsonObject> GetStructuredResponse(ChatHistory prompt, JsonObject responseFormat)
@@ -99,8 +127,12 @@ namespace Agenty.LLMCore
 
         private IEnumerable<ChatMessage> ToChatMessages(ChatHistory prompt)
         {
-            foreach (var msg in prompt)
+            var list = prompt.ToList();
+            for (int i = 0; i < list.Count; i++)
             {
+                var msg = list[i];
+                bool isLast = i == list.Count - 1;
+
                 yield return msg.Role switch
                 {
                     Role.System => ChatMessage.CreateSystemMessage(msg.Content),
@@ -109,20 +141,27 @@ namespace Agenty.LLMCore
                         ChatMessage.CreateAssistantMessage(
                             toolCalls: new[]
                             {
-                                ChatToolCall.CreateFunctionToolCall(
-                                    id: msg.toolCallInfo.Id,
-                                    functionName: msg.toolCallInfo.Name,
-                                    functionArguments: BinaryData.FromObjectAsJson(msg.toolCallInfo.Parameters))
+                        ChatToolCall.CreateFunctionToolCall(
+                            id: msg.toolCallInfo.Id,
+                            functionName: msg.toolCallInfo.Name,
+                            functionArguments: BinaryData.FromObjectAsJson(msg.toolCallInfo.Parameters))
                             }),
-                    Role.Assistant => ChatMessage.CreateAssistantMessage(msg.Content),
+                    Role.Assistant => string.IsNullOrWhiteSpace(msg.Content)
+                        ? (isLast
+                            ? throw new InvalidOperationException("Assistant message content cannot be null or empty.")
+                            : ChatMessage.CreateAssistantMessage(string.Empty))
+                        : ChatMessage.CreateAssistantMessage(msg.Content),
                     Role.Tool when msg.toolCallInfo is not null =>
                         ChatMessage.CreateToolMessage(msg.toolCallInfo.Id, msg.Content),
                     Role.Tool =>
-                        throw new InvalidOperationException("ToolCallId required for tool message."),
+                        isLast
+                            ? throw new InvalidOperationException("ToolCallInfo required for tool message.")
+                            : ChatMessage.CreateToolMessage("unknown", msg.Content ?? string.Empty),
                     _ => throw new InvalidOperationException("Invalid message role.")
                 };
             }
         }
+
     }
 }
 

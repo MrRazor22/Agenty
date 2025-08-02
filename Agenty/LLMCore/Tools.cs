@@ -57,6 +57,8 @@ public class Tools(IEnumerable<Tool> tools = null) : ITools
         var method = func.Method;
         return _registeredTools.FirstOrDefault(t => t.Function?.Method == method);
     }
+    public bool Contains(string toolName) => _registeredTools.Any(t =>
+            t.Name.Equals(toolName, StringComparison.OrdinalIgnoreCase));
 
     private Tool CreateToolFromDelegate(Delegate func)
     {
@@ -211,4 +213,52 @@ public class Tools(IEnumerable<Tool> tools = null) : ITools
         if (type == typeof(float) || type == typeof(double) || type == typeof(decimal)) return "number";
         return "object";
     }
+    public JsonObject GetResponseFormatSchema()
+    {
+        var enumArray = new JsonArray();
+        foreach (var t in _registeredTools)
+        {
+            enumArray.Add(JsonValue.Create(t.Name));
+        }
+
+        var oneOfArray = new JsonArray();
+        foreach (var t in _registeredTools)
+        {
+            var parameters = t.Parameters != null
+                ? CloneJsonObject(t.Parameters)
+                : new JsonObject();
+
+            oneOfArray.Add(parameters);
+        }
+
+        return new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["name"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["enum"] = enumArray
+                },
+                ["arguments"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["oneOf"] = oneOfArray
+                }
+            },
+            ["required"] = new JsonArray
+        {
+            JsonValue.Create("name"),
+            JsonValue.Create("arguments")
+        }
+        };
+    }
+
+    private JsonObject CloneJsonObject(JsonObject original)
+    {
+        return JsonNode.Parse(original.ToJsonString())!.AsObject();
+    }
+
+
 }
