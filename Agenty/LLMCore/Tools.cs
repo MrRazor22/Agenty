@@ -213,7 +213,7 @@ public class Tools(IEnumerable<Tool> tools = null) : ITools
         if (type == typeof(float) || type == typeof(double) || type == typeof(decimal)) return "number";
         return "object";
     }
-    public JsonObject GetResponseFormatSchema()
+    public JsonObject GetToolsSchema()
     {
         var enumArray = new JsonArray();
         foreach (var t in _registeredTools)

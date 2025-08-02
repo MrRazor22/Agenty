@@ -87,7 +87,7 @@ namespace Agenty.LLMCore
                 {
                     if (LooksLikeStructuredContent(content))
                     {
-                        var structured = await GetStructuredResponse(new ChatHistory().Add(Role.User, "Return the tool call here" + content), tools.GetResponseFormatSchema());
+                        var structured = await GetStructuredResponse(new ChatHistory().Add(Role.User, "Return the tool call here" + content), tools.GetToolsSchema());
                         return new Tool
                         {
                             Id = Guid.NewGuid().ToString(),

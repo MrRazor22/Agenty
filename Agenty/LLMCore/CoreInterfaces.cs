@@ -34,7 +34,7 @@ namespace Agenty.LLMCore
         void RegisterAll(Type type);
         Tool? Get(Delegate func);
         bool Contains(string toolName);
-        JsonObject GetResponseFormatSchema();
+        JsonObject GetToolsSchema();
         T? Invoke<T>(Tool toolCall);
     }
 
