@@ -20,7 +20,7 @@ namespace Agenty
             tools.Register(UserTools.WikiSummary, UserTools.CurrencyConverter);
 
             var chat = new ChatHistory();
-            chat.Add(Role.System, "\"You are a helpful assistant. When deciding to use a tool, always ensure it directly aligns with the user's request. If no tool is needed, respond directly. Do not hallucinate tool calls.\"\r\nIf the user’s request involves multiple steps, break it down and call tools as needed in sequence.If a user request involves a tool that is not available, inform them gracefully and offer alternative steps. Always clarify what you can do instead.");
+            chat.Add(Role.System, "You are a helpful assistant. When deciding to use a tool, always ensure it directly aligns with the user's request. If no tool is needed, respond directly. Do not hallucinate tool calls. If the user’s request involves multiple steps, break it down and call tools as needed in sequence. If a user request involves a tool that is not available, inform them gracefully and offer alternative steps. Always clarify what you can do instead.");
 
             Console.WriteLine("🤖 Welcome to Agenty ChatBot! Type 'exit' to quit.\n");
 
@@ -35,6 +35,7 @@ namespace Agenty
                     break;
 
                 chat.Add(Role.User, input);
+
                 Tool toolCall;
                 try
                 {
@@ -45,55 +46,77 @@ namespace Agenty
                     Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine($"❌ Error fetching tool call: {ex.Message}");
                     Console.ResetColor();
-                    break;
+                    continue;
                 }
 
-                // Print raw assistant message, if any
+                await HandleToolAndChain(toolCall, chat, tools, llm);
+            }
+
+            Console.WriteLine("👋 Exiting Agenty ChatBot.");
+        }
+        private static async Task HandleToolAndChain(Tool toolCall, ChatHistory chat, ITools tools, ILLMClient llm)
+        {
+            while (true)
+            {
+                // If assistant has something to say
                 if (!string.IsNullOrWhiteSpace(toolCall.AssistantMessage))
                 {
                     Console.ForegroundColor = ConsoleColor.Green;
                     Console.WriteLine($"🤖 LLM: {toolCall.AssistantMessage.Trim()}");
                     Console.ResetColor();
                     chat.Add(Role.Assistant, toolCall.AssistantMessage);
+
+                    // If no tool is to be invoked, we are done
+                    if (string.IsNullOrWhiteSpace(toolCall.Name))
+                        return;
                 }
 
-                // Execute tool
+                // Tool call present, execute
+                if (!string.IsNullOrWhiteSpace(toolCall.Name))
+                {
+                    chat.Add(Role.Assistant, tool: toolCall);
+
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine($"🔧 Tool Call → {toolCall}");
+                    Console.ResetColor();
+
+                    object? result;
+                    try
+                    {
+                        result = tools.Invoke<object>(toolCall);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine($"⚠️ Tool invocation failed: {ex.Message}");
+                        Console.ResetColor();
+                        return;
+                    }
+
+                    Console.ForegroundColor = ConsoleColor.White;
+                    Console.WriteLine($"📄 Tool Result: {result}");
+                    Console.ResetColor();
+
+                    chat.Add(Role.Tool, result?.ToString(), toolCall);
+                }
+
+                // Try next tool or assistant step
                 try
                 {
-                    if (!string.IsNullOrWhiteSpace(toolCall.Name))
-                    {
-                        chat.Add(Role.Assistant, tool: toolCall);
-                        Console.ForegroundColor = ConsoleColor.Yellow;
-                        Console.WriteLine($"🔧 Tool Call → {toolCall}");
-                        Console.ResetColor();
-
-                        object? result = tools.Invoke<object>(toolCall);
-
-                        Console.ForegroundColor = ConsoleColor.White;
-                        Console.WriteLine($"📄 Tool Result: {result}");
-                        Console.ResetColor();
-
-                        chat.Add(Role.Tool, result?.ToString(), toolCall);
-
-                        var response = await llm.GetResponse(chat);
-                        Console.ForegroundColor = ConsoleColor.Green;
-                        Console.WriteLine($"🤖 LLM: {response}");
-                        Console.ResetColor();
-                        chat.Add(Role.Assistant, response);
-                    }
+                    toolCall = await llm.GetToolCallResponse(chat, tools);
                 }
                 catch (Exception ex)
                 {
                     Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine("⚠️ Tool invocation failed: " + ex.Message);
+                    Console.WriteLine($"❌ Error fetching next step: {ex.Message}");
                     Console.ResetColor();
-                    break;
+                    return;
                 }
 
-
+                // If no tool name or message, done
+                if (string.IsNullOrWhiteSpace(toolCall.Name) && string.IsNullOrWhiteSpace(toolCall.AssistantMessage))
+                    return;
             }
-
-            Console.WriteLine("👋 Exiting Agenty ChatBot.");
         }
 
         static class UserTools
