@@ -52,7 +52,7 @@ namespace Agenty.LLMCore
         public Task<Tool> GetToolCallResponse(ChatHistory prompt, params Tool[] tools)
             => ProcessToolCall(prompt, new Tools(tools));
 
-        public async Task<Tool> ProcessToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false, int maxRetries = 1)
+        public async Task<Tool> ProcessToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false, int maxRetries = 2)
         {
             if (tools == null || !tools.Any())
                 throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
@@ -64,23 +64,20 @@ namespace Agenty.LLMCore
                     BinaryData.FromString(tool.Parameters.ToJsonString())))
                 .ToList();
 
-            ChatCompletionOptions options = new();
+            ChatCompletionOptions options = new() { ToolChoice = forceToolCall ? ChatToolChoice.CreateRequiredChoice() : ChatToolChoice.CreateAutoChoice() };
             chatTools.ForEach(t => options.Tools.Add(t));
-            options.ToolChoice = forceToolCall
-                ? ChatToolChoice.CreateRequiredChoice()
-                : ChatToolChoice.CreateAutoChoice();
 
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
                 var response = await _chatClient.CompleteChatAsync(ToChatMessages(prompt), options);
                 var result = response.Value;
 
-                var toolCall = result.ToolCalls.FirstOrDefault();
-                string? content = result.Content.FirstOrDefault()?.Text;
+                var toolCall = result.ToolCalls?.FirstOrDefault();
+                string? content = result.Content?.FirstOrDefault()?.Text;
 
                 if (toolCall != null)
                 {
-                    if (tools.Contains(toolCall.FunctionName))
+                    if (tools.Any(t => t.Name == toolCall.FunctionName))
                     {
                         return new Tool
                         {
@@ -95,37 +92,65 @@ namespace Agenty.LLMCore
                         continue;
                     }
                 }
-
-                if (!string.IsNullOrEmpty(content))
+                else if (string.IsNullOrWhiteSpace(content) && attempt < maxRetries)
+                {
+                    prompt.Add(Role.Assistant, "Response is not a valid tool call or at least a non-empty message.");
+                    continue;
+                }
+                else
                 {
                     try
                     {
-                        if (LooksLikeStructuredContent(content))
+                        if (content!.Contains("\"name\"") && content.Contains("\"arguments\""))     // crude check  // helps reduce hallucinated calls
                         {
-                            var structured = await GetStructuredResponse(new ChatHistory().Add(Role.User, content), tools.GetToolsSchema());
-                            return new Tool
+                            for (int structuredAttempt = 0; structuredAttempt <= maxRetries; structuredAttempt++)
                             {
-                                Id = Guid.NewGuid().ToString(),
-                                Name = structured["name"]?.ToString() ?? "",
-                                Parameters = structured["arguments"]?.AsObject() ?? new JsonObject(),
-                            };
+                                var structured = await GetStructuredResponse(new ChatHistory().Add(Role.Assistant, content), tools.GetToolsSchema());
+                                string name = structured["name"]?.ToString() ?? "";
+                                JsonObject? arguments = structured["arguments"]?.AsObject();
+                                string? message = structured["message"]?.ToString();
+
+                                // If tool name and args present, return as tool
+                                if (!string.IsNullOrWhiteSpace(name) && arguments != null)
+                                {
+                                    if (tools.Any(t => t.Name == name))
+                                    {
+                                        return new Tool
+                                        {
+                                            Id = Guid.NewGuid().ToString(),
+                                            Name = name,
+                                            Parameters = arguments,
+                                            AssistantMessage = message
+                                        };
+                                    }
+                                    else if (structuredAttempt < maxRetries)
+                                    {
+                                        prompt.Add(Role.Assistant, $"The function `{toolCall.FunctionName}` is not available. Please choose a valid function. or return empty null for tool name and arguments");
+                                        continue;
+                                    }
+                                }
+
+                                // If no tool, but assistant gave a message
+                                if (!string.IsNullOrWhiteSpace(message) && string.IsNullOrWhiteSpace(name) && arguments == null)
+                                {
+                                    return new Tool
+                                    {
+                                        AssistantMessage = message
+                                    };
+                                }
+                            }
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Failed to parse structured response - {ex}"); ;
+                    }
                 }
 
                 return new Tool { AssistantMessage = content };
             }
 
             return new Tool { AssistantMessage = "Failed to generate a valid tool call after retry." };
-        }
-
-
-        bool LooksLikeStructuredContent(string? content)
-        {
-            return !string.IsNullOrWhiteSpace(content)
-                   && content.Contains("\"name\"")     // crude check
-                   && content.Contains("\"arguments\""); // helps reduce hallucinated calls
         }
 
         public async Task<JsonObject> GetStructuredResponse(ChatHistory prompt, JsonObject responseFormat)

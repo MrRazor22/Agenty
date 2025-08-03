@@ -52,24 +52,27 @@ namespace Agenty
                     Console.WriteLine($"🤖 LLM: {toolCall.AssistantMessage.Trim()}");
                     Console.ResetColor();
                     chat.Add(Role.Assistant, toolCall.AssistantMessage);
-                    continue;
+                    //continue;
                 }
 
                 // Call the tool
                 try
                 {
-                    chat.Add(Role.Assistant, tool: toolCall);
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine($"🔧 Tool Call → {toolCall}");
-                    Console.ResetColor();
+                    if (!string.IsNullOrWhiteSpace(toolCall.Name))
+                    {
+                        chat.Add(Role.Assistant, tool: toolCall);
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine($"🔧 Tool Call → {toolCall}");
+                        Console.ResetColor();
 
-                    object? result = tools.Invoke<object>(toolCall);
+                        object? result = tools.Invoke<object>(toolCall);
 
-                    Console.ForegroundColor = ConsoleColor.White;
-                    Console.WriteLine($"📄 Result: {result}");
-                    Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.White;
+                        Console.WriteLine($"📄 Result: {result}");
+                        Console.ResetColor();
 
-                    chat.Add(Role.Tool, result?.ToString(), toolCall);
+                        chat.Add(Role.Tool, result?.ToString(), toolCall);
+                    }
                 }
                 catch (Exception ex)
                 {

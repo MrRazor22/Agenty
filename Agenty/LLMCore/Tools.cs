@@ -241,8 +241,13 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
                     JsonNode.Parse(t.Parameters?.ToJsonString() ?? "{}")!.AsObject()
                 ).ToArray()
             )
+            },
+            ["message"] = new JsonObject
+            {
+                ["type"] = "string",
+                ["description"] = "Optional message from the assistant to show before or along with tool call"
             }
         },
-        ["required"] = new JsonArray { "name", "arguments" }
+        ["required"] = new JsonArray { "name", "arguments", "message" }
     };
 }
