@@ -52,7 +52,7 @@ namespace Agenty.LLMCore
         public Task<Tool> GetToolCallResponse(ChatHistory prompt, params Tool[] tools)
             => ProcessToolCall(prompt, new Tools(tools));
 
-        public async Task<Tool> ProcessToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false, int maxRetries = 3)
+        private async Task<Tool> ProcessToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false, int maxRetries = 3)
         {
             if (tools == null || !tools.Any())
                 throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
