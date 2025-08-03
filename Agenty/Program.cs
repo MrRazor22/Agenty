@@ -16,11 +16,12 @@ namespace Agenty
             var llm = new LLMCore.OpenAIClient();
             llm.Initialize("http://127.0.0.1:1234/v1", "lmstudio", "any_model");
 
-            // Register tools
             ITools tools = new Tools();
             tools.Register(UserTools.WikiSummary, UserTools.CurrencyConverter);
 
             var chat = new ChatHistory();
+            chat.Add(Role.System, "\"You are a helpful assistant. When deciding to use a tool, always ensure it directly aligns with the user's request. If no tool is needed, respond directly. Do not hallucinate tool calls.\"\r\nIf the user’s request involves multiple steps, break it down and call tools as needed in sequence.If a user request involves a tool that is not available, inform them gracefully and offer alternative steps. Always clarify what you can do instead.");
+
             Console.WriteLine("🤖 Welcome to Agenty ChatBot! Type 'exit' to quit.\n");
 
             while (true)
@@ -34,7 +35,6 @@ namespace Agenty
                     break;
 
                 chat.Add(Role.User, input);
-
                 Tool toolCall;
                 try
                 {
@@ -42,20 +42,22 @@ namespace Agenty
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"❌ Error fetching tool response: {ex.Message}");
-                    continue;
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"❌ Error fetching tool call: {ex.Message}");
+                    Console.ResetColor();
+                    break;
                 }
 
+                // Print raw assistant message, if any
                 if (!string.IsNullOrWhiteSpace(toolCall.AssistantMessage))
                 {
                     Console.ForegroundColor = ConsoleColor.Green;
                     Console.WriteLine($"🤖 LLM: {toolCall.AssistantMessage.Trim()}");
                     Console.ResetColor();
                     chat.Add(Role.Assistant, toolCall.AssistantMessage);
-                    //continue;
                 }
 
-                // Call the tool
+                // Execute tool
                 try
                 {
                     if (!string.IsNullOrWhiteSpace(toolCall.Name))
@@ -68,10 +70,16 @@ namespace Agenty
                         object? result = tools.Invoke<object>(toolCall);
 
                         Console.ForegroundColor = ConsoleColor.White;
-                        Console.WriteLine($"📄 Result: {result}");
+                        Console.WriteLine($"📄 Tool Result: {result}");
                         Console.ResetColor();
 
                         chat.Add(Role.Tool, result?.ToString(), toolCall);
+
+                        var response = await llm.GetResponse(chat);
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine($"🤖 LLM: {response}");
+                        Console.ResetColor();
+                        chat.Add(Role.Assistant, response);
                     }
                 }
                 catch (Exception ex)
@@ -79,7 +87,10 @@ namespace Agenty
                     Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine("⚠️ Tool invocation failed: " + ex.Message);
                     Console.ResetColor();
+                    break;
                 }
+
+
             }
 
             Console.WriteLine("👋 Exiting Agenty ChatBot.");

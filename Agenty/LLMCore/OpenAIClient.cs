@@ -52,7 +52,7 @@ namespace Agenty.LLMCore
         public Task<Tool> GetToolCallResponse(ChatHistory prompt, params Tool[] tools)
             => ProcessToolCall(prompt, new Tools(tools));
 
-        public async Task<Tool> ProcessToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false, int maxRetries = 2)
+        public async Task<Tool> ProcessToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false, int maxRetries = 3)
         {
             if (tools == null || !tools.Any())
                 throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
@@ -94,7 +94,7 @@ namespace Agenty.LLMCore
                 }
                 else if (string.IsNullOrWhiteSpace(content) && attempt < maxRetries)
                 {
-                    prompt.Add(Role.Assistant, "Response is not a valid tool call or at least a non-empty message.");
+                    prompt.Add(Role.Assistant, "Please respond with a valid tool call or a message.");
                     continue;
                 }
                 else
@@ -125,7 +125,7 @@ namespace Agenty.LLMCore
                                     }
                                     else if (structuredAttempt < maxRetries)
                                     {
-                                        prompt.Add(Role.Assistant, $"The function `{toolCall.FunctionName}` is not available. Please choose a valid function. or return empty null for tool name and arguments");
+                                        prompt.Add(Role.Assistant, $"The function `{toolCall.FunctionName}` is not available. Please choose a valid function or return message");
                                         continue;
                                     }
                                 }
