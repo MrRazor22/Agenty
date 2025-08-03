@@ -52,7 +52,7 @@ namespace Agenty.LLMCore
         public Task<Tool> GetToolCallResponse(ChatHistory prompt, params Tool[] tools)
             => ProcessToolCall(prompt, new Tools(tools));
 
-        public async Task<Tool> ProcessToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false)
+        public async Task<Tool> ProcessToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false, int maxRetries = 1)
         {
             if (tools == null || !tools.Any())
                 throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
@@ -66,42 +66,60 @@ namespace Agenty.LLMCore
 
             ChatCompletionOptions options = new();
             chatTools.ForEach(t => options.Tools.Add(t));
-            if (forceToolCall) options.ToolChoice = ChatToolChoice.CreateRequiredChoice();
-            else options.ToolChoice = ChatToolChoice.CreateAutoChoice();
+            options.ToolChoice = forceToolCall
+                ? ChatToolChoice.CreateRequiredChoice()
+                : ChatToolChoice.CreateAutoChoice();
 
-            var response = await _chatClient.CompleteChatAsync(ToChatMessages(prompt), options);
-            var result = response.Value;
-
-            var toolCall = result.ToolCalls.FirstOrDefault();
-            string? content = result.Content.FirstOrDefault()?.Text;
-
-            if (toolCall != null && tools.Contains(toolCall.FunctionName)) return new Tool
+            for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
-                Id = toolCall!.Id ?? Guid.NewGuid().ToString(),
-                Name = toolCall.FunctionName,
-                Parameters = toolCall.FunctionArguments.ToObjectFromJson<JsonObject>() ?? new JsonObject(),
-            };
+                var response = await _chatClient.CompleteChatAsync(ToChatMessages(prompt), options);
+                var result = response.Value;
 
-            if (!string.IsNullOrEmpty(content))
-            {
-                try
+                var toolCall = result.ToolCalls.FirstOrDefault();
+                string? content = result.Content.FirstOrDefault()?.Text;
+
+                if (toolCall != null)
                 {
-                    if (LooksLikeStructuredContent(content))
+                    if (tools.Contains(toolCall.FunctionName))
                     {
-                        var structured = await GetStructuredResponse(new ChatHistory().Add(Role.User, "Return the tool call here" + content), tools.GetToolsSchema());
                         return new Tool
                         {
-                            Id = Guid.NewGuid().ToString(),
-                            Name = structured["name"]?.ToString() ?? "",
-                            Parameters = structured["arguments"]?.AsObject() ?? new JsonObject(),
+                            Id = toolCall.Id ?? Guid.NewGuid().ToString(),
+                            Name = toolCall.FunctionName,
+                            Parameters = toolCall.FunctionArguments.ToObjectFromJson<JsonObject>() ?? new JsonObject(),
                         };
                     }
+                    else if (attempt < maxRetries)
+                    {
+                        prompt.Add(Role.Assistant, $"The function `{toolCall.FunctionName}` is not available. Please choose a valid function.");
+                        continue;
+                    }
                 }
-                catch { }
-            }
-            return new Tool { AssistantMessage = content };
 
+                if (!string.IsNullOrEmpty(content))
+                {
+                    try
+                    {
+                        if (LooksLikeStructuredContent(content))
+                        {
+                            var structured = await GetStructuredResponse(new ChatHistory().Add(Role.User, content), tools.GetToolsSchema());
+                            return new Tool
+                            {
+                                Id = Guid.NewGuid().ToString(),
+                                Name = structured["name"]?.ToString() ?? "",
+                                Parameters = structured["arguments"]?.AsObject() ?? new JsonObject(),
+                            };
+                        }
+                    }
+                    catch { }
+                }
+
+                return new Tool { AssistantMessage = content };
+            }
+
+            return new Tool { AssistantMessage = "Failed to generate a valid tool call after retry." };
         }
+
 
         bool LooksLikeStructuredContent(string? content)
         {
