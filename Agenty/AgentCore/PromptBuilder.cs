@@ -29,7 +29,7 @@ namespace Agenty.AgentCore
             return new ChatHistory()
                 .Add(Role.User, memory.Goal)
                 .Add(Role.User, memory.Plan.ToString())
-                .Add(Role.User, memory.Thoughts.ToString())
+                .Add(Role.User, memory.Thoughts.ToString());
         }
     }
 }

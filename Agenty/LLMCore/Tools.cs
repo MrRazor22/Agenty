@@ -157,19 +157,22 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
         };
     }
 
-    public T? Invoke<T>(Tool toolCall)
+    public async Task<T?> Invoke<T>(Tool toolCall)
     {
         if (toolCall == null) throw new ArgumentNullException(nameof(toolCall));
 
         var tool = _registeredTools.FirstOrDefault(t => t.Name.Equals(toolCall.Name, StringComparison.OrdinalIgnoreCase));
-        if (tool?.Function == null) throw new InvalidOperationException($"Tool '{toolCall.Name}' not registered or has no function.");
+        if (tool?.Function == null)
+            throw new InvalidOperationException($"Tool '{toolCall.Name}' not registered or has no function.");
 
         var func = tool.Function;
         var method = func.Method;
         var methodParams = method.GetParameters();
         var argsObj = toolCall.Parameters ?? throw new ArgumentException("ToolCallInfo.Parameters is null");
 
-        if (methodParams.Length == 1 && !Util.IsSimpleType(methodParams[0].ParameterType) && !argsObj.ContainsKey(methodParams[0].Name!))
+        // Handle case where parameters are passed as a single wrapped object
+        if (methodParams.Length == 1 && !Util.IsSimpleType(methodParams[0].ParameterType) &&
+            !argsObj.ContainsKey(methodParams[0].Name!))
         {
             argsObj = new JsonObject { [methodParams[0].Name!] = argsObj };
         }
@@ -181,8 +184,10 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
             if (!argsObj.TryGetPropertyValue(p.Name!, out var node) || node == null)
             {
                 if (p.HasDefaultValue) paramValues[i] = p.DefaultValue;
-                else if (!p.ParameterType.IsValueType || Nullable.GetUnderlyingType(p.ParameterType) != null) paramValues[i] = null;
-                else throw new ArgumentException($"Missing required parameter '{p.Name}' with no default value.");
+                else if (!p.ParameterType.IsValueType || Nullable.GetUnderlyingType(p.ParameterType) != null)
+                    paramValues[i] = null;
+                else
+                    throw new ArgumentException($"Missing required parameter '{p.Name}' with no default value.");
             }
             else
             {
@@ -194,11 +199,35 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
             }
         }
 
-        var result = func.DynamicInvoke(paramValues);
-        if (result == null) return default;
-        if (result is T typedResult) return typedResult;
-        throw new InvalidCastException($"Expected result of type {typeof(T).Name}, got {result.GetType().Name}.");
+        var returnType = method.ReturnType;
+
+        // Handle async methods (Task or Task<T>)
+        if (typeof(Task).IsAssignableFrom(returnType))
+        {
+            var task = (Task)func.DynamicInvoke(paramValues)!;
+            await task.ConfigureAwait(false);
+
+            if (returnType.IsGenericType && returnType.GetGenericTypeDefinition() == typeof(Task<>))
+            {
+                var resultProperty = returnType.GetProperty("Result");
+                var taskResult = resultProperty!.GetValue(task);
+                return (T?)taskResult;
+            }
+            else
+            {
+                return default; // For Task (non-generic)
+            }
+        }
+        else
+        {
+            // Sync return
+            var result = func.DynamicInvoke(paramValues);
+            if (result == null) return default;
+            if (result is T typedResult) return typedResult;
+            throw new InvalidCastException($"Expected result of type {typeof(T).Name}, got {result.GetType().Name}.");
+        }
     }
+
 
     private static bool IsOptional(PropertyInfo prop)
     {

@@ -13,14 +13,14 @@ namespace Agenty
     {
         public static async Task Main(string[] args)
         {
-            var llm = new LLMCore.OpenAIClient();
+            var llm = new OpenAIClient();
             llm.Initialize("http://127.0.0.1:1234/v1", "lmstudio", "any_model");
 
             ITools tools = new Tools();
-            tools.Register(UserTools.WikiSummary, UserTools.CurrencyConverter);
+            tools.RegisterAll(typeof(UserTools)); // auto-registers static methods in UserTools
 
             var chat = new ChatHistory();
-            chat.Add(Role.System, "You are a helpful assistant. When deciding to use a tool, always ensure it directly aligns with the user's request. If no tool is needed, respond directly. Do not hallucinate tool calls. If the user’s request involves multiple steps, break it down and call tools as needed in sequence. If a user request involves a tool that is not available, inform them gracefully and offer alternative steps. Always clarify what you can do instead.");
+            chat.Add(Role.System, "You are an assistant. Use tools if needed, or respond directly.");
 
             Console.WriteLine("🤖 Welcome to Agenty ChatBot! Type 'exit' to quit.\n");
 
@@ -43,93 +43,91 @@ namespace Agenty
                 }
                 catch (Exception ex)
                 {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine($"❌ Error fetching tool call: {ex.Message}");
-                    Console.ResetColor();
+                    ShowError("Error fetching tool call", ex);
                     continue;
                 }
 
-                await HandleToolAndChain(toolCall, chat, tools, llm);
+                await ExecuteToolChain(toolCall, chat, tools, llm);
             }
 
             Console.WriteLine("👋 Exiting Agenty ChatBot.");
         }
-        private static async Task HandleToolAndChain(Tool toolCall, ChatHistory chat, ITools tools, ILLMClient llm)
+
+        private static async Task ExecuteToolChain(Tool initialCall, ChatHistory chat, ITools tools, ILLMClient llm)
         {
+            Tool current = initialCall;
+
             while (true)
             {
-                // If assistant has something to say
-                if (!string.IsNullOrWhiteSpace(toolCall.AssistantMessage))
+                if (!string.IsNullOrWhiteSpace(current.AssistantMessage))
                 {
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine($"🤖 LLM: {toolCall.AssistantMessage.Trim()}");
-                    Console.ResetColor();
-                    chat.Add(Role.Assistant, toolCall.AssistantMessage);
-
-                    // If no tool is to be invoked, we are done
-                    if (string.IsNullOrWhiteSpace(toolCall.Name))
-                        return;
+                    ShowMessage("🤖", ConsoleColor.Green, current.AssistantMessage.Trim());
+                    chat.Add(Role.Assistant, current.AssistantMessage);
                 }
 
-                // Tool call present, execute
-                if (!string.IsNullOrWhiteSpace(toolCall.Name))
-                {
-                    chat.Add(Role.Assistant, tool: toolCall);
+                if (string.IsNullOrWhiteSpace(current.Name))
+                    return;
 
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine($"🔧 Tool Call → {toolCall}");
-                    Console.ResetColor();
+                chat.Add(Role.Assistant, tool: current);
+                ShowMessage("🔧 Tool Call", ConsoleColor.Yellow, current.ToString());
 
-                    object? result;
-                    try
-                    {
-                        result = tools.Invoke<object>(toolCall);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine($"⚠️ Tool invocation failed: {ex.Message}");
-                        Console.ResetColor();
-                        return;
-                    }
-
-                    Console.ForegroundColor = ConsoleColor.White;
-                    Console.WriteLine($"📄 Tool Result: {result}");
-                    Console.ResetColor();
-
-                    chat.Add(Role.Tool, result?.ToString(), toolCall);
-                }
-
-                // Try next tool or assistant step
+                object? result;
                 try
                 {
-                    toolCall = await llm.GetToolCallResponse(chat, tools);
+                    result = await tools.Invoke<object>(current);
                 }
                 catch (Exception ex)
                 {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine($"❌ Error fetching next step: {ex.Message}");
-                    Console.ResetColor();
+                    ShowError("Tool invocation failed", ex);
                     return;
                 }
 
-                // If no tool name or message, done
-                if (string.IsNullOrWhiteSpace(toolCall.Name) && string.IsNullOrWhiteSpace(toolCall.AssistantMessage))
+                ShowMessage("📄 Tool Result", ConsoleColor.White, result?.ToString());
+                chat.Add(Role.Tool, result?.ToString(), current);
+
+                try
+                {
+                    current = await llm.GetToolCallResponse(chat, tools);
+                }
+                catch (Exception ex)
+                {
+                    ShowError("Error fetching next step", ex);
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(current.AssistantMessage) && !string.IsNullOrWhiteSpace(current.Name))
+                    ShowMessage("🤖", ConsoleColor.Green, $"Calling tool `{current.Name}`...");
+
+                else if (string.IsNullOrWhiteSpace(current.AssistantMessage) &&
+                    string.IsNullOrWhiteSpace(current.Name))
                     return;
             }
         }
 
+        private static void ShowMessage(string label, ConsoleColor color, string? text)
+        {
+            Console.ForegroundColor = color;
+            Console.WriteLine($"{label}: {text}");
+            Console.ResetColor();
+        }
+
+        private static void ShowError(string context, Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"❌ {context}: {ex.Message}");
+            Console.ResetColor();
+        }
         static class UserTools
         {
             [Description("Gets a summary of a Wikipedia topic.")]
-            public static string WikiSummary([Description("Title of the Wikipedia article")] string topic)
+            public static async Task<string> WikiSummary([Description("Title of the Wikipedia article")] string topic)
             {
                 using var client = new HttpClient();
 
                 try
                 {
                     var searchUrl = $"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={Uri.EscapeDataString(topic)}&format=json";
-                    var searchJson = client.GetStringAsync(searchUrl).Result;
+                    var searchJson = await client.GetStringAsync(searchUrl);
                     var searchObj = JsonNode.Parse(searchJson);
                     var title = searchObj?["query"]?["search"]?[0]?["title"]?.ToString();
 

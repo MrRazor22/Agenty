@@ -35,7 +35,7 @@ namespace Agenty.LLMCore
         Tool? Get(Delegate func);
         bool Contains(string toolName);
         JsonObject GetToolsSchema();
-        T? Invoke<T>(Tool toolCall);
+        Task<T?> Invoke<T>(Tool toolCall);
     }
 
 
