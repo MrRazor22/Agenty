@@ -15,6 +15,16 @@ namespace Agenty.LLMCore
             Add(new Chat(role, content, tool));
             return this;
         }
+        public static ChatHistory Clone(ChatHistory original)
+        {
+            var copy = new ChatHistory();
+            foreach (var message in original)
+            {
+                copy.Add(message.Role, message.Content, message.toolCallInfo);
+            }
+            return copy;
+        }
+
     }
 
     public interface ILLMClient
@@ -33,6 +43,7 @@ namespace Agenty.LLMCore
         void Register(params Delegate[] funcs);
         void RegisterAll(Type type);
         Tool? Get(Delegate func);
+        Tool? Get(string toolName);
         bool Contains(string toolName);
         JsonObject GetToolsSchema();
         Task<T?> Invoke<T>(Tool toolCall);

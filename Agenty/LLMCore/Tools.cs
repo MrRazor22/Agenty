@@ -1,5 +1,5 @@
 ﻿// Enhancing Tools class to support Enums, Async, Recursive, Overloads, Metadata, etc.
-using Agenty.Utils;
+using Agenty.Utilities;
 using Microsoft.Win32;
 using System.Collections;
 using System.ComponentModel;
@@ -60,7 +60,8 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
     }
     public bool Contains(string toolName) => _registeredTools.Any(t =>
             t.Name.Equals(toolName, StringComparison.OrdinalIgnoreCase));
-
+    public Tool? Get(string toolName)
+        => _registeredTools.FirstOrDefault(t => t.Name.Equals(toolName, StringComparison.InvariantCultureIgnoreCase));
     private Tool CreateToolFromDelegate(Delegate func)
     {
         var method = func.Method;

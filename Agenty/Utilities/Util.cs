@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Agenty.Utils
+namespace Agenty.Utilities
 {
     public class Util
     {

@@ -5,6 +5,7 @@ using System;
 using System.ComponentModel;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace Agenty
@@ -20,7 +21,7 @@ namespace Agenty
             tools.RegisterAll(typeof(UserTools)); // auto-registers static methods in UserTools
 
             var chat = new ChatHistory();
-            chat.Add(Role.System, "You are an assistant. Use tools if needed, or respond directly.");
+            chat.Add(Role.System, "You are an assistant. Always prefer using relevant tools if needed, or respond directly.");
 
             Console.WriteLine("🤖 Welcome to Agenty ChatBot! Type 'exit' to quit.\n");
 
@@ -61,7 +62,7 @@ namespace Agenty
             {
                 if (!string.IsNullOrWhiteSpace(current.AssistantMessage))
                 {
-                    ShowMessage("🤖", ConsoleColor.Green, current.AssistantMessage.Trim());
+                    ShowMessage("🤖 Answer", ConsoleColor.Green, current.AssistantMessage.Trim());
                     chat.Add(Role.Assistant, current.AssistantMessage);
                 }
 
@@ -180,6 +181,86 @@ namespace Agenty
                     return $"Currency conversion failed: {ex.Message}";
                 }
             }
+
+            [Description("Converts a local time in a given timezone to UTC.")]
+            public static string ConvertToUtc(
+    [Description("Time in local format (yyyy-MM-dd HH:mm)")] string localTime,
+    [Description("Timezone ID (e.g., Asia/Kolkata)")] string timezone)
+            {
+                try
+                {
+                    var tz = TimeZoneInfo.FindSystemTimeZoneById(timezone);
+                    var local = DateTime.Parse(localTime);
+                    var utc = TimeZoneInfo.ConvertTimeToUtc(local, tz);
+                    return $"{localTime} in {timezone} = {utc:yyyy-MM-dd HH:mm} UTC";
+                }
+                catch (Exception ex)
+                {
+                    return $"Conversion failed: {ex.Message}";
+                }
+            }
+
+            [Description("Gets current weather information for a given city using Open-Meteo API.")]
+            public static async Task<string> Weather(
+    [Description("City name (e.g., London, Chennai)")] string city)
+            {
+                try
+                {
+                    using var client = new HttpClient();
+                    var geoUrl = $"https://geocoding-api.open-meteo.com/v1/search?name={Uri.EscapeDataString(city)}&count=1";
+                    var geoResponse = await client.GetStringAsync(geoUrl);
+                    var geo = JsonNode.Parse(geoResponse);
+                    var lat = geo?["results"]?[0]?["latitude"]?.ToString();
+                    var lon = geo?["results"]?[0]?["longitude"]?.ToString();
+
+                    if (lat is null || lon is null)
+                        return "City not found.";
+
+                    var weatherUrl = $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true";
+                    var weatherResponse = await client.GetStringAsync(weatherUrl);
+                    var weather = JsonNode.Parse(weatherResponse);
+                    var temp = weather?["current_weather"]?["temperature"]?.ToString();
+                    var wind = weather?["current_weather"]?["windspeed"]?.ToString();
+
+                    return $"Current weather in {city}: {temp}°C, wind speed {wind} km/h.";
+                }
+                catch
+                {
+                    return "Failed to fetch weather.";
+                }
+            }
+
+            [Description("Evaluates a math expression using MathJS API.")]
+            public static async Task<string> EvaluateMath(
+    [Description("Mathematical expression (e.g., 2+2*5)")] string expression)
+            {
+                try
+                {
+                    using var client = new HttpClient();
+                    var url = $"https://api.mathjs.org/v4/?expr={Uri.EscapeDataString(expression)}";
+                    var result = await client.GetStringAsync(url);
+                    return $"{expression} = {result}";
+                }
+                catch
+                {
+                    return "Failed to evaluate expression.";
+                }
+            }
+
+            [Description("Generates a random integer in the given range.")]
+            public static string RandomInt(
+    [Description("Minimum value (inclusive)")] int min,
+    [Description("Maximum value (inclusive)")] int max)
+            {
+                if (min > max)
+                    return "Min cannot be greater than max.";
+
+                var rng = new Random();
+                var value = rng.Next(min, max + 1);
+                return $"Random number between {min} and {max}: {value}";
+            }
+
+
         }
     }
 }
