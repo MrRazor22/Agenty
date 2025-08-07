@@ -118,8 +118,37 @@ namespace Agenty
             Console.WriteLine($"❌ {context}: {ex.Message}");
             Console.ResetColor();
         }
+        public enum WeatherType
+        {
+            [Description("Clear sky with lots of sunshine.")]
+            Sunny,
+
+            [Description("Clouds covering most of the sky.")]
+            Cloudy,
+
+            [Description("Water droplets falling from the sky.")]
+            Rainy,
+
+            [Description("Frozen crystals falling as snow.")]
+            Snowy
+        }
+
         static class UserTools
         {
+            [Description("Suggests the ideal weather activity to do")]
+            public static string SuggestActivity(
+    [Description("The current weather condition.")] WeatherType currentWeather)
+            {
+                return currentWeather switch
+                {
+                    WeatherType.Sunny => "perfect for outdoor activities",
+                    WeatherType.Cloudy => "mild weather, maybe a walk",
+                    WeatherType.Rainy => "stay indoors, read or relax",
+                    WeatherType.Snowy => "skiing or snow funx",
+                    _ => "Die just kidding"
+                };
+            }
+
             [Description("Gets a summary of a Wikipedia topic.")]
             public static async Task<string> WikiSummary([Description("Title of the Wikipedia article")] string topic)
             {
