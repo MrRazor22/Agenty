@@ -143,45 +143,64 @@ namespace Agenty.LLMCore
         }
         private Tool? TryExtractInlineToolCall(string content, ITools tools)
         {
-            var pattern = @"<(?<tag>[^>\s]*tool[^>\s]*)>\s*(?<json>\{[\s\S]*?\})\s*</\k<tag>>";
-            var matches = Regex.Matches(content, pattern, RegexOptions.Singleline);
+            // Match any tag that includes "tool" and contains a well-formed JSON block
+            var toolTagPattern = @"<(?<tag>\w*tool\w*)>\s*(?<json>\{(?:[^{}]|(?<open>\{)|(?<-open>\}))*?(?(open)(?!))\})\s*</\k<tag>>";
+            var matches = Regex.Matches(content, toolTagPattern, RegexOptions.Singleline | RegexOptions.IgnoreCase);
 
             foreach (Match match in matches)
             {
                 try
                 {
-                    var jsonStr = match.Groups["json"].Value;
+                    string jsonStr = match.Groups["json"].Value.Trim();
                     var json = JsonNode.Parse(jsonStr)?.AsObject();
-                    if (json == null) continue;
-
-                    var name = json["name"]?.ToString();
-                    var args = json["arguments"]?.AsObject();
-
-                    if (string.IsNullOrWhiteSpace(name) || args == null)
+                    if (json == null || !json.ContainsKey("name") || !json.ContainsKey("arguments"))
                         continue;
 
-                    if (tools.Contains(name))
-                    {
-                        var registered = tools.Get(name);
-                        var schema = registered?.Arguments?.AsObject();
-                        if (schema != null && IsValidToolArguments(args, schema))
-                        {
-                            var assistantMessage = content.Replace(match.Value, "").Trim();
+                    string? name = json["name"]?.ToString();
+                    var arguments = json["arguments"]?.AsObject();
+                    if (string.IsNullOrWhiteSpace(name) || arguments == null)
+                        continue;
 
-                            return new Tool
-                            {
-                                Id = Guid.NewGuid().ToString(),
-                                Name = name,
-                                Arguments = args,
-                                AssistantMessage = assistantMessage
-                            };
-                        }
-                    }
+                    if (!tools.Contains(name))
+                        continue;
+
+                    var registeredTool = tools.Get(name);
+                    var expectedSchema = registeredTool?.Arguments?.AsObject();
+                    if (expectedSchema == null || !IsValidToolArguments(arguments, expectedSchema))
+                        continue;
+
+                    // Step 1: Remove all tool-related tags regardless of content inside
+                    var removeAllToolTags = Regex.Replace(
+                        content,
+                        @"<\s*(\w*tool\w*)\s*>[\s\S]*?<\s*/\s*\1\s*>",
+                        "",
+                        RegexOptions.IgnoreCase | RegexOptions.Singleline
+                    );
+
+                    // Step 2: Remove any loose tool JSON blocks outside tags
+                    var looseToolJsonPattern = @"\{\s*""name""\s*:\s*"".+?"",\s*""arguments""\s*:\s*\{[\s\S]*?\}\s*\}";
+                    var cleanedAssistantMessage = Regex.Replace(
+                        removeAllToolTags,
+                        looseToolJsonPattern,
+                        "",
+                        RegexOptions.Singleline
+                    ).Trim();
+
+                    return new Tool
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        Name = name,
+                        Arguments = arguments,
+                        AssistantMessage = cleanedAssistantMessage
+                    };
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Tool parse fail: {ex.Message}");
+                    Console.WriteLine($"Tool parse failed: {ex.Message}");
                 }
+
+                // Only process the first valid tool call
+                break;
             }
 
             return null;
