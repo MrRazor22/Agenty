@@ -57,167 +57,334 @@ namespace Agenty.LLMCore
         public Task<Tool> GetToolCallResponse(ChatHistory prompt, params Tool[] tools)
             => ProcessToolCall(prompt, new Tools(tools));
 
-        private async Task<Tool> ProcessToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false, int maxRetries = 30)
+        //private async Task<Tool> ProcessToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false, int maxRetries = 30)
+        //{
+        //    var intPrompt = ChatHistory.Clone(prompt);
+        //    if (tools == null || !tools.Any())
+        //        throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
+
+        //    List<ChatTool> chatTools = tools!
+        //        .Select(tool => ChatTool.CreateFunctionTool(
+        //            tool.Name,
+        //            tool.Description,
+        //            BinaryData.FromString(tool.Arguments.ToJsonString())))
+        //        .ToList();
+
+        //    ChatCompletionOptions options = new() { ToolChoice = forceToolCall ? ChatToolChoice.CreateRequiredChoice() : ChatToolChoice.CreateAutoChoice() };
+        //    chatTools.ForEach(t => options.Tools.Add(t));
+
+
+        //    string lastContent = null;
+
+        //    for (int attempt = 0; attempt <= maxRetries; attempt++)
+        //    {
+        //        var response = await _chatClient.CompleteChatAsync(ToChatMessages(intPrompt), options);
+        //        var result = response.Value;
+
+        //        var toolCall = result.ToolCalls?.FirstOrDefault();
+        //        string? content = result.Content?.FirstOrDefault()?.Text;
+
+        //        if (!string.IsNullOrWhiteSpace(content) && attempt > 0 && string.Equals(content, lastContent, StringComparison.Ordinal))
+        //        {
+        //            return new Tool { AssistantMessage = content };
+        //        }
+        //        lastContent = content;
+
+        //        if (toolCall != null && tools!.Contains(toolCall.FunctionName))
+        //        {
+        //            var registered = tools.Get(toolCall.FunctionName);
+        //            var input = toolCall.FunctionArguments.ToObjectFromJson<JsonObject>();
+
+        //            if (registered?.Arguments is JsonObject schema && input != null)
+        //            {
+        //                var inputKeys = input.Select(p => p.Key).ToHashSet();
+        //                var schemaKeys = schema["properties"]?.AsObject()?.Select(p => p.Key).ToHashSet() ?? new();
+
+        //                if (schemaKeys.SetEquals(inputKeys))
+        //                {
+        //                    return new Tool
+        //                    {
+        //                        Id = toolCall.Id ?? Guid.NewGuid().ToString(),
+        //                        Name = toolCall.FunctionName,
+        //                        Arguments = input,
+        //                        AssistantMessage = content
+        //                    };
+        //                }
+        //                else if (attempt < maxRetries)
+        //                {
+        //                    intPrompt.Add(Role.System, $"Invalid parameters for `{toolCall.FunctionName}`. Try again with valid parameters {string.Join(", ", schemaKeys)}");
+        //                    continue;
+        //                }
+        //            }
+        //            else if (attempt < maxRetries)
+        //            {
+        //                intPrompt.Add(Role.System, $"The function `{toolCall.FunctionName}` is not available. Available tools: {string.Join(", ", tools!.Select(t => t.Name))}.");
+        //                continue;
+        //            }
+        //        }
+        //        else if (string.IsNullOrWhiteSpace(content) && (attempt < maxRetries))
+        //        {
+        //            intPrompt.Add(Role.System,
+        //                $"The last response was empty or invalid. Please return a valid tool call using one of: {string.Join(", ", tools.Select(t => t.Name))}.");
+        //            continue;
+        //        }
+        //        else if (!string.IsNullOrWhiteSpace(content))
+        //        {
+        //            var pattern = @"(?<json>\{[^{}]*(?:""name""|""arguments"")[\s\S]*?\})";
+        //            var match = Regex.Match(content, pattern, RegexOptions.Singleline);
+        //            if (match.Success)
+        //            {
+        //                try
+        //                {
+        //                    var jsonStr = match.Groups["json"].Value.Trim();
+        //                    if (json != null)
+        //                    {
+        //                        string name = json["name"]?.ToString() ?? "";
+        //                        JsonObject? arguments = json["arguments"]?.AsObject();
+        //                        string? message = json["message"]?.ToString();
+
+        //                        if (!string.IsNullOrWhiteSpace(name) && arguments != null)
+        //                        {
+        //                            if (tools.Contains(name))
+        //                            {
+        //                                var registered = tools.Get(name);
+        //                                var schema = registered?.Arguments?.AsObject();
+
+        //                                if (schema != null)
+        //                                {
+        //                                    var inputKeys = arguments.Select(p => p.Key).ToHashSet();
+        //                                    var schemaKeys = schema["properties"]?.AsObject()?.Select(p => p.Key).ToHashSet() ?? new();
+
+        //                                    if (schemaKeys.SetEquals(inputKeys))
+        //                                    {
+        //                                        return new Tool
+        //                                        {
+        //                                            Id = Guid.NewGuid().ToString(),
+        //                                            Name = name,
+        //                                            Arguments = arguments,
+        //                                            AssistantMessage = message
+        //                                        };
+        //                                    }
+        //                                    else if (attempt < maxRetries)
+        //                                    {
+        //                                        intPrompt.Add(Role.System, $"Invalid parameters for `{arguments}`. Try again with valid parameters {string.Join(", ", schemaKeys)}");
+        //                                        continue;
+        //                                    }
+        //                                }
+        //                            }
+        //                            else if (attempt < maxRetries)
+        //                            {
+        //                                intPrompt.Add(Role.System, $"The function `{name}` is not available. Available tools: {string.Join(", ", tools!.Select(t => t.Name))}.");
+        //                                continue;
+        //                            }
+        //                        }
+        //                        else if (string.IsNullOrWhiteSpace(message) && (attempt < maxRetries))
+        //                        {
+        //                            intPrompt.Add(Role.System,
+        //                                $"The last response was empty or invalid. Please return a valid tool call using one of: {string.Join(", ", tools.Select(t => t.Name))}.");
+        //                            continue;
+        //                        }
+        //                        else if (!string.IsNullOrWhiteSpace(message))
+        //                        {
+        //                            return new Tool
+        //                            {
+        //                                AssistantMessage = message
+        //                            };
+        //                        }
+        //                    }
+        //                }
+        //                catch (Exception ex)
+        //                {
+        //                    Console.WriteLine($"Failed to parse structured response - {ex}");
+        //                }
+        //            }
+        //            else
+        //            {
+        //                return new Tool
+        //                {
+        //                    AssistantMessage = content
+        //                };
+        //            }
+        //        }
+        //    }
+        //    return new Tool { AssistantMessage = "Failed to generate a valid tool call/response after retry." };
+        //}
+
+        public async Task<Tool> ProcessToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false, int maxRetries = 30)
         {
-            var intPrompt = ChatHistory.Clone(prompt);
             if (tools == null || !tools.Any())
                 throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
 
-            List<ChatTool> chatTools = tools!
+            var intPrompt = ChatHistory.Clone(prompt);
+
+            var chatTools = tools
                 .Select(tool => ChatTool.CreateFunctionTool(
                     tool.Name,
                     tool.Description,
-                    BinaryData.FromString(tool.Parameters.ToJsonString())))
+                    BinaryData.FromString(tool.Arguments.ToJsonString())))
                 .ToList();
 
-            ChatCompletionOptions options = new() { ToolChoice = forceToolCall ? ChatToolChoice.CreateRequiredChoice() : ChatToolChoice.CreateAutoChoice() };
+            ChatCompletionOptions options = new()
+            {
+                ToolChoice = forceToolCall
+                    ? ChatToolChoice.CreateRequiredChoice()
+                    : ChatToolChoice.CreateAutoChoice()
+            };
+
             chatTools.ForEach(t => options.Tools.Add(t));
 
-
-            string lastContent = null;
+            string? lastContent = null;
 
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
                 var response = await _chatClient.CompleteChatAsync(ToChatMessages(intPrompt), options);
                 var result = response.Value;
 
-                var toolCall = result.ToolCalls?.FirstOrDefault();
-                string? content = result.Content?.FirstOrDefault()?.Text;
+                var toolCall = TryExtractStructuredToolCall(result, tools);
+                if (toolCall != null)
+                    return toolCall;
 
-                if (!string.IsNullOrWhiteSpace(content) && attempt > 0 && string.Equals(content, lastContent, StringComparison.Ordinal))
+                string? content = result.Content?.FirstOrDefault()?.Text;
+                if (!string.IsNullOrWhiteSpace(content))
                 {
+                    if (attempt > 0 && string.Equals(content, lastContent, StringComparison.Ordinal))
+                        return new Tool { AssistantMessage = content };
+
+                    lastContent = content;
+
+                    var tool = TryExtractInlineToolCall(content, tools);
+                    if (tool != null)
+                        return tool;
+
+                    // If content is not a tool call, return it as a message
                     return new Tool { AssistantMessage = content };
                 }
-                lastContent = content;
 
-                if (toolCall != null && tools!.Contains(toolCall.FunctionName))
+                // Retry: Inject feedback to help model correct itself
+                if (attempt < maxRetries)
                 {
-                    var registered = tools.Get(toolCall.FunctionName);
-                    var input = toolCall.FunctionArguments.ToObjectFromJson<JsonObject>();
-
-                    if (registered?.Parameters is JsonObject schema && input != null)
-                    {
-                        var inputKeys = input.Select(p => p.Key).ToHashSet();
-                        var schemaKeys = schema["properties"]?.AsObject()?.Select(p => p.Key).ToHashSet() ?? new();
-
-                        if (schemaKeys.SetEquals(inputKeys))
-                        {
-                            return new Tool
-                            {
-                                Id = toolCall.Id ?? Guid.NewGuid().ToString(),
-                                Name = toolCall.FunctionName,
-                                Parameters = input,
-                                AssistantMessage = content
-                            };
-                        }
-                        else if (attempt < maxRetries)
-                        {
-                            intPrompt.Add(Role.System, $"Invalid parameters for `{toolCall.FunctionName}`. Try again with valid parameters {string.Join(", ", schemaKeys)}");
-                            continue;
-                        }
-                    }
-                    else if (attempt < maxRetries)
-                    {
-                        intPrompt.Add(Role.System, $"The function `{toolCall.FunctionName}` is not available. Available tools: {string.Join(", ", tools!.Select(t => t.Name))}.");
-                        continue;
-                    }
+                    intPrompt.Add(Role.System, BuildRetryMessage(result, tools));
                 }
-                else if (string.IsNullOrWhiteSpace(content) && (attempt < maxRetries))
+            }
+
+            return new Tool { AssistantMessage = "Failed to generate a valid tool call/response after retry." };
+        }
+
+        private Tool? TryExtractStructuredToolCall(ChatCompletion result, ITools tools)
+        {
+            var toolCall = result?.ToolCalls?.FirstOrDefault();
+            if (toolCall == null || !tools.Contains(toolCall.FunctionName))
+                return null;
+
+            var registered = tools.Get(toolCall.FunctionName);
+            var input = toolCall.FunctionArguments.ToObjectFromJson<JsonObject>();
+
+            if (registered?.Arguments is JsonObject schema && input != null)
+            {
+                if (IsValidToolArguments(input, schema))
                 {
-                    intPrompt.Add(Role.System,
-                        $"The last response was empty or invalid. Please return a valid tool call using one of: {string.Join(", ", tools.Select(t => t.Name))}.");
-                    continue;
+                    return new Tool
+                    {
+                        Id = toolCall.Id ?? Guid.NewGuid().ToString(),
+                        Name = toolCall.FunctionName,
+                        Arguments = input,
+                        AssistantMessage = result?.Content?.FirstOrDefault()?.Text
+                    };
                 }
-                else if (!string.IsNullOrWhiteSpace(content))
+            }
+
+            return null;
+        }
+        private Tool? TryExtractInlineToolCall(string content, ITools tools)
+        {
+            var pattern = @"<(?<tag>[^>\s]*tool[^>\s]*)>\s*(?<json>\{[\s\S]*?\})\s*</\k<tag>>";
+            var match = Regex.Match(content, pattern, RegexOptions.Singleline);
+
+            if (!match.Success)
+                return null;
+
+            try
+            {
+                var json = JsonNode.Parse(match.Groups["json"].Value)?.AsObject();
+                if (json == null) return null;
+
+                var name = json["name"]?.ToString();
+                var args = json["arguments"]?.AsObject();
+
+                if (string.IsNullOrWhiteSpace(name) || args == null)
+                    return null;
+
+                if (tools.Contains(name))
                 {
-                    var pattern = @"(?<json>\{[^{}]*(?:""name""|""arguments"")[\s\S]*?\})";
-                    var match = Regex.Match(content, pattern, RegexOptions.Singleline);
-                    if (match.Success)
+                    var registered = tools.Get(name);
+                    var schema = registered?.Arguments?.AsObject();
+                    if (schema != null && IsValidToolArguments(args, schema))
                     {
-                        try
-                        {
-                            var jsonStr = match.Groups["json"].Value.Trim();
-                            if (string.IsNullOrWhiteSpace(jsonStr) || jsonStr == "{}")
-                            {
-                                if (attempt < maxRetries)
-                                {
-                                    intPrompt.Add(Role.System, $"Empty tool call received. Please provide a valid tool call with name and arguments.");
-                                    continue;
-                                }
-                            }
-                            var json = JsonRepair.RepairAndParse(jsonStr);
-                            if (json != null)
-                            {
-                                string name = json["name"]?.ToString() ?? "";
-                                JsonObject? arguments = json["arguments"]?.AsObject();
-                                string? message = json["message"]?.ToString();
-
-                                if (!string.IsNullOrWhiteSpace(name) && arguments != null)
-                                {
-                                    if (tools.Contains(name))
-                                    {
-                                        var registered = tools.Get(name);
-                                        var schema = registered?.Parameters?.AsObject();
-
-                                        if (schema != null)
-                                        {
-                                            var inputKeys = arguments.Select(p => p.Key).ToHashSet();
-                                            var schemaKeys = schema["properties"]?.AsObject()?.Select(p => p.Key).ToHashSet() ?? new();
-
-                                            if (schemaKeys.SetEquals(inputKeys))
-                                            {
-                                                return new Tool
-                                                {
-                                                    Id = Guid.NewGuid().ToString(),
-                                                    Name = name,
-                                                    Parameters = arguments,
-                                                    AssistantMessage = message
-                                                };
-                                            }
-                                            else if (attempt < maxRetries)
-                                            {
-                                                intPrompt.Add(Role.System, $"Invalid parameters for `{arguments}`. Try again with valid parameters {string.Join(", ", schemaKeys)}");
-                                                continue;
-                                            }
-                                        }
-                                    }
-                                    else if (attempt < maxRetries)
-                                    {
-                                        intPrompt.Add(Role.System, $"The function `{name}` is not available. Available tools: {string.Join(", ", tools!.Select(t => t.Name))}.");
-                                        continue;
-                                    }
-                                }
-                                else if (string.IsNullOrWhiteSpace(message) && (attempt < maxRetries))
-                                {
-                                    intPrompt.Add(Role.System,
-                                        $"The last response was empty or invalid. Please return a valid tool call using one of: {string.Join(", ", tools.Select(t => t.Name))}.");
-                                    continue;
-                                }
-                                else if (!string.IsNullOrWhiteSpace(message))
-                                {
-                                    return new Tool
-                                    {
-                                        AssistantMessage = message
-                                    };
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Failed to parse structured response - {ex}");
-                        }
-                    }
-                    else
-                    {
+                        var assistantMessage = content.Replace(match.Value, "").Trim();
                         return new Tool
                         {
-                            AssistantMessage = content
+                            Id = Guid.NewGuid().ToString(),
+                            Name = name,
+                            Arguments = args,
+                            AssistantMessage = assistantMessage
                         };
                     }
                 }
             }
-            return new Tool { AssistantMessage = "Failed to generate a valid tool call/response after retry." };
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to parse inline tool call: {ex.Message}");
+            }
+
+            return null;
         }
+        private bool IsValidToolArguments(JsonObject input, JsonObject schema)
+        {
+            var inputKeys = input.Select(p => p.Key).ToHashSet();
+            var schemaKeys = schema["properties"]?.AsObject()?.Select(p => p.Key).ToHashSet() ?? new();
+            return schemaKeys.SetEquals(inputKeys);
+        }
+        private string BuildRetryMessage(ChatCompletion result, ITools tools)
+        {
+            var availableTools = string.Join(", ", tools.Select(t => t.Name));
+            return $"The last response was empty or invalid. Please return a valid tool call using one of: {availableTools}.";
+        }
+
+
+
+        public static Tool? ExtractToolCallFromContent(string content)
+        {
+            var pattern = @"<tool_call>\s*(\{[\s\S]*?\})\s*</tool_call>";
+            var match = Regex.Match(content, pattern, RegexOptions.Singleline);
+
+            if (!match.Success)
+                return null;
+
+            var json = match.Groups[1].Value;
+
+            try
+            {
+                var obj = JsonSerializer.Deserialize<JsonObject>(json);
+
+                if (obj != null &&
+                    obj.TryGetPropertyValue("name", out var nameNode) &&
+                    obj.TryGetPropertyValue("arguments", out var argsNode))
+                {
+                    return new Tool
+                    {
+                        Name = nameNode?.ToString(),
+                        Arguments = argsNode as JsonObject ?? new JsonObject()
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Failed to parse tool_call: " + ex.Message);
+            }
+
+            return null;
+        }
+
 
         public async Task<JsonObject> GetStructuredResponse(ChatHistory prompt, JsonObject responseFormat)
         {
@@ -254,7 +421,7 @@ namespace Agenty.LLMCore
                         ChatToolCall.CreateFunctionToolCall(
                             id: msg.toolCallInfo.Id,
                             functionName: msg.toolCallInfo.Name,
-                            functionArguments: BinaryData.FromObjectAsJson(msg.toolCallInfo.Parameters))
+                            functionArguments: BinaryData.FromObjectAsJson(msg.toolCallInfo.Arguments))
                             }),
                     Role.Assistant => string.IsNullOrWhiteSpace(msg.Content)
                         ? (isLast

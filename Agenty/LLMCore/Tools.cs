@@ -90,7 +90,7 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
         {
             Name = method.Name,
             Description = description,
-            Parameters = schema,
+            Arguments = schema,
             Function = func
         };
     }
@@ -169,7 +169,7 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
         var func = tool.Function;
         var method = func.Method;
         var methodParams = method.GetParameters();
-        var argsObj = toolCall.Parameters ?? throw new ArgumentException("ToolCallInfo.Parameters is null");
+        var argsObj = toolCall.Arguments ?? throw new ArgumentException("ToolCallInfo.Parameters is null");
 
         // Handle case where parameters are passed as a single wrapped object
         if (methodParams.Length == 1 && !Util.IsSimpleType(methodParams[0].ParameterType) &&
@@ -268,7 +268,7 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
                 ["oneOf"] = new JsonArray(
                 _registeredTools.Select(t =>
                     // THIS is the deep clone (we get json string of each paramater and get json node basically cloning explicly) to avoid parent reuse error
-                    JsonNode.Parse(t.Parameters?.ToJsonString() ?? "{}")!.AsObject()
+                    JsonNode.Parse(t.Arguments?.ToJsonString() ?? "{}")!.AsObject()
                 ).ToArray()
             )
             },

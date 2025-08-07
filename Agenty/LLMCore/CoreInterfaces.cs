@@ -55,7 +55,7 @@ namespace Agenty.LLMCore
         public string Id { get; set; }
         public string Name { get; set; }
         public string Description { get; set; }
-        public JsonObject Parameters { get; set; }
+        public JsonObject Arguments { get; set; }
 
         [JsonIgnore]
         public string? AssistantMessage { get; set; } // non-null if no tool call
@@ -67,7 +67,7 @@ namespace Agenty.LLMCore
         public Delegate? Function { get; set; }
         public override string ToString()
         {
-            var args = Parameters?.Select(kv => $"{kv.Key}: {kv.Value}") ?? Enumerable.Empty<string>();
+            var args = Arguments?.Select(kv => $"{kv.Key}: {kv.Value}") ?? Enumerable.Empty<string>();
             var argString = string.Join(", ", args);
             return $"Tool Info: '{Name}' (id: {Id}) with {argString}";
         }
