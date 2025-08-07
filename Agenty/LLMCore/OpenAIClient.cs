@@ -298,46 +298,49 @@ namespace Agenty.LLMCore
         private Tool? TryExtractInlineToolCall(string content, ITools tools)
         {
             var pattern = @"<(?<tag>[^>\s]*tool[^>\s]*)>\s*(?<json>\{[\s\S]*?\})\s*</\k<tag>>";
-            var match = Regex.Match(content, pattern, RegexOptions.Singleline);
+            var matches = Regex.Matches(content, pattern, RegexOptions.Singleline);
 
-            if (!match.Success)
-                return null;
-
-            try
+            foreach (Match match in matches)
             {
-                var json = JsonNode.Parse(match.Groups["json"].Value)?.AsObject();
-                if (json == null) return null;
-
-                var name = json["name"]?.ToString();
-                var args = json["arguments"]?.AsObject();
-
-                if (string.IsNullOrWhiteSpace(name) || args == null)
-                    return null;
-
-                if (tools.Contains(name))
+                try
                 {
-                    var registered = tools.Get(name);
-                    var schema = registered?.Arguments?.AsObject();
-                    if (schema != null && IsValidToolArguments(args, schema))
+                    var jsonStr = match.Groups["json"].Value;
+                    var json = JsonNode.Parse(jsonStr)?.AsObject();
+                    if (json == null) continue;
+
+                    var name = json["name"]?.ToString();
+                    var args = json["arguments"]?.AsObject();
+
+                    if (string.IsNullOrWhiteSpace(name) || args == null)
+                        continue;
+
+                    if (tools.Contains(name))
                     {
-                        var assistantMessage = content.Replace(match.Value, "").Trim();
-                        return new Tool
+                        var registered = tools.Get(name);
+                        var schema = registered?.Arguments?.AsObject();
+                        if (schema != null && IsValidToolArguments(args, schema))
                         {
-                            Id = Guid.NewGuid().ToString(),
-                            Name = name,
-                            Arguments = args,
-                            AssistantMessage = assistantMessage
-                        };
+                            var assistantMessage = content.Replace(match.Value, "").Trim();
+
+                            return new Tool
+                            {
+                                Id = Guid.NewGuid().ToString(),
+                                Name = name,
+                                Arguments = args,
+                                AssistantMessage = assistantMessage
+                            };
+                        }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Failed to parse inline tool call: {ex.Message}");
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Tool parse fail: {ex.Message}");
+                }
             }
 
             return null;
         }
+
         private bool IsValidToolArguments(JsonObject input, JsonObject schema)
         {
             var inputKeys = input.Select(p => p.Key).ToHashSet();
@@ -349,42 +352,6 @@ namespace Agenty.LLMCore
             var availableTools = string.Join(", ", tools.Select(t => t.Name));
             return $"The last response was empty or invalid. Please return a valid tool call using one of: {availableTools}.";
         }
-
-
-
-        public static Tool? ExtractToolCallFromContent(string content)
-        {
-            var pattern = @"<tool_call>\s*(\{[\s\S]*?\})\s*</tool_call>";
-            var match = Regex.Match(content, pattern, RegexOptions.Singleline);
-
-            if (!match.Success)
-                return null;
-
-            var json = match.Groups[1].Value;
-
-            try
-            {
-                var obj = JsonSerializer.Deserialize<JsonObject>(json);
-
-                if (obj != null &&
-                    obj.TryGetPropertyValue("name", out var nameNode) &&
-                    obj.TryGetPropertyValue("arguments", out var argsNode))
-                {
-                    return new Tool
-                    {
-                        Name = nameNode?.ToString(),
-                        Arguments = argsNode as JsonObject ?? new JsonObject()
-                    };
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Failed to parse tool_call: " + ex.Message);
-            }
-
-            return null;
-        }
-
 
         public async Task<JsonObject> GetStructuredResponse(ChatHistory prompt, JsonObject responseFormat)
         {
