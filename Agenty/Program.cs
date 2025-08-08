@@ -21,7 +21,11 @@ namespace Agenty
             tools.RegisterAll(typeof(UserTools)); // auto-registers static methods in UserTools
 
             var chat = new ChatHistory();
-            chat.Add(Role.System, "You are an assistant. Plan and answer user answers one byt one, Always prefer using relevant tools if needed, or respond directly.");
+            chat.Add(Role.System, "You are an assistant." +
+                "Plan and answer one by one" +
+                "if not sure on what to respind, express that to user directly" +
+                "Use relevant tools if needed, or respond directly." +
+                "Provide your answers short and sweet");
 
             Console.WriteLine("🤖 Welcome to Agenty ChatBot! Type 'exit' to quit.\n");
 

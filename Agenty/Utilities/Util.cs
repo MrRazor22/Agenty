@@ -10,7 +10,7 @@ namespace Agenty.Utilities
     {
         public static bool IsSimpleType(Type type)
         {
-            return type.IsPrimitive || type == typeof(string) || type == typeof(decimal) || type == typeof(DateTime) || type.IsEnum;
+            return type.IsPrimitive || type == typeof(string) || type == typeof(decimal) || type == typeof(DateTime);
         }
     }
 }

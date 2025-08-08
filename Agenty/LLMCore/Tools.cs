@@ -80,7 +80,7 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
             var name = param.Name!;
             var desc = param.GetCustomAttribute<DescriptionAttribute>()?.Description ?? name;
             var typeSchema = GetSchemaForType(param.ParameterType);
-            typeSchema["description"] = desc;
+            typeSchema["description"] ??= desc;
 
             ((JsonObject)schema["properties"]!)[name] = typeSchema;
             if (!param.IsOptional) ((JsonArray)schema["required"]!).Add(name);
@@ -238,6 +238,7 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
 
     private static string? MapClrTypeToJsonType(Type type)
     {
+        if (type == typeof(Enum)) return "Enum";
         if (type == typeof(string)) return "string";
         if (type == typeof(bool)) return "boolean";
         if (type == typeof(int) || type == typeof(long)) return "integer";

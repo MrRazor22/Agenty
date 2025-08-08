@@ -141,69 +141,92 @@ namespace Agenty.LLMCore
 
             return null;
         }
+
+        // Match any tag that includes "tool" and contains a well-formed JSON block
+        static readonly string tagPattern = @"(?i)
+            [\[\(\{\<]         # opening
+            \s*\w*tool\w*\s*   # must include “tool”
+            [\]\)\}\>]         # closing
+        ";
+
+        static readonly string toolTagPattern = @$"(?ix)
+            (?<open>{tagPattern})         # opening tag like [TOOL_REQUEST]
+            \s*                           # optional whitespace/newlines
+            (?<json>\s*\{{[\s\S]*?\}})    # JSON object
+            \s*                           # optional whitespace/newlines
+            (?<close>{tagPattern})        # closing tag like [END_TOOL_REQUEST]
+        ";
+
+        static readonly string looseToolJsonPattern = @"
+                    (?<json>
+                        \{
+                          \s*""name""\s*:\s*""[^""]+""
+                          \s*,\s*
+                          ""arguments""\s*:\s*\{[\s\S]*?\}
+                          \s*
+                        \}
+                    )
+                ";
+
         private Tool? TryExtractInlineToolCall(string content, ITools tools)
         {
-            // Match any tag that includes "tool" and contains a well-formed JSON block
-            var toolTagPattern = @"<(?<tag>\w*tool\w*)>\s*(?<json>\{(?:[^{}]|(?<open>\{)|(?<-open>\}))*?(?(open)(?!))\})\s*</\k<tag>>";
-            var matches = Regex.Matches(content, toolTagPattern, RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            var opts = RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace;
 
-            foreach (Match match in matches)
+            // 2. Find the very first tagged or loose‐JSON match
+            var match = Regex.Matches(content, toolTagPattern, opts)
+                             .Cast<Match>()
+                             .FirstOrDefault()
+                     ?? Regex.Matches(content, looseToolJsonPattern, opts)
+                             .Cast<Match>()
+                             .FirstOrDefault();
+
+            // 3. If nothing matched at all, bail
+            if (match == null)
+                return null;
+
+            // 4. Extract the JSON and try to parse it
+            var jsonStr = match.Groups["json"].Value.Trim();
+            JsonObject? node = null;
+            try
             {
-                try
+                node = JsonNode.Parse(jsonStr)?.AsObject();
+            }
+            catch { /* invalid JSON */ }
+
+            // 5. If it *is* a valid call (has name+arguments, registered, valid args schema) → return full Tool
+            if (node != null &&
+                node.ContainsKey("name") &&
+                node.ContainsKey("arguments") &&
+                tools.Contains(node["name"]?.ToString()))
+            {
+                var name = node["name"]!.ToString();
+                var args = node["arguments"] as JsonObject;
+
+                var reg = tools.Get(name);
+                var schema = reg?.Arguments?.AsObject();
+
+                if (schema != null && IsValidToolArguments(args, schema))
                 {
-                    string jsonStr = match.Groups["json"].Value.Trim();
-                    var json = JsonNode.Parse(jsonStr)?.AsObject();
-                    if (json == null || !json.ContainsKey("name") || !json.ContainsKey("arguments"))
-                        continue;
-
-                    string? name = json["name"]?.ToString();
-                    var arguments = json["arguments"]?.AsObject();
-                    if (string.IsNullOrWhiteSpace(name) || arguments == null)
-                        continue;
-
-                    if (!tools.Contains(name))
-                        continue;
-
-                    var registeredTool = tools.Get(name);
-                    var expectedSchema = registeredTool?.Arguments?.AsObject();
-                    if (expectedSchema == null || !IsValidToolArguments(arguments, expectedSchema))
-                        continue;
-
-                    // Step 1: Remove all tool-related tags regardless of content inside
-                    var removeAllToolTags = Regex.Replace(
-                        content,
-                        @"<\s*(\w*tool\w*)\s*>[\s\S]*?<\s*/\s*\1\s*>",
-                        "",
-                        RegexOptions.IgnoreCase | RegexOptions.Singleline
-                    );
-
-                    // Step 2: Remove any loose tool JSON blocks outside tags
-                    var looseToolJsonPattern = @"\{\s*""name""\s*:\s*"".+?"",\s*""arguments""\s*:\s*\{[\s\S]*?\}\s*\}";
-                    var cleanedAssistantMessage = Regex.Replace(
-                        removeAllToolTags,
-                        looseToolJsonPattern,
-                        "",
-                        RegexOptions.Singleline
-                    ).Trim();
+                    // strip out JUST the JSON (and any tags) from the original content
+                    var cleaned = content.Substring(0, match.Index).Trim();
 
                     return new Tool
                     {
                         Id = Guid.NewGuid().ToString(),
                         Name = name,
-                        Arguments = arguments,
-                        AssistantMessage = cleanedAssistantMessage
+                        Arguments = args,
+                        AssistantMessage = cleaned
                     };
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Tool parse failed: {ex.Message}");
-                }
-
-                // Only process the first valid tool call
-                break;
             }
 
-            return null;
+            // 6. Otherwise: it's an *invalid* or unregistered call → strip it and return only preceding text
+            var before = content.Substring(0, match.Index).Trim();
+            return new Tool
+            {
+                AssistantMessage = before
+            };
+
         }
 
         private bool IsValidToolArguments(JsonObject input, JsonObject schema)
