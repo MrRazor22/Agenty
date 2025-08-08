@@ -144,15 +144,17 @@ namespace Agenty.LLMCore
 
         // Match any tag that includes "tool" and contains a well-formed JSON block
         static readonly string tagPattern = @"(?i)
-            [\[\(\{\<]         # opening
-            \s*\w*tool\w*\s*   # must include “tool”
-            [\]\)\}\>]         # closing
+            [\[\{\(<]         # opening bracket of any type
+            [^\]\}\)>]*?      # non-greedy anything except closing brackets
+            \b\w*tool\w*\b    # word “tool” inside (word boundary optional if you want partials)
+            [^\]\}\)>]*?      # again anything before closing
+            [\]\}\)>]         # closing bracket
         ";
 
         static readonly string toolTagPattern = @$"(?ix)
             (?<open>{tagPattern})         # opening tag like [TOOL_REQUEST]
             \s*                           # optional whitespace/newlines
-            (?<json>\s*\{{[\s\S]*?\}})    # JSON object
+            (?<json>\{{[\s\S]*?\}})         # JSON object
             \s*                           # optional whitespace/newlines
             (?<close>{tagPattern})        # closing tag like [END_TOOL_REQUEST]
         ";
@@ -162,7 +164,7 @@ namespace Agenty.LLMCore
                         \{
                           \s*""name""\s*:\s*""[^""]+""
                           \s*,\s*
-                          ""arguments""\s*:\s*\{[\s\S]*?\}
+                          ""arguments""\s*:\s*\{[\s\S]*\}
                           \s*
                         \}
                     )
