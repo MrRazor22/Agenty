@@ -175,12 +175,17 @@ namespace Agenty.LLMCore
             var opts = RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace;
 
             // 2. Find the very first tagged or loose‐JSON match
+            //var match = Regex.Matches(content, toolTagPattern, opts)
+            //                 .Cast<Match>()
+            //                 .FirstOrDefault()
+            //         ?? Regex.Matches(content, looseToolJsonPattern, opts)
+            //                 .Cast<Match>()
+            //                 .FirstOrDefault();
             var match = Regex.Matches(content, toolTagPattern, opts)
-                             .Cast<Match>()
-                             .FirstOrDefault()
-                     ?? Regex.Matches(content, looseToolJsonPattern, opts)
-                             .Cast<Match>()
-                             .FirstOrDefault();
+                 .Cast<Match>()
+                 .Concat(Regex.Matches(content, looseToolJsonPattern, opts).Cast<Match>())
+                 .OrderBy(m => m.Index)
+                 .FirstOrDefault();
 
             // 3. If nothing matched at all, bail
             if (match == null)
