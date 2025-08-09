@@ -21,11 +21,13 @@ namespace Agenty
             tools.RegisterAll(typeof(UserTools)); // auto-registers static methods in UserTools
 
             var chat = new ChatHistory();
-            chat.Add(Role.System, "You are an assistant." +
-                "Plan and answer one by one" +
-                "if not sure on what to respind, express that to user directly" +
-                "Use relevant tools if needed, or respond directly." +
-                "Provide your answers short and sweet");
+            chat.Add(Role.System,
+                "You are a helpful assistant who plans, executes, reflects, and iterates until the user’s request is fulfilled. " +
+                "Use any internal tools as needed, but never mention them to the user. " +
+                "Keep responses concise, clear, and friendly. " +
+                "If you need more information to fulfill the request, ask the user naturally and conversationally."
+            );
+
 
             Console.WriteLine("🤖 Welcome to Agenty ChatBot! Type 'exit' to quit.\n");
 
@@ -122,6 +124,8 @@ namespace Agenty
             Console.WriteLine($"❌ {context}: {ex.Message}");
             Console.ResetColor();
         }
+
+        [Description("Sunny, Cloudy, Rainy, Snowy.")]
         public enum WeatherType
         {
             [Description("Clear sky with lots of sunshine.")]

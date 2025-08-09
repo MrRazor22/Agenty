@@ -56,7 +56,7 @@ namespace Agenty.LLMCore
 
         public Task<Tool> GetToolCallResponse(ChatHistory prompt, params Tool[] tools)
             => ProcessToolCall(prompt, new Tools(tools));
-        public async Task<Tool> ProcessToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false, int maxRetries = 30)
+        public async Task<Tool> ProcessToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false, int maxRetries = 3)
         {
             if (tools == null || !tools.Any())
                 throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
@@ -67,7 +67,7 @@ namespace Agenty.LLMCore
                 .Select(tool => ChatTool.CreateFunctionTool(
                     tool.Name,
                     tool.Description,
-                    BinaryData.FromString(tool.Arguments.ToJsonString())))
+                    BinaryData.FromString(tool.ArgumentSchema.ToJsonString())))
                 .ToList();
 
             ChatCompletionOptions options = new()
@@ -79,173 +79,47 @@ namespace Agenty.LLMCore
 
             chatTools.ForEach(t => options.Tools.Add(t));
 
-            string? lastContent = null;
-
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
                 var response = await _chatClient.CompleteChatAsync(ToChatMessages(intPrompt), options);
                 var result = response.Value;
 
-                var toolCall = TryExtractStructuredToolCall(result, tools);
-                if (toolCall != null)
-                    return toolCall;
-
-                string? content = result.Content?.FirstOrDefault()?.Text;
-                if (!string.IsNullOrWhiteSpace(content))
+                try
                 {
-                    if (attempt > 0 && string.Equals(content, lastContent, StringComparison.Ordinal))
+                    var chatToolCall = result?.ToolCalls?.FirstOrDefault();
+                    if (chatToolCall != null)
+                    {
+                        var tool = tools.Get(chatToolCall.FunctionName);
+                        if (tool != null)
+                        {
+                            tool.Id = chatToolCall.Id ?? Guid.NewGuid().ToString();
+                            var arguments = chatToolCall.FunctionArguments.ToObjectFromJson<JsonObject>() ?? new JsonObject();
+                            tool.Parameters = tools.ParseToolParams(tool.Name, arguments);
+                            tool.AssistantMessage = result?.Content?.FirstOrDefault()?.Text;
+                            return tool;
+                        }
+                    }
+
+                    string? content = result?.Content?.FirstOrDefault()?.Text;
+                    if (!string.IsNullOrWhiteSpace(content))
+                    {
+                        var tool = tools.TryExtractInlineToolCall(content);
+                        if (tool != null)
+                            return tool;
+
                         return new Tool { AssistantMessage = content };
-
-                    lastContent = content;
-
-                    var tool = TryExtractInlineToolCall(content, tools);
-                    if (tool != null)
-                        return tool;
-
-                    // If content is not a tool call, return it as a message
-                    return new Tool { AssistantMessage = content };
+                    }
                 }
-
-                // Retry: Inject feedback to help model correct itself
-                if (attempt < maxRetries)
+                catch (Exception ex)
                 {
-                    intPrompt.Add(Role.System, BuildRetryMessage(result, tools));
+                    intPrompt.Add(Role.Assistant, $"The last response failed with [{ex.Message}].");
+                    continue;
                 }
+
+                intPrompt.Add(Role.Assistant, $"The last response was empty or invalid. Please return a valid tool call using one of: {string.Join(", ", tools.Select(t => t.Name))}.");
             }
 
-            return new Tool { AssistantMessage = "Failed to generate a valid tool call/response after retry." };
-        }
-
-        private Tool? TryExtractStructuredToolCall(ChatCompletion result, ITools tools)
-        {
-            var toolCall = result?.ToolCalls?.FirstOrDefault();
-            if (toolCall == null || !tools.Contains(toolCall.FunctionName))
-                return null;
-
-            var registered = tools.Get(toolCall.FunctionName);
-            var input = toolCall.FunctionArguments.ToObjectFromJson<JsonObject>();
-
-            if (registered?.Arguments is JsonObject schema && input != null)
-            {
-                if (IsValidToolArguments(input, schema))
-                {
-                    return new Tool
-                    {
-                        Id = toolCall.Id ?? Guid.NewGuid().ToString(),
-                        Name = toolCall.FunctionName,
-                        Arguments = input,
-                        AssistantMessage = result?.Content?.FirstOrDefault()?.Text
-                    };
-                }
-            }
-
-            return null;
-        }
-
-        // Match any tag that includes "tool" and contains a well-formed JSON block
-        static readonly string tagPattern = @"(?i)
-            [\[\{\(<]         # opening bracket of any type
-            [^\]\}\)>]*?      # non-greedy anything except closing brackets
-            \b\w*tool\w*\b    # word “tool” inside (word boundary optional if you want partials)
-            [^\]\}\)>]*?      # again anything before closing
-            [\]\}\)>]         # closing bracket
-        ";
-
-        static readonly string toolTagPattern = @$"(?ix)
-            (?<open>{tagPattern})         # opening tag like [TOOL_REQUEST]
-            \s*                           # optional whitespace/newlines
-            (?<json>\{{[\s\S]*?\}})         # JSON object
-            \s*                           # optional whitespace/newlines
-            (?<close>{tagPattern})        # closing tag like [END_TOOL_REQUEST]
-        ";
-
-        static readonly string looseToolJsonPattern = @"
-                    (?<json>
-                        \{
-                          \s*""name""\s*:\s*""[^""]+""
-                          \s*,\s*
-                          ""arguments""\s*:\s*\{[\s\S]*\}
-                          \s*
-                        \}
-                    )
-                ";
-
-        private Tool? TryExtractInlineToolCall(string content, ITools tools)
-        {
-            var opts = RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace;
-
-            // 2. Find the very first tagged or loose‐JSON match
-            //var match = Regex.Matches(content, toolTagPattern, opts)
-            //                 .Cast<Match>()
-            //                 .FirstOrDefault()
-            //         ?? Regex.Matches(content, looseToolJsonPattern, opts)
-            //                 .Cast<Match>()
-            //                 .FirstOrDefault();
-            var match = Regex.Matches(content, toolTagPattern, opts)
-                 .Cast<Match>()
-                 .Concat(Regex.Matches(content, looseToolJsonPattern, opts).Cast<Match>())
-                 .OrderBy(m => m.Index)
-                 .FirstOrDefault();
-
-            // 3. If nothing matched at all, bail
-            if (match == null)
-                return null;
-
-            // 4. Extract the JSON and try to parse it
-            var jsonStr = match.Groups["json"].Value.Trim();
-            JsonObject? node = null;
-            try
-            {
-                node = JsonNode.Parse(jsonStr)?.AsObject();
-            }
-            catch { /* invalid JSON */ }
-
-            // 5. If it *is* a valid call (has name+arguments, registered, valid args schema) → return full Tool
-            if (node != null &&
-                node.ContainsKey("name") &&
-                node.ContainsKey("arguments") &&
-                tools.Contains(node["name"]?.ToString()))
-            {
-                var name = node["name"]!.ToString();
-                var args = node["arguments"] as JsonObject;
-
-                var reg = tools.Get(name);
-                var schema = reg?.Arguments?.AsObject();
-
-                if (schema != null && IsValidToolArguments(args, schema))
-                {
-                    // strip out JUST the JSON (and any tags) from the original content
-                    var cleaned = content.Substring(0, match.Index).Trim();
-
-                    return new Tool
-                    {
-                        Id = Guid.NewGuid().ToString(),
-                        Name = name,
-                        Arguments = args,
-                        AssistantMessage = cleaned
-                    };
-                }
-            }
-
-            // 6. Otherwise: it's an *invalid* or unregistered call → strip it and return only preceding text
-            var before = content.Substring(0, match.Index).Trim();
-            return new Tool
-            {
-                AssistantMessage = before
-            };
-
-        }
-
-        private bool IsValidToolArguments(JsonObject input, JsonObject schema)
-        {
-            var inputKeys = input.Select(p => p.Key).ToHashSet();
-            var schemaKeys = schema["properties"]?.AsObject()?.Select(p => p.Key).ToHashSet() ?? new();
-            return schemaKeys.SetEquals(inputKeys);
-        }
-        private string BuildRetryMessage(ChatCompletion result, ITools tools)
-        {
-            var availableTools = string.Join(", ", tools.Select(t => t.Name));
-            return $"The last response was empty or invalid. Please return a valid tool call using one of: {availableTools}.";
+            return new Tool { AssistantMessage = "Couldn't generate a valid tool call/response." };
         }
 
         public async Task<JsonObject> GetStructuredResponse(ChatHistory prompt, JsonObject responseFormat)
@@ -283,7 +157,7 @@ namespace Agenty.LLMCore
                         ChatToolCall.CreateFunctionToolCall(
                             id: msg.toolCallInfo.Id,
                             functionName: msg.toolCallInfo.Name,
-                            functionArguments: BinaryData.FromObjectAsJson(msg.toolCallInfo.Arguments))
+                            functionArguments: BinaryData.FromObjectAsJson(msg.toolCallInfo.ArgumentSchema))
                             }),
                     Role.Assistant => string.IsNullOrWhiteSpace(msg.Content)
                         ? (isLast

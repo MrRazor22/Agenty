@@ -46,6 +46,8 @@ namespace Agenty.LLMCore
         Tool? Get(string toolName);
         bool Contains(string toolName);
         JsonObject GetToolsSchema();
+        object?[] ParseToolParams(string toolName, JsonObject arguments);
+        Tool? TryExtractInlineToolCall(string content);
         Task<T?> Invoke<T>(Tool toolCall);
     }
 
@@ -55,7 +57,8 @@ namespace Agenty.LLMCore
         public string Id { get; set; }
         public string Name { get; set; }
         public string Description { get; set; }
-        public JsonObject Arguments { get; set; }
+        public JsonObject ArgumentSchema { get; set; }
+        public object?[] Parameters { get; set; }
 
         [JsonIgnore]
         public string? AssistantMessage { get; set; } // non-null if no tool call
@@ -65,12 +68,9 @@ namespace Agenty.LLMCore
 
         [JsonIgnore]
         public Delegate? Function { get; set; }
-        public override string ToString()
-        {
-            var args = Arguments?.Select(kv => $"{kv.Key}: {kv.Value}") ?? Enumerable.Empty<string>();
-            var argString = string.Join(", ", args);
-            return $"Tool Info: '{Name}' (id: {Id}) with {argString}";
-        }
+        public override string ToString() => $"Tool Info: '{Name}' (id: {Id}) with Parameters: " +
+            $"[{string.Join(", ", Parameters?.Select(p => p?.ToString() ?? "null")
+                ?? Enumerable.Empty<string>())}]";
     }
 
 }

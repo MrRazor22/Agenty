@@ -30,7 +30,7 @@ public class Executor : IExecutor
 
         OnToolInvoking = info =>
         {
-            _logger?.Log("Executor", $"[Tool Call]: '{info.Name}' with: {info.Arguments}");
+            _logger?.Log("Executor", $"[Tool Call]: '{info.Name}' with: {info.ArgumentSchema}");
             return Task.FromResult("");
         };
 
