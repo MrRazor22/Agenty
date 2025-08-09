@@ -32,12 +32,12 @@ namespace Agenty.LLMCore
         void Initialize(string url, string apiKey, string modelName);
         Task<string> GetResponse(ChatHistory prompt);
         IAsyncEnumerable<string> GetStreamingResponse(ChatHistory prompt);
-        Task<Tool> GetToolCallResponse(ChatHistory prompt, ITools tools);
+        Task<Tool> GetToolCallResponse(ChatHistory prompt, IToolManager tools);
         Task<Tool> GetToolCallResponse(ChatHistory prompt, params Tool[] tools);
         Task<JsonObject> GetStructuredResponse(ChatHistory prompt, JsonObject responseFormat);
     }
 
-    public interface ITools : IEnumerable<Tool>
+    public interface IToolManager
     {
         IReadOnlyList<Tool> RegisteredTools { get; }
         void Register(params Delegate[] funcs);
@@ -57,7 +57,8 @@ namespace Agenty.LLMCore
         public string Id { get; set; }
         public string Name { get; set; }
         public string Description { get; set; }
-        public JsonObject ArgumentSchema { get; set; }
+        public JsonObject ArgsRegisteredSchema { get; set; }
+        public JsonObject ArgsToolCallSchema { get; set; }
         public object?[] Parameters { get; set; }
 
         [JsonIgnore]

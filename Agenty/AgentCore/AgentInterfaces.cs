@@ -30,7 +30,7 @@ namespace Agenty.AgentCore
         IAgent WithMemory(IAgentMemory memory);
         IAgent WithExecutor(IExecutor executor);
         IAgent WithPlanner(IPlanner? planner);
-        IAgent WithToolRegistry(ITools toolRegistry);
+        IAgent WithToolRegistry(IToolManager toolRegistry);
         //IAgent WithPromptBuilder(PromptBuilder promptBuilder);
         IAgent WithAgentTools(Type agentToolsType);
     }

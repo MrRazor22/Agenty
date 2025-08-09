@@ -17,7 +17,7 @@ namespace Agenty
             var llm = new OpenAIClient();
             llm.Initialize("http://127.0.0.1:1234/v1", "lmstudio", "any_model");
 
-            ITools tools = new Tools();
+            IToolManager tools = new ToolManager();
             tools.RegisterAll(typeof(UserTools)); // auto-registers static methods in UserTools
 
             var chat = new ChatHistory();
@@ -60,7 +60,7 @@ namespace Agenty
             Console.WriteLine("👋 Exiting Agenty ChatBot.");
         }
 
-        private static async Task ExecuteToolChain(Tool initialCall, ChatHistory chat, ITools tools, ILLMClient llm)
+        private static async Task ExecuteToolChain(Tool initialCall, ChatHistory chat, IToolManager tools, ILLMClient llm)
         {
             Tool current = initialCall;
 

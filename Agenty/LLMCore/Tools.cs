@@ -13,7 +13,7 @@ using System.Text.RegularExpressions;
 
 namespace Agenty.LLMCore;
 
-public class Tools(IEnumerable<Tool>? tools = null) : ITools
+public class ToolManager(IEnumerable<Tool>? tools = null) : IToolManager
 {
     #region regex
     // Match any tag that includes "tool" and contains a well-formed JSON block
@@ -28,7 +28,7 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
     static readonly string toolTagPattern = @$"(?ix)
             (?<open>{tagPattern})         # opening tag like [TOOL_REQUEST]
             \s*                           # optional whitespace/newlines
-            (?<json>\{{[\s\S]*\}})         # JSON object
+            (?<json>\{{[\s\S]*?\}})         # JSON object
             \s*                           # optional whitespace/newlines
             (?<close>{tagPattern})        # closing tag like [END_TOOL_REQUEST]
         ";
@@ -46,11 +46,9 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
     #endregion
 
     private List<Tool> _registeredTools = tools?.ToList() ?? new();
-    IReadOnlyList<Tool> ITools.RegisteredTools => _registeredTools;
-    public IEnumerator<Tool> GetEnumerator() => _registeredTools.GetEnumerator();
-    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-    public static implicit operator Tools(List<Tool> tools) => new Tools(tools);
+    public IReadOnlyList<Tool> RegisteredTools => _registeredTools;
 
+    public static implicit operator ToolManager(List<Tool> tools) => new ToolManager(tools);
     public void Register(params Delegate[] funcs)
     {
         foreach (var f in funcs)
@@ -120,7 +118,7 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
         {
             Name = method.Name,
             Description = description,
-            ArgumentSchema = schema,
+            ArgsRegisteredSchema = schema,
             Function = func
         };
     }
@@ -186,13 +184,6 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
             ["properties"] = props,
             ["required"] = required
         };
-    }
-
-    private bool IsToolSchemaMatch(JsonObject input, JsonObject schema)
-    {
-        var inputKeys = input.Select(p => p.Key).ToHashSet();
-        var schemaKeys = schema["properties"]?.AsObject()?.Select(p => p.Key).ToHashSet() ?? new();
-        return schemaKeys.SetEquals(inputKeys);
     }
 
     public object?[] ParseToolParams(string toolName, JsonObject arguments)
@@ -271,6 +262,11 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
         // 4. Extract the JSON and try to parse it
         var jsonStr = match.Groups["json"].Value.Trim();
 
+        Console.WriteLine("=======================");
+        Console.WriteLine("RAW extracted jsonStr:");
+        Console.WriteLine(jsonStr);
+        Console.WriteLine("======================");
+
         JsonObject? node = null;
         try
         {
@@ -289,6 +285,7 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
 
             var tool = Get(name);
             tool!.Id = Guid.NewGuid().ToString();
+            tool.ArgsToolCallSchema = args;
             tool.Parameters = ParseToolParams(name, args);
             tool.AssistantMessage = cleaned;
 
@@ -310,7 +307,7 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
         var func = tool.Function!;
         var method = func.Method;
         var methodParams = method.GetParameters();
-        var argsObj = toolCall.ArgumentSchema ?? throw new ArgumentException("ToolCallInfo.Parameters is null");
+        var argsObj = toolCall.ArgsRegisteredSchema ?? throw new ArgumentException("ToolCallInfo.Parameters is null");
 
         // Handle case where parameters are passed as a single wrapped object
         if (methodParams.Length == 1 && !Util.IsSimpleType(methodParams[0].ParameterType) &&
@@ -421,7 +418,7 @@ public class Tools(IEnumerable<Tool>? tools = null) : ITools
                 ["oneOf"] = new JsonArray(
                 _registeredTools.Select(t =>
                     // THIS is the deep clone (we get json string of each paramater and get json node basically cloning explicly) to avoid parent reuse error
-                    JsonNode.Parse(t.ArgumentSchema?.ToJsonString() ?? "{}")!.AsObject()
+                    JsonNode.Parse(t.ArgsRegisteredSchema?.ToJsonString() ?? "{}")!.AsObject()
                 ).ToArray()
             )
             },
