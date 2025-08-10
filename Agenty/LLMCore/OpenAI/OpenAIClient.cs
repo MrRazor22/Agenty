@@ -1,4 +1,5 @@
 ﻿using Agenty.LLMCore.JsonSchema;
+using HtmlAgilityPack;
 using Microsoft.VisualStudio.TestPlatform.CommunicationUtilities;
 using OpenAI;
 using OpenAI.Chat;
@@ -14,8 +15,8 @@ namespace Agenty.LLMCore.OpenAI
 {
     public class OpenAILLMClient() : ILLMClient
     {
-        private OpenAIClient _client;
-        private ChatClient _chatClient;
+        private OpenAIClient? _client;
+        private ChatClient? _chatClient;
 
         public void Initialize(string baseUrl, string apiKey, string modelName = "any_model")
         {
@@ -29,9 +30,16 @@ namespace Agenty.LLMCore.OpenAI
 
             _chatClient = _client.GetChatClient(modelName);
         }
+        private void EnsureInitialized()
+        {
+            if (_client is null || _chatClient is null)
+                throw new InvalidOperationException("Client not initialized. Call Initialize() first.");
+        }
+
         public async Task<string> GetResponse(ChatHistory prompt)
         {
-            var response = await _chatClient.CompleteChatAsync(prompt.ToChatMessages());
+            EnsureInitialized();
+            var response = await _chatClient!.CompleteChatAsync(prompt.ToChatMessages());
 
             var contentParts = response.Value.Content;
             var textContent = string.Join("", contentParts.Select(part => part.Text));
@@ -40,7 +48,9 @@ namespace Agenty.LLMCore.OpenAI
 
         public async IAsyncEnumerable<string> GetStreamingResponse(ChatHistory prompt)
         {
-            AsyncCollectionResult<StreamingChatCompletionUpdate> responseUpdates = _chatClient.CompleteChatStreamingAsync(prompt.ToChatMessages());
+            EnsureInitialized();
+
+            AsyncCollectionResult<StreamingChatCompletionUpdate> responseUpdates = _chatClient!.CompleteChatStreamingAsync(prompt.ToChatMessages());
             await foreach (var update in responseUpdates)
             {
                 foreach (var part in update.ContentUpdate)
@@ -51,13 +61,15 @@ namespace Agenty.LLMCore.OpenAI
         }
         public async Task<ToolCall> GetToolCallResponse(ChatHistory prompt, IEnumerable<Tool> tools, bool forceToolCall = false)
         {
+            EnsureInitialized();
+
             List<ChatTool> chatTools = tools.ToChatTools();
 
             ChatCompletionOptions options = new() { ToolChoice = forceToolCall ? ChatToolChoice.CreateRequiredChoice() : ChatToolChoice.CreateAutoChoice() };
 
             chatTools.ForEach(t => options.Tools.Add(t));
 
-            var response = await _chatClient.CompleteChatAsync(prompt.ToChatMessages(), options);
+            var response = await _chatClient!.CompleteChatAsync(prompt.ToChatMessages(), options);
             var result = response.Value;
 
             var chatToolCall = result?.ToolCalls?.FirstOrDefault();
@@ -86,6 +98,8 @@ namespace Agenty.LLMCore.OpenAI
 
         public async Task<JsonObject> GetStructuredResponse(ChatHistory prompt, JsonObject responseFormat)
         {
+            EnsureInitialized();
+
             ChatCompletionOptions options = new()
             {
                 ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
@@ -94,7 +108,7 @@ namespace Agenty.LLMCore.OpenAI
                     jsonSchemaIsStrict: true)
             };
 
-            ChatCompletion completion = await _chatClient.CompleteChatAsync(prompt.ToChatMessages(), options);
+            ChatCompletion completion = await _chatClient!.CompleteChatAsync(prompt.ToChatMessages(), options);
 
             using JsonDocument structuredJson = JsonDocument.Parse(completion.Content[0].Text);
             return JsonNode.Parse(structuredJson.RootElement.GetRawText())!.AsObject();
