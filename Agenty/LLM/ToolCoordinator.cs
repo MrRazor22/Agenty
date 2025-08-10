@@ -312,7 +312,7 @@ namespace Agenty.LLMCore
                 .Type<object>()
                 .Properties(new JsonObject
                 {
-                    [JsonMessage] = new JsonObject { ["type"] = "string" }
+                    [JsonMessage] = new JsonSchemaBuilder().Type<string>().Build()
                 })
                 .Required(new JsonArray { JsonMessage })
                 .Build();
@@ -323,14 +323,14 @@ namespace Agenty.LLMCore
                     ? JsonNode.Parse(tool.SchemaDefinition.ToJsonString())?.AsObject()
                     : new JsonSchemaBuilder()
                         .Type<object>()
-                        .AdditionalProperties(new JsonObject { [JsonSchemaConstants.AdditionalPropertiesKey] = false })
+                        .AdditionalProperties(new JsonSchemaBuilder().AdditionalProperties(false).Build())
                         .Build();
 
                 var properties = new JsonObject
                 {
                     [JsonName] = new JsonObject { ["const"] = tool.Name },
                     [JsonArguments] = argumentsSchema ?? new JsonObject(),
-                    [JsonMessage] = new JsonObject { ["type"] = "string" }
+                    [JsonMessage] = new JsonSchemaBuilder().Type<string>().Build()
                 };
 
                 return new JsonSchemaBuilder()

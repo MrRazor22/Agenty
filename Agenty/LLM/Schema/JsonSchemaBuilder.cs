@@ -78,6 +78,11 @@ namespace Agenty.LLMCore.JsonSchema
                 _schema[JsonSchemaConstants.PatternKey] = pattern;
             return this;
         }
+        public JsonSchemaBuilder AdditionalProperties(bool allow)
+        {
+            _schema[JsonSchemaConstants.AdditionalPropertiesKey] = allow;
+            return this;
+        }
 
         public JsonSchemaBuilder AdditionalProperties(JsonObject additionalProps)
         {
