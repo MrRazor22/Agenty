@@ -1,5 +1,5 @@
 ﻿using Agenty.LLMCore;
-using Agenty.LLMCore.OpenAI;
+using Agenty.LLMCore.Providers.OpenAI;
 
 namespace Agenty.AgentCore;
 

@@ -1,7 +1,7 @@
 ﻿using Agenty.AgentCore;
 using Agenty.LLMCore;
 using Agenty.LLMCore.BuiltInTools;
-using Agenty.LLMCore.OpenAI;
+using Agenty.LLMCore.Providers.OpenAI;
 using Microsoft.Extensions.Logging;
 using OpenAI.Chat;
 using System;
@@ -29,6 +29,8 @@ namespace Agenty
             tools.RegisterAll<SearchTools>();
             tools.RegisterAll<GeoTools>(); // auto-registers static methods in UserTools
             tools.RegisterAll<WeatherTool>();
+            tools.RegisterAll<ConversionTools>();
+            tools.RegisterAll<MathTools>();
 
             var chatHistory = new ChatHistory();
             chatHistory.OnChat += (chat) =>
@@ -43,7 +45,7 @@ namespace Agenty
             };
 
             chatHistory.Add(Role.System, "You are an assistant." +
-                 "Plan and answer one by one" +
+                 "For complex tasks, always Plan and answer step by step" +
                  "if not sure on what to respind, express that to user directly" +
                  "Use relevant tools if needed, or respond directly." +
                  "Provide your answers short and sweet");

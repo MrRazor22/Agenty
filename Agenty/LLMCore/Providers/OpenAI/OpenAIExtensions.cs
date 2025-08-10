@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 using OpenAI;
 using OpenAI.Chat;
 
-namespace Agenty.LLMCore.OpenAI
+namespace Agenty.LLMCore.Providers.OpenAI
 {
     public static class OpenAIExtensions
     {

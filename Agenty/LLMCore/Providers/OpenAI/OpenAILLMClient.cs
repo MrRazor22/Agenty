@@ -11,7 +11,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
-namespace Agenty.LLMCore.OpenAI
+namespace Agenty.LLMCore.Providers.OpenAI
 {
     public class OpenAILLMClient() : ILLMClient
     {
