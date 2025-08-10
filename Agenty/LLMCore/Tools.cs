@@ -17,7 +17,7 @@ namespace Agenty.LLMCore
     {
         IReadOnlyList<Tool> RegisteredTools { get; }
         void Register(params Delegate[] funcs);
-        void RegisterAll(Type type);
+        void RegisterAll<T>();
         Tool? Get(Delegate func);
         Tool? Get(string toolName);
         bool Contains(string toolName);
@@ -36,9 +36,9 @@ namespace Agenty.LLMCore
                 _registeredTools.Add(tool);
             }
         }
-        public void RegisterAll(Type type)
+        public void RegisterAll<T>()
         {
-            var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Static)
+            var methods = typeof(T).GetMethods(BindingFlags.Public | BindingFlags.Static)
                 .Where(m => m.GetCustomAttribute<DescriptionAttribute>() != null);
 
             foreach (var method in methods)
