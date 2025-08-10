@@ -20,7 +20,7 @@ namespace Agenty
 
             ToolCoordinator toolCordinator = new ToolCoordinator(llm);
 
-            ITools tools = new ToolManager();
+            ITools tools = new Tools();
             tools.RegisterAll(typeof(UserTools)); // auto-registers static methods in UserTools
 
             var chat = new ChatHistory();

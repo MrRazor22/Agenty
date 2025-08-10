@@ -85,6 +85,15 @@ namespace Agenty.LLMCore.JsonSchema
             return this;
         }
 
+        /// <summary>
+        /// Sets "anyOf" with the provided schemas array.
+        /// </summary>
+        public JsonSchemaBuilder AnyOf(params JsonNode[] schemas)
+        {
+            _schema["anyOf"] = new JsonArray(schemas);
+            return this;
+        }
+
         public JsonObject Build() => _schema;
 
         // You can add helpers to read properties too, if needed

@@ -1,30 +1,13 @@
 ﻿using System;
-using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
-using static System.Runtime.InteropServices.JavaScript.JSType;
+using System.Threading.Tasks;
 
 namespace Agenty.LLMCore
 {
-    public interface ILLMClient
-    {
-        void Initialize(string url, string apiKey, string modelName);
-        Task<string> GetResponse(ChatHistory prompt);
-        IAsyncEnumerable<string> GetStreamingResponse(ChatHistory prompt);
-        Task<ToolCall> GetToolCallResponse(ChatHistory prompt, IEnumerable<Tool> tools, bool forceToolCall = false);
-        Task<JsonObject> GetStructuredResponse(ChatHistory prompt, JsonObject responseFormat);
-    }
-
-    public interface ITools
-    {
-        IReadOnlyList<Tool> RegisteredTools { get; }
-        void Register(params Delegate[] funcs);
-        void RegisterAll(Type type);
-        Tool? Get(Delegate func);
-        Tool? Get(string toolName);
-        bool Contains(string toolName);
-    }
-
     public class Tool
     {
         public string Name { get; set; }
@@ -55,5 +38,4 @@ namespace Agenty.LLMCore
             return $"ToolCall: '{Name}' (id: {Id}) with Arguments: [{argsStr}]";
         }
     }
-
 }

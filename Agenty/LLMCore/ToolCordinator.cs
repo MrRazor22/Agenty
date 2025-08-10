@@ -17,7 +17,7 @@ namespace Agenty.LLMCore
     internal class ToolCoordinator(ILLMClient llm)
     {
         public Task<ToolCall> GetDefaultToolCall(ChatHistory prompt, params Tool[] tools)
-            => GetDefaultToolCall(prompt, new ToolManager(tools));
+            => GetDefaultToolCall(prompt, new Tools(tools));
         public async Task<ToolCall> GetDefaultToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false, int maxRetries = 3)
         {
             if (tools == null || !tools.RegisteredTools.Any()) throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
@@ -102,8 +102,15 @@ namespace Agenty.LLMCore
 
         private string BuildSystemPrompt(ITools tools, bool isRetry)
         {
-            var toolsList = string.Join(", ", tools.RegisteredTools.Select(t => t.Name));
-            //Available tools: {toolsList}
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            var toolCallExample = new JsonObject
+            {
+                ["name"] = "tool_name",
+                ["arguments"] = "{...}", // empty args example
+                ["message"] = ""
+            };
+            var directResponseExample = new JsonObject { ["message"] = "your answer here" };
+
             var prompt = $@"
 
             When the user's question requires using a tool, respond with a JSON object to call that tool exactly once.
@@ -112,16 +119,10 @@ namespace Agenty.LLMCore
             JSON formats:
 
             - To call a tool, respond with:
-              {{
-                ""name"": ""tool_name"",
-                ""arguments"": {{ ... }},
-                ""message"": """"
-              }}
+              {JsonSerializer.Serialize(toolCallExample, options)}
 
             - To respond directly without calling any tool, respond with:
-              {{
-                ""message"": ""your answer here""
-              }}
+              {JsonSerializer.Serialize(directResponseExample, options)}
 
             Only call a tool if necessary to answer the question. Otherwise, reply directly with the message.
 
@@ -300,48 +301,46 @@ namespace Agenty.LLMCore
 
             return paramValues;
         }
-        /// <summary>
-        /// The "enum" ensures the name is valid.
-        /// The "oneOf" ensures arguments matches exactly one tool schema.
-        /// </summary>
-        /// <returns>Returns registered tool schema format</returns> 
+
         private JsonObject GetToolCallSchema(ITools tools)
         {
-            var schemaParts = new JsonNode[]
-            {
-        new JsonObject
-        {
-            ["type"] = "object",
-            ["properties"] = new JsonObject
-            {
-                ["message"] = new JsonObject { ["type"] = "string" }
-            },
-            ["required"] = new JsonArray { "message" }
-        }
-            }
-            .Concat(
-                tools.RegisteredTools.Select(tool => new JsonObject
+            var messageSchema = new JsonSchemaBuilder()
+                .Type("object")
+                .Properties(new JsonObject
                 {
-                    ["type"] = "object",
-                    ["properties"] = new JsonObject
-                    {
-                        ["name"] = new JsonObject { ["const"] = tool.Name },
-                        ["arguments"] = JsonNode.Parse(tool.SchemaDefinition?.ToJsonString() ??
-                            """{"type": "object", "additionalProperties": false}""")?.AsObject() ??
-                            new JsonObject { ["type"] = "object", ["additionalProperties"] = false },
-                        ["message"] = new JsonObject { ["type"] = "string" }
-                    },
-                    ["required"] = new JsonArray { "name", "arguments", "message" }
+                    ["message"] = new JsonObject { ["type"] = "string" }
                 })
-            );
+                .Required(new JsonArray { "message" })
+                .Build();
 
-            return new JsonObject
+            var toolSchemas = tools.RegisteredTools.Select(tool =>
             {
-                ["type"] = "object",
-                ["anyOf"] = new JsonArray(schemaParts.ToArray())
-            };
-        }
+                var argumentsSchema = tool.SchemaDefinition != null
+                    ? JsonNode.Parse(tool.SchemaDefinition.ToJsonString())?.AsObject()
+                    : new JsonSchemaBuilder()
+                        .Type("object")
+                        .AdditionalProperties(new JsonObject { ["additionalProperties"] = false })
+                        .Build();
 
+                var properties = new JsonObject
+                {
+                    ["name"] = new JsonObject { ["const"] = tool.Name },
+                    ["arguments"] = argumentsSchema ?? new JsonObject(),
+                    ["message"] = new JsonObject { ["type"] = "string" }
+                };
+
+                return new JsonSchemaBuilder()
+                    .Type("object")
+                    .Properties(properties)
+                    .Required(new JsonArray { "name", "arguments", "message" })
+                    .Build();
+            });
+
+            return new JsonSchemaBuilder()
+                .Type("object")
+                .AnyOf(new[] { messageSchema }.Concat(toolSchemas).ToArray())
+                .Build();
+        }
 
         public async Task<T?> Invoke<T>(ToolCall tool, ITools tools)
         {

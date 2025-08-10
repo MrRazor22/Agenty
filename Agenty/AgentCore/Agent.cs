@@ -32,10 +32,10 @@ public class Agent : IAgent
 
         _logger ??= new ConsoleLogger();
         _memory ??= new AgentMemory(_logger);
-        _toolRegistry ??= new ToolManager();
+        _toolRegistry ??= new Tools();
 
         // Register default or overridden agent tools
-        _builtInTools ??= new ToolManager();
+        _builtInTools ??= new Tools();
 
         //_promptBuilder ??= new StandardPromptBuilder();
         _planner ??= new Planner(_llm, _memory, _toolRegistry, _builtInTools, _logger);
@@ -97,7 +97,7 @@ public class Agent : IAgent
 
     private ITools EnsureToolRegistry()
     {
-        _toolRegistry ??= new ToolManager();
+        _toolRegistry ??= new Tools();
         return _toolRegistry;
     }
 
