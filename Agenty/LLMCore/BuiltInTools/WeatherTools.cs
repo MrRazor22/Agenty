@@ -306,8 +306,8 @@ namespace Agenty.LLMCore.BuiltInTools
 
         private static string GetWindDirection(int degrees) => degrees switch
         {
-            >= 0 and < 23 => "N ⬆️",
-            >= 23 and < 68 => "NE ↗️",
+            >= 0 and < 23 => "N",
+            >= 23 and < 68 => "NE",
             >= 68 and < 113 => "E",
             >= 113 and < 158 => "SE",
             >= 158 and < 203 => "S",

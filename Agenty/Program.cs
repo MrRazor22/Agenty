@@ -26,6 +26,7 @@ namespace Agenty
             ToolCoordinator toolCordinator = new ToolCoordinator(llm);
 
             ITools tools = new Tools();
+            tools.RegisterAll<SearchTools>();
             tools.RegisterAll<GeoTools>(); // auto-registers static methods in UserTools
             tools.RegisterAll<WeatherTool>();
 
@@ -62,7 +63,7 @@ namespace Agenty
                 ToolCall toolCall;
                 try
                 {
-                    toolCall = await toolCordinator.GetStructuredToolCall(chatHistory, tools);
+                    toolCall = await toolCordinator.GetDefaultToolCall(chatHistory, tools);
                 }
                 catch (Exception ex)
                 {
@@ -107,7 +108,7 @@ namespace Agenty
 
                 try
                 {
-                    currentToolCall = await toolCordinator.GetStructuredToolCall(chat, tools);
+                    currentToolCall = await toolCordinator.GetDefaultToolCall(chat, tools);
                 }
                 catch (Exception ex)
                 {
