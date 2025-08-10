@@ -1,4 +1,4 @@
-﻿using Agenty.JsonSchema;
+﻿using Agenty.LLMCore.JsonSchema;
 using Microsoft.VisualStudio.TestPlatform.CommunicationUtilities;
 using OpenAI;
 using OpenAI.Chat;
