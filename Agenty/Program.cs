@@ -15,6 +15,8 @@ namespace Agenty
     {
         public static async Task Main(string[] args)
         {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+
             var llm = new OpenAILLMClient();
             llm.Initialize("http://127.0.0.1:1234/v1", "lmstudio", "any_model");
 
