@@ -21,25 +21,25 @@ namespace Agenty.LLMCore.JsonSchema
 
             if (type.IsEnum)
                 return new JsonSchemaBuilder()
-                    .Type("string")
+                    .Type<string>()
                     .Enum(Enum.GetNames(type))
                     .Description($"One of: {string.Join(", ", Enum.GetNames(type))}")
                     .Build();
 
             if (type.IsSimpleType())
                 return new JsonSchemaBuilder()
-                    .Type(type.MapClrTypeToJsonType() ?? "object")
+                    .Type(type.MapClrTypeToJsonType())
                     .Build();
 
             if (type.IsArray)
                 return new JsonSchemaBuilder()
-                    .Type("array")
+                    .Type<Array>()
                     .Items(type.GetElementType()!.GetSchemaForType(visited))
                     .Build();
 
             if (typeof(IEnumerable).IsAssignableFrom(type) && type.IsGenericType)
                 return new JsonSchemaBuilder()
-                    .Type("array")
+                    .Type<Array>()
                     .Items(type.GetGenericArguments()[0].GetSchemaForType(visited))
                     .Build();
 
@@ -48,7 +48,7 @@ namespace Agenty.LLMCore.JsonSchema
             {
                 var valueType = type.GetGenericArguments()[1];
                 return new JsonSchemaBuilder()
-                    .Type("object")
+                    .Type<object>()
                     .AdditionalProperties(valueType.GetSchemaForType(visited))
                     .Build();
             }
@@ -86,7 +86,7 @@ namespace Agenty.LLMCore.JsonSchema
             }
 
             return new JsonSchemaBuilder()
-                .Type("object")
+                .Type<object>()
                 .Properties(props)
                 .Required(required)
                 .Build();
@@ -104,12 +104,21 @@ namespace Agenty.LLMCore.JsonSchema
 
         public static string MapClrTypeToJsonType(this Type type)
         {
-            if (type == typeof(Enum)) return "Enum";
-            if (type == typeof(string)) return "string";
+            if (type == null) throw new ArgumentNullException(nameof(type));
+            // Handle nullable types: Nullable<T> => T
+            if (Nullable.GetUnderlyingType(type) is Type underlyingType) type = underlyingType;
+            if (type.IsEnum) return "string"; // JSON Schema enums are strings with enum keyword, so treat enum as string here 
+            if (type == typeof(string) || type == typeof(char)) return "string";
             if (type == typeof(bool)) return "boolean";
-            if (type == typeof(int) || type == typeof(long)) return "integer";
             if (type == typeof(float) || type == typeof(double) || type == typeof(decimal)) return "number";
+            if (type == typeof(void) || type == typeof(DBNull)) return "null";
+            if (type.IsArray || typeof(System.Collections.IEnumerable).IsAssignableFrom(type) && type != typeof(string)) return "array";
+            if (type == typeof(int) || type == typeof(long) || type == typeof(short) || type == typeof(byte) ||
+                type == typeof(uint) || type == typeof(ulong) || type == typeof(ushort) || type == typeof(sbyte))
+                return "integer";
+            // For all other types, treat as "object"
             return "object";
         }
+
     }
 }

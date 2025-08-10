@@ -21,6 +21,12 @@ namespace Agenty.LLMCore.JsonSchema
             _schema[JsonSchemaConstants.TypeKey] = type;
             return this;
         }
+        public JsonSchemaBuilder Type<T>()
+        {
+            var clrType = typeof(T);
+            _schema[JsonSchemaConstants.TypeKey] = clrType.MapClrTypeToJsonType();
+            return this;
+        }
 
         public JsonSchemaBuilder Properties(JsonObject properties)
         {

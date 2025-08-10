@@ -16,6 +16,9 @@ namespace Agenty.LLMCore
 {
     internal class ToolCoordinator(ILLMClient llm)
     {
+        private const string JsonName = "name";
+        private const string JsonArguments = "arguments";
+        private const string JsonMessage = "message";
         public Task<ToolCall> GetDefaultToolCall(ChatHistory prompt, params Tool[] tools)
             => GetDefaultToolCall(prompt, new Tools(tools));
         public async Task<ToolCall> GetDefaultToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false, int maxRetries = 3)
@@ -105,11 +108,11 @@ namespace Agenty.LLMCore
             var options = new JsonSerializerOptions { WriteIndented = true };
             var toolCallExample = new JsonObject
             {
-                ["name"] = "tool_name",
-                ["arguments"] = "{...}", // empty args example
-                ["message"] = ""
+                [JsonName] = "tool_name",
+                [JsonArguments] = "{...}", // empty args example
+                [JsonMessage] = ""
             };
-            var directResponseExample = new JsonObject { ["message"] = "your answer here" };
+            var directResponseExample = new JsonObject { [JsonMessage] = "your answer here" };
 
             var prompt = $@"
 
@@ -151,23 +154,24 @@ namespace Agenty.LLMCore
             (?<close>{tagPattern})        # closing tag like [END_TOOL_REQUEST]
         ";
 
-        static readonly string looseToolJsonPattern = @"
+        static readonly string looseToolJsonPattern = $@"
             (?<json>
-                \{
-                  \s*""name""\s*:\s*""[^""]+""
+                \{{
+                  \s*""{JsonName}""\s*:\s*""[^""]+""
                   \s*,\s*
-                  ""arguments""\s*:\s*\{[\s\S]*\}
-                  (?:\s*,\s*""[^""]+""\s*:\s*[^}]+)*   # allow extra props like message
+                  ""{JsonArguments}""\s*:\s*\{{[\s\S]*\}}
+                  (?:\s*,\s*""[^""]+""\s*:\s*[^}}]+)*   # allow extra props like {JsonMessage}
                   \s*
-                \}
+                \}}
             )
         ";
-        static readonly string messageOnlyPattern = @"
+
+        static readonly string messageOnlyPattern = $@"
             (?<json>
-                \{
-                  \s*""message""\s*:\s*""[^""]+""
+                \{{
+                  \s*""{JsonMessage}""\s*:\s*""[^""]+""
                   \s*
-                \}
+                \}}
             )
         ";
         #endregion
@@ -212,22 +216,22 @@ namespace Agenty.LLMCore
 
             if (node != null)
             {
-                var hasName = node.ContainsKey("name");
-                var hasArgs = node.ContainsKey("arguments");
-                var hasMessage = node.ContainsKey("message");
+                var hasName = node.ContainsKey(JsonName);
+                var hasArgs = node.ContainsKey(JsonArguments);
+                var hasMessage = node.ContainsKey(JsonMessage);
 
                 // Case 1: No tool call - just a message (new schema)
                 if (!hasName && !hasArgs && hasMessage)
                 {
-                    return new ToolCall(node["message"]?.ToString() ?? cleaned ?? "No message provided");
+                    return new ToolCall(node[JsonMessage]?.ToString() ?? cleaned ?? "No message provided");
                 }
 
                 // Case 2: Tool call with name and arguments
                 if (hasName && hasArgs)
                 {
-                    var name = node["name"]!.ToString();
-                    var args = node["arguments"] as JsonObject ?? new JsonObject();
-                    var message = node["message"]?.ToString();
+                    var name = node[JsonName]!.ToString();
+                    var args = node[JsonArguments] as JsonObject ?? new JsonObject();
+                    var message = node[JsonMessage]?.ToString();
 
                     if (string.IsNullOrEmpty(name) || name.Equals("none", StringComparison.OrdinalIgnoreCase))
                     {
@@ -305,12 +309,12 @@ namespace Agenty.LLMCore
         private JsonObject GetToolCallSchema(ITools tools)
         {
             var messageSchema = new JsonSchemaBuilder()
-                .Type("object")
+                .Type<object>()
                 .Properties(new JsonObject
                 {
-                    ["message"] = new JsonObject { ["type"] = "string" }
+                    [JsonMessage] = new JsonObject { ["type"] = "string" }
                 })
-                .Required(new JsonArray { "message" })
+                .Required(new JsonArray { JsonMessage })
                 .Build();
 
             var toolSchemas = tools.RegisteredTools.Select(tool =>
@@ -318,26 +322,26 @@ namespace Agenty.LLMCore
                 var argumentsSchema = tool.SchemaDefinition != null
                     ? JsonNode.Parse(tool.SchemaDefinition.ToJsonString())?.AsObject()
                     : new JsonSchemaBuilder()
-                        .Type("object")
-                        .AdditionalProperties(new JsonObject { ["additionalProperties"] = false })
+                        .Type<object>()
+                        .AdditionalProperties(new JsonObject { [JsonSchemaConstants.AdditionalPropertiesKey] = false })
                         .Build();
 
                 var properties = new JsonObject
                 {
-                    ["name"] = new JsonObject { ["const"] = tool.Name },
-                    ["arguments"] = argumentsSchema ?? new JsonObject(),
-                    ["message"] = new JsonObject { ["type"] = "string" }
+                    [JsonName] = new JsonObject { ["const"] = tool.Name },
+                    [JsonArguments] = argumentsSchema ?? new JsonObject(),
+                    [JsonMessage] = new JsonObject { ["type"] = "string" }
                 };
 
                 return new JsonSchemaBuilder()
-                    .Type("object")
+                    .Type<object>()
                     .Properties(properties)
-                    .Required(new JsonArray { "name", "arguments", "message" })
+                    .Required(new JsonArray { JsonName, JsonArguments, JsonMessage })
                     .Build();
             });
 
             return new JsonSchemaBuilder()
-                .Type("object")
+                .Type<object>()
                 .AnyOf(new[] { messageSchema }.Concat(toolSchemas).ToArray())
                 .Build();
         }

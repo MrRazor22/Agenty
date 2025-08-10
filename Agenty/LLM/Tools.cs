@@ -90,7 +90,7 @@ namespace Agenty.LLMCore
             }
 
             var schema = new JsonSchemaBuilder()
-                .Type("object")
+                .Type<object>()
                 .Properties(properties)
                 .Required(required)
                 .Build();
