@@ -106,26 +106,26 @@ namespace Agenty.LLMCore
 
             var prompt = $@"Available tools: {toolsList}
 
-When the user's question requires using a tool, respond with a JSON object to call that tool exactly once.
-After the tool call, do not call any other tools or repeat calls.
+            When the user's question requires using a tool, respond with a JSON object to call that tool exactly once.
+            After the tool call, do not call any other tools or repeat calls.
 
-JSON formats:
+            JSON formats:
 
-- To call a tool, respond with:
-  {{
-    ""name"": ""tool_name"",
-    ""arguments"": {{ ... }},
-    ""message"": """"
-  }}
+            - To call a tool, respond with:
+              {{
+                ""name"": ""tool_name"",
+                ""arguments"": {{ ... }},
+                ""message"": """"
+              }}
 
-- To respond directly without calling any tool, respond with:
-  {{
-    ""message"": ""your answer here""
-  }}
+            - To respond directly without calling any tool, respond with:
+              {{
+                ""message"": ""your answer here""
+              }}
 
-Only call a tool if necessary to answer the question. Otherwise, reply directly with the message.
+            Only call a tool if necessary to answer the question. Otherwise, reply directly with the message.
 
-Do not repeat tool calls or combine multiple tools in one response.";
+            Do not repeat tool calls or combine multiple tools in one response.";
 
             if (isRetry) prompt += "\nRetry: respond only with valid JSON in the formats described above.";
 
@@ -304,78 +304,7 @@ Do not repeat tool calls or combine multiple tools in one response.";
         /// The "enum" ensures the name is valid.
         /// The "oneOf" ensures arguments matches exactly one tool schema.
         /// </summary>
-        /// <returns>Returns registered tool schema format</returns>
-        private JsonObject GetToolsSchema(ITools tools) => new()
-        {
-            ["type"] = "object",
-            ["properties"] = new JsonObject
-            {
-                ["name"] = new JsonObject
-                {
-                    ["type"] = "string",
-                    ["enum"] = new JsonArray(
-                // Add "none" as an option for when no tool is needed
-                new[] { "none" }
-                .Concat(tools.RegisteredTools.Select(t => t.Name))
-                .Select(name => JsonValue.Create(name))
-                .ToArray()
-            ),
-                    ["description"] = "Tool to call, or 'none' if no tool is needed"
-                },
-                ["arguments"] = new JsonObject
-                {
-                    ["type"] = "object",
-                    ["description"] = "Arguments for the tool (empty object {} if no tool needed)",
-                    ["default"] = new JsonObject()
-                },
-                ["message"] = new JsonObject
-                {
-                    ["type"] = "string",
-                    ["description"] = "Your response message (required for both tool calls and text responses)"
-                }
-            },
-            ["required"] = new JsonArray { "name", "arguments", "message" }
-        };
-
-        private JsonObject GetToolsSchemaConditional(ITools tools)
-        {
-            var schemaParts = new JsonNode[]
-            {
-        new JsonObject
-        {
-            ["type"] = "object",
-            ["properties"] = new JsonObject
-            {
-                ["name"] = new JsonObject { ["const"] = "none" },
-                ["arguments"] = new JsonObject { ["type"] = "object", ["properties"] = new JsonObject(), ["additionalProperties"] = false },
-                ["message"] = new JsonObject { ["type"] = "string" }
-            },
-            ["required"] = new JsonArray { "name", "arguments", "message" }
-        }
-            }
-            .Concat(
-                tools.RegisteredTools.Select(tool => new JsonObject
-                {
-                    ["type"] = "object",
-                    ["properties"] = new JsonObject
-                    {
-                        ["name"] = new JsonObject { ["const"] = tool.Name },
-                        ["arguments"] = JsonNode.Parse(tool.SchemaDefinition?.ToJsonString() ??
-                            """{"type": "object", "additionalProperties": false}""")?.AsObject() ??
-                            new JsonObject { ["type"] = "object", ["additionalProperties"] = false },
-                        ["message"] = new JsonObject { ["type"] = "string" }
-                    },
-                    ["required"] = new JsonArray { "name", "arguments", "message" }
-                })
-            );
-
-            return new JsonObject
-            {
-                ["type"] = "object",
-                ["anyOf"] = new JsonArray(schemaParts.ToArray())
-            };
-        }
-
+        /// <returns>Returns registered tool schema format</returns> 
         private JsonObject GetToolCallSchema(ITools tools)
         {
             var schemaParts = new JsonNode[]
