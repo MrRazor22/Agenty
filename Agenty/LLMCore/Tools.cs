@@ -1,5 +1,5 @@
 ﻿// Enhancing Tools class to support Enums, Async, Recursive, Overloads, Metadata, etc.
-using Agenty.JsonSchema;
+using Agenty.LLMCore.JsonSchema;
 using Microsoft.Win32;
 using System.Collections;
 using System.ComponentModel;

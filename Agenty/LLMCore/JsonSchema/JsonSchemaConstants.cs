@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Agenty.JsonSchema
+namespace Agenty.LLMCore.JsonSchema
 {
     public static class JsonSchemaConstants
     { // Key constants

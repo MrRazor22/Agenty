@@ -1,7 +1,6 @@
-﻿
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 
-namespace Agenty.JsonSchema
+namespace Agenty.LLMCore.JsonSchema
 {
     public class JsonSchemaBuilder
     {

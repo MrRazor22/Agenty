@@ -1,4 +1,4 @@
-﻿using Agenty.JsonSchema;
+﻿using Agenty.LLMCore.JsonSchema;
 using OpenAI.Chat;
 using System;
 using System.Collections.Generic;

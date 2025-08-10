@@ -10,7 +10,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 
-namespace Agenty.JsonSchema
+namespace Agenty.LLMCore.JsonSchema
 {
     public static class JsonSchemaExtensions
     {
@@ -81,7 +81,7 @@ namespace Agenty.JsonSchema
 
                 props[prop.Name] = propSchema;
 
-                if (!IsOptional(prop))
+                if (!prop.IsOptional())
                     required.Add(prop.Name);
             }
 
@@ -95,7 +95,7 @@ namespace Agenty.JsonSchema
         private static bool IsOptional(this PropertyInfo prop)
         {
             var type = prop.PropertyType;
-            return Nullable.GetUnderlyingType(type) != null || (type.IsClass && type != typeof(string));
+            return Nullable.GetUnderlyingType(type) != null || type.IsClass && type != typeof(string);
         }
         public static bool IsSimpleType(this Type type)
         {
