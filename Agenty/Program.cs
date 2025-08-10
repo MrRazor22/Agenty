@@ -26,7 +26,7 @@ namespace Agenty
             ToolCoordinator toolCordinator = new ToolCoordinator(llm);
 
             ITools tools = new Tools();
-            tools.RegisterAll<WeatherTool>(); // auto-registers static methods in UserTools
+            tools.RegisterAll<GeoTools>(); // auto-registers static methods in UserTools
 
             var chatHistory = new ChatHistory();
             chatHistory.OnChat += (chat) =>
