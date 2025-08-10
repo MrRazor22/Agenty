@@ -31,7 +31,7 @@ namespace Agenty.LLMCore
         }
         public async Task<string> GetResponse(ChatHistory prompt)
         {
-            var response = await _chatClient.CompleteChatAsync(ToChatMessages(prompt));
+            var response = await _chatClient.CompleteChatAsync(prompt.ToChatMessages());
 
             var contentParts = response.Value.Content;
             var textContent = string.Join("", contentParts.Select(part => part.Text));
@@ -40,8 +40,7 @@ namespace Agenty.LLMCore
 
         public async IAsyncEnumerable<string> GetStreamingResponse(ChatHistory prompt)
         {
-            AsyncCollectionResult<StreamingChatCompletionUpdate> responseUpdates
-                = _chatClient.CompleteChatStreamingAsync(ToChatMessages(prompt));
+            AsyncCollectionResult<StreamingChatCompletionUpdate> responseUpdates = _chatClient.CompleteChatStreamingAsync(prompt.ToChatMessages());
             await foreach (var update in responseUpdates)
             {
                 foreach (var part in update.ContentUpdate)
@@ -52,13 +51,13 @@ namespace Agenty.LLMCore
         }
         public async Task<ToolCall> GetToolCallResponse(ChatHistory prompt, IEnumerable<Tool> tools, bool forceToolCall = false)
         {
-            List<ChatTool> chatTools = ToChatTools(tools);
+            List<ChatTool> chatTools = tools.ToChatTools();
 
             ChatCompletionOptions options = new() { ToolChoice = forceToolCall ? ChatToolChoice.CreateRequiredChoice() : ChatToolChoice.CreateAutoChoice() };
 
             chatTools.ForEach(t => options.Tools.Add(t));
 
-            var response = await _chatClient.CompleteChatAsync(ToChatMessages(prompt), options);
+            var response = await _chatClient.CompleteChatAsync(prompt.ToChatMessages(), options);
             var result = response.Value;
 
             var chatToolCall = result?.ToolCalls?.FirstOrDefault();
@@ -85,15 +84,6 @@ namespace Agenty.LLMCore
             return new("");
         }
 
-        private static List<ChatTool> ToChatTools(IEnumerable<Tool> tools)
-        {
-            return tools.Select(tool => ChatTool.CreateFunctionTool(
-                                tool.Name,
-                                tool.Description,
-                                BinaryData.FromString(tool.SchemaDefinition.ToJsonString())))
-                            .ToList();
-        }
-
         public async Task<JsonObject> GetStructuredResponse(ChatHistory prompt, JsonObject responseFormat)
         {
             ChatCompletionOptions options = new()
@@ -104,47 +94,10 @@ namespace Agenty.LLMCore
                     jsonSchemaIsStrict: true)
             };
 
-            ChatCompletion completion = await _chatClient.CompleteChatAsync(ToChatMessages(prompt), options);
+            ChatCompletion completion = await _chatClient.CompleteChatAsync(prompt.ToChatMessages(), options);
 
             using JsonDocument structuredJson = JsonDocument.Parse(completion.Content[0].Text);
             return JsonNode.Parse(structuredJson.RootElement.GetRawText())!.AsObject();
-        }
-
-        private IEnumerable<ChatMessage> ToChatMessages(ChatHistory prompt)
-        {
-            var list = prompt.ToList();
-            for (int i = 0; i < list.Count; i++)
-            {
-                var msg = list[i];
-                bool isLast = i == list.Count - 1;
-
-                yield return msg.Role switch
-                {
-                    Role.System => ChatMessage.CreateSystemMessage(msg.Content),
-                    Role.User => ChatMessage.CreateUserMessage(msg.Content),
-                    Role.Assistant when msg.toolCallInfo != null && msg.toolCallInfo.Name != null =>
-                        ChatMessage.CreateAssistantMessage(
-                            toolCalls: new[]
-                            {
-                        ChatToolCall.CreateFunctionToolCall(
-                            id: msg.toolCallInfo.Id,
-                            functionName: msg.toolCallInfo.Name,
-                            functionArguments: BinaryData.FromObjectAsJson(msg.toolCallInfo.Arguments))
-                            }),
-                    Role.Assistant => string.IsNullOrWhiteSpace(msg.Content)
-                        ? (isLast
-                            ? throw new InvalidOperationException("Assistant message content cannot be null or empty.")
-                            : ChatMessage.CreateAssistantMessage(string.Empty))
-                        : ChatMessage.CreateAssistantMessage(msg.Content),
-                    Role.Tool when msg.toolCallInfo is not null =>
-                        ChatMessage.CreateToolMessage(msg.toolCallInfo.Id, msg.Content),
-                    Role.Tool =>
-                        isLast
-                            ? throw new InvalidOperationException("ToolCallInfo required for tool message.")
-                            : ChatMessage.CreateToolMessage("unknown", msg.Content ?? string.Empty),
-                    _ => throw new InvalidOperationException("Invalid message role.")
-                };
-            }
         }
 
     }
