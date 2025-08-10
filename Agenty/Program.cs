@@ -27,6 +27,7 @@ namespace Agenty
 
             ITools tools = new Tools();
             tools.RegisterAll<GeoTools>(); // auto-registers static methods in UserTools
+            tools.RegisterAll<WeatherTool>();
 
             var chatHistory = new ChatHistory();
             chatHistory.OnChat += (chat) =>
