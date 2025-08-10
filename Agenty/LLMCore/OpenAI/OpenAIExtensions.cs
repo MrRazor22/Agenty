@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 using OpenAI;
 using OpenAI.Chat;
 
-namespace Agenty.LLMCore
+namespace Agenty.LLMCore.OpenAI
 {
     public static class OpenAIExtensions
     {
@@ -45,9 +45,9 @@ namespace Agenty.LLMCore
                             }),
                     Role.Assistant =>
                         string.IsNullOrWhiteSpace(msg.Content)
-                            ? (isLast
+                            ? isLast
                                 ? throw new InvalidOperationException("Assistant message content cannot be null or empty.")
-                                : ChatMessage.CreateAssistantMessage(string.Empty))
+                                : ChatMessage.CreateAssistantMessage(string.Empty)
                             : ChatMessage.CreateAssistantMessage(msg.Content),
                     Role.Tool when msg.toolCallInfo != null =>
                         ChatMessage.CreateToolMessage(msg.toolCallInfo.Id, msg.Content ?? ""),

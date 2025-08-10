@@ -1,4 +1,4 @@
-﻿using Agenty.Utilities;
+﻿using Agenty.JsonSchema;
 using Microsoft.VisualStudio.TestPlatform.CommunicationUtilities;
 using OpenAI;
 using OpenAI.Chat;
@@ -10,11 +10,11 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
-namespace Agenty.LLMCore
+namespace Agenty.LLMCore.OpenAI
 {
-    public class OpenAIClient() : ILLMClient
+    public class OpenAILLMClient() : ILLMClient
     {
-        private OpenAI.OpenAIClient _client;
+        private OpenAIClient _client;
         private ChatClient _chatClient;
 
         public void Initialize(string baseUrl, string apiKey, string modelName = "any_model")

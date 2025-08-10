@@ -1,5 +1,6 @@
 ﻿using Agenty.AgentCore;
 using Agenty.LLMCore;
+using Agenty.LLMCore.OpenAI;
 using OpenAI.Chat;
 using System;
 using System.ComponentModel;
@@ -14,7 +15,7 @@ namespace Agenty
     {
         public static async Task Main(string[] args)
         {
-            var llm = new OpenAIClient();
+            var llm = new OpenAILLMClient();
             llm.Initialize("http://127.0.0.1:1234/v1", "lmstudio", "any_model");
 
             ToolCoordinator toolCordinator = new ToolCoordinator(llm);

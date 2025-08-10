@@ -1,5 +1,5 @@
 ﻿// Enhancing Tools class to support Enums, Async, Recursive, Overloads, Metadata, etc.
-using Agenty.Utilities;
+using Agenty.JsonSchema;
 using Microsoft.Win32;
 using System.Collections;
 using System.ComponentModel;
@@ -74,13 +74,17 @@ public class ToolManager(IEnumerable<Tool>? tools = null) : ITools
             var name = param.Name!;
             var desc = param.GetCustomAttribute<DescriptionAttribute>()?.Description ?? name;
             var typeSchema = param.ParameterType.GetSchemaForType();
-            typeSchema["description"] ??= desc;
+            typeSchema[JsonSchemaConstants.DescriptionKey] ??= desc;
 
             properties[name] = typeSchema;
             if (!param.IsOptional) required.Add(name);
         }
 
-        var schema = new JsonObject().UpdateStandardTypeSchema(properties, required);
+        var schema = new JsonSchemaBuilder()
+            .Type("object")
+            .Properties(properties)
+            .Required(required)
+            .Build();
 
         return new Tool
         {

@@ -1,4 +1,5 @@
 ﻿using Agenty.LLMCore;
+using Agenty.LLMCore.OpenAI;
 
 namespace Agenty.AgentCore;
 
@@ -63,7 +64,7 @@ public class Agent : IAgent
 
     public IAgent WithModel(string baseUrl, string apiKey, string modelName = "any_model")
     {
-        _llm ??= new OpenAIClient();
+        _llm ??= new OpenAILLMClient();
         _llm.Initialize(baseUrl, apiKey, modelName);
         return this;
     }

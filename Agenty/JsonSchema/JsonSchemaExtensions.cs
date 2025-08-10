@@ -5,68 +5,55 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.Serialization;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 
-namespace Agenty.Utilities
+namespace Agenty.JsonSchema
 {
     public static class JsonSchemaExtensions
     {
-        private const string TypeKey = "type";
-        private const string PropertiesKey = "properties";
-        private const string RequiredKey = "required";
-
-        /// <summary>
-        /// Updates the JsonObject to be a standard JSON schema with type, properties, and required arrays.
-        /// </summary>
-        /// <param name="schema">The JsonObject to update (can be new or existing).</param>
-        /// <param name="properties">The properties object of the schema.</param>
-        /// <param name="required">The array of required property names.</param>
-        /// <param name="type">The JSON schema type (default: "object").</param>
-        /// <returns>The updated JsonObject (same instance as input).</returns>
-        public static JsonObject UpdateStandardTypeSchema(
-            this JsonObject schema,
-            JsonObject properties,
-            JsonArray required,
-            string? type = null)
-        {
-            schema[TypeKey] = type ?? "object";
-            schema[PropertiesKey] = properties;
-            schema[RequiredKey] = required;
-            return schema;
-        }
-
         public static JsonObject GetSchemaForType(this Type type, HashSet<Type>? visited = null)
         {
             visited ??= new HashSet<Type>();
             type = Nullable.GetUnderlyingType(type) ?? type;
 
             if (type.IsEnum)
-                return new JsonObject
-                {
-                    ["type"] = "string",
-                    ["enum"] = new JsonArray(Enum.GetNames(type).Select((e) => JsonValue.Create(e)).ToArray()),
-                    ["description"] = $"One of: {string.Join(", ", Enum.GetNames(type))}"
-                };
+                return new JsonSchemaBuilder()
+                    .Type("string")
+                    .Enum(Enum.GetNames(type))
+                    .Description($"One of: {string.Join(", ", Enum.GetNames(type))}")
+                    .Build();
 
             if (type.IsSimpleType())
-                return new JsonObject { ["type"] = type.MapClrTypeToJsonType() };
+                return new JsonSchemaBuilder()
+                    .Type(type.MapClrTypeToJsonType() ?? "object")
+                    .Build();
 
             if (type.IsArray)
-                return new JsonObject { ["type"] = "array", ["items"] = GetSchemaForType(type.GetElementType()!, visited) };
+                return new JsonSchemaBuilder()
+                    .Type("array")
+                    .Items(type.GetElementType()!.GetSchemaForType(visited))
+                    .Build();
 
             if (typeof(IEnumerable).IsAssignableFrom(type) && type.IsGenericType)
-                return new JsonObject { ["type"] = "array", ["items"] = GetSchemaForType(type.GetGenericArguments()[0], visited) };
+                return new JsonSchemaBuilder()
+                    .Type("array")
+                    .Items(type.GetGenericArguments()[0].GetSchemaForType(visited))
+                    .Build();
 
             if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>) &&
                 type.GetGenericArguments()[0] == typeof(string))
             {
                 var valueType = type.GetGenericArguments()[1];
-                return new JsonObject { ["type"] = "object", ["additionalProperties"] = GetSchemaForType(valueType, visited) };
+                return new JsonSchemaBuilder()
+                    .Type("object")
+                    .AdditionalProperties(valueType.GetSchemaForType(visited))
+                    .Build();
             }
 
-            if (visited.Contains(type)) return new JsonObject(); ;
+            if (visited.Contains(type)) return new JsonSchemaBuilder().Build();
             visited.Add(type);
 
             var props = new JsonObject();
@@ -75,24 +62,34 @@ namespace Agenty.Utilities
             foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
                 var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
-                var propSchema = GetSchemaForType(propType, visited);
-                propSchema["description"] = prop.GetCustomAttribute<DescriptionAttribute>()?.Description ?? prop.Name;
+                var propSchema = propType.GetSchemaForType(visited);
+
+                var description = prop.GetCustomAttribute<DescriptionAttribute>()?.Description ?? prop.Name;
+                propSchema[JsonSchemaConstants.DescriptionKey] = description;
 
                 if (prop.GetCustomAttribute<EmailAddressAttribute>() != null)
-                    propSchema["format"] = "email";
+                    propSchema[JsonSchemaConstants.FormatKey] = "email";
+
                 if (prop.GetCustomAttribute<StringLengthAttribute>() is { } len)
                 {
-                    propSchema["minLength"] = len.MinimumLength;
-                    propSchema["maxLength"] = len.MaximumLength;
+                    propSchema[JsonSchemaConstants.MinLengthKey] = len.MinimumLength;
+                    propSchema[JsonSchemaConstants.MaxLengthKey] = len.MaximumLength;
                 }
+
                 if (prop.GetCustomAttribute<RegularExpressionAttribute>() is { } regex)
-                    propSchema["pattern"] = regex.Pattern;
+                    propSchema[JsonSchemaConstants.PatternKey] = regex.Pattern;
 
                 props[prop.Name] = propSchema;
-                if (!IsOptional(prop)) required.Add(prop.Name);
+
+                if (!IsOptional(prop))
+                    required.Add(prop.Name);
             }
 
-            return new JsonObject().UpdateStandardTypeSchema(props, required);
+            return new JsonSchemaBuilder()
+                .Type("object")
+                .Properties(props)
+                .Required(required)
+                .Build();
         }
 
         private static bool IsOptional(this PropertyInfo prop)
