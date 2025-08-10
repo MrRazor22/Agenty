@@ -129,7 +129,7 @@ namespace Agenty
             Console.ResetColor();
         }
 
-        [Description("Sunny, Cloudy, Rainy, Snowy.")]
+        [Description("Weather Type any of [Sunny, Cloudy, Rainy, Snowy.]")]
         public enum WeatherType
         {
             [Description("Clear sky with lots of sunshine.")]
@@ -147,7 +147,7 @@ namespace Agenty
 
         static class UserTools
         {
-            [Description("Suggests the ideal weather activity to do")]
+            [Description("Suggests activity to do for weather type")]
             public static string SuggestActivity(
     [Description("The current weather condition.")] WeatherType currentWeather)
             {
