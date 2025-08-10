@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 
 namespace Agenty.LLMCore
 {
-    internal class ToolCordinator(ILLMClient llm)
+    internal class ToolCoordinator(ILLMClient llm)
     {
         public Task<ToolCall> GetDefaultToolCall(ChatHistory prompt, params Tool[] tools)
             => GetDefaultToolCall(prompt, new ToolManager(tools));

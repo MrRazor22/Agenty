@@ -52,7 +52,7 @@ namespace Agenty.LLMCore
         public string Description { get; set; }
         public JsonObject SchemaDefinition { get; set; }
         [JsonIgnore] public Delegate? Function { get; set; }
-        public override string ToString() => $"{Name} - {Description} | Args: {string.Join(", ", SchemaDefinition?["parameters"]?["properties"]?.AsObject().Select(p => p.Key) ?? [])}";
+        public override string ToString() => $"Tool: {Name} - {Description} | Args: {string.Join(", ", SchemaDefinition?["parameters"]?["properties"]?.AsObject().Select(p => p.Key) ?? [])}";
     }
 
     public class ToolCall(string id, string name, JsonObject arguments, object?[]? parameters = null, string? message = null)
@@ -73,7 +73,7 @@ namespace Agenty.LLMCore
                 ? string.Join(", ", Arguments.Select(kvp => $"{kvp.Key}: {kvp.Value?.ToJsonString()}"))
                 : "none";
 
-            return $"ToolCall Info: '{Name}' (id: {Id}) with Arguments: [{argsStr}]";
+            return $"ToolCall: '{Name}' (id: {Id}) with Arguments: [{argsStr}]";
         }
     }
 
