@@ -103,8 +103,8 @@ namespace Agenty.LLMCore
         private string BuildSystemPrompt(ITools tools, bool isRetry)
         {
             var toolsList = string.Join(", ", tools.RegisteredTools.Select(t => t.Name));
-
-            var prompt = $@"Available tools: {toolsList}
+            //Available tools: {toolsList}
+            var prompt = $@"
 
             When the user's question requires using a tool, respond with a JSON object to call that tool exactly once.
             After the tool call, do not call any other tools or repeat calls.
