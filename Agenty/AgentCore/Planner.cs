@@ -7,15 +7,15 @@ public class Planner : IPlanner
 {
     private readonly ILLMClient _llm;
     private readonly IAgentMemory _memory;
-    private readonly IToolManager _builtInTools;
+    private readonly ITools _builtInTools;
     private readonly IAgentLogger? _logger;
 
 
     public Planner(
         ILLMClient llm,
         IAgentMemory agentMemory,
-        IToolManager toolRegistry,
-        IToolManager builtInTools,
+        ITools toolRegistry,
+        ITools builtInTools,
         IAgentLogger? logger = null)
     {
         _llm = llm;

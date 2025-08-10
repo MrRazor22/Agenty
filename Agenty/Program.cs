@@ -17,16 +17,17 @@ namespace Agenty
             var llm = new OpenAIClient();
             llm.Initialize("http://127.0.0.1:1234/v1", "lmstudio", "any_model");
 
-            IToolManager tools = new ToolManager();
+            ToolCordinator toolCordinator = new ToolCordinator(llm);
+
+            ITools tools = new ToolManager();
             tools.RegisterAll(typeof(UserTools)); // auto-registers static methods in UserTools
 
             var chat = new ChatHistory();
-            chat.Add(Role.System,
-                "You are a helpful assistant who plans, executes, reflects, and iterates until the user’s request is fulfilled. " +
-                "Use any internal tools as needed, but never mention them to the user. " +
-                "Keep responses concise, clear, and friendly. " +
-                "If you need more information to fulfill the request, ask the user naturally and conversationally."
-            );
+            chat.Add(Role.System, "You are an assistant." +
+                 "Plan and answer one by one" +
+                 "if not sure on what to respind, express that to user directly" +
+                 "Use relevant tools if needed, or respond directly." +
+                 "Provide your answers short and sweet");
 
 
             Console.WriteLine("🤖 Welcome to Agenty ChatBot! Type 'exit' to quit.\n");
@@ -43,10 +44,10 @@ namespace Agenty
 
                 chat.Add(Role.User, input);
 
-                Tool toolCall;
+                ToolCall toolCall;
                 try
                 {
-                    toolCall = await llm.GetToolCallResponse(chat, tools);
+                    toolCall = await toolCordinator.GetDefaultToolCall(chat, tools);
                 }
                 catch (Exception ex)
                 {
@@ -54,34 +55,34 @@ namespace Agenty
                     continue;
                 }
 
-                await ExecuteToolChain(toolCall, chat, tools, llm);
+                await ExecuteToolChain(toolCall, chat, tools, toolCordinator);
             }
 
             Console.WriteLine("👋 Exiting Agenty ChatBot.");
         }
 
-        private static async Task ExecuteToolChain(Tool initialCall, ChatHistory chat, IToolManager tools, ILLMClient llm)
+        private static async Task ExecuteToolChain(ToolCall initialCall, ChatHistory chat, ITools tools, ToolCordinator toolCordinator)
         {
-            Tool current = initialCall;
+            ToolCall currentToolCall = initialCall;
 
             while (true)
             {
-                if (!string.IsNullOrWhiteSpace(current.AssistantMessage))
+                if (!string.IsNullOrWhiteSpace(currentToolCall.AssistantMessage))
                 {
-                    ShowMessage("🤖 Answer", ConsoleColor.Green, current.AssistantMessage.Trim());
-                    chat.Add(Role.Assistant, current.AssistantMessage);
+                    ShowMessage("🤖 Answer", ConsoleColor.Green, currentToolCall.AssistantMessage.Trim());
+                    chat.Add(Role.Assistant, currentToolCall.AssistantMessage);
                 }
 
-                if (string.IsNullOrWhiteSpace(current.Name))
+                if (string.IsNullOrWhiteSpace(currentToolCall.Name))
                     return;
 
-                chat.Add(Role.Assistant, tool: current);
-                ShowMessage("🔧 Tool Call", ConsoleColor.Yellow, current.ToString());
+                chat.Add(Role.Assistant, tool: currentToolCall);
+                ShowMessage("🔧 Tool Call", ConsoleColor.Yellow, currentToolCall.ToString());
 
                 object? result;
                 try
                 {
-                    result = await tools.Invoke<object>(current);
+                    result = await toolCordinator.Invoke<object>(currentToolCall, tools);
                 }
                 catch (Exception ex)
                 {
@@ -90,11 +91,11 @@ namespace Agenty
                 }
 
                 ShowMessage("📄 Tool Result", ConsoleColor.White, result?.ToString());
-                chat.Add(Role.Tool, result?.ToString(), current);
+                chat.Add(Role.Tool, result?.ToString(), currentToolCall);
 
                 try
                 {
-                    current = await llm.GetToolCallResponse(chat, tools);
+                    currentToolCall = await toolCordinator.GetDefaultToolCall(chat, tools);
                 }
                 catch (Exception ex)
                 {
@@ -102,11 +103,11 @@ namespace Agenty
                     return;
                 }
 
-                if (string.IsNullOrWhiteSpace(current.AssistantMessage) && !string.IsNullOrWhiteSpace(current.Name))
-                    ShowMessage("🤖", ConsoleColor.Green, $"Calling tool `{current.Name}`...");
+                if (string.IsNullOrWhiteSpace(currentToolCall.AssistantMessage) && !string.IsNullOrWhiteSpace(currentToolCall.Name))
+                    ShowMessage("🤖", ConsoleColor.Green, $"Calling tool `{currentToolCall.Name}`...");
 
-                else if (string.IsNullOrWhiteSpace(current.AssistantMessage) &&
-                    string.IsNullOrWhiteSpace(current.Name))
+                else if (string.IsNullOrWhiteSpace(currentToolCall.AssistantMessage) &&
+                    string.IsNullOrWhiteSpace(currentToolCall.Name))
                     return;
             }
         }
@@ -191,8 +192,8 @@ namespace Agenty
             {
                 try
                 {
-                    from = from.ToUpperInvariant();
-                    to = to.ToUpperInvariant();
+                    from = from?.ToUpperInvariant() ?? throw new ArgumentNullException(nameof(from));
+                    to = to?.ToUpperInvariant() ?? throw new ArgumentNullException(nameof(to));
 
                     using var client = new HttpClient();
                     var url = $"https://open.er-api.com/v6/latest/{from}";

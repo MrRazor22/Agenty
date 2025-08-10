@@ -10,9 +10,9 @@ public class Agent : IAgent
     private IPlanner? _planner;
     private IExecutor? _executor;
     private IAgentMemory? _memory;
-    private IToolManager? _toolRegistry;
+    private ITools? _toolRegistry;
     private IAgentLogger? _logger;
-    private IToolManager? _builtInTools;
+    private ITools? _builtInTools;
     private Type _agentToolType = typeof(AgentTools);
 
     public IAgentMemory? Memory => _memory;
@@ -94,7 +94,7 @@ public class Agent : IAgent
         return this;
     }
 
-    private IToolManager EnsureToolRegistry()
+    private ITools EnsureToolRegistry()
     {
         _toolRegistry ??= new ToolManager();
         return _toolRegistry;
@@ -118,7 +118,7 @@ public class Agent : IAgent
         return this;
     }
 
-    public IAgent WithToolRegistry(IToolManager toolRegistry)
+    public IAgent WithToolRegistry(ITools toolRegistry)
     {
         _toolRegistry = toolRegistry;
         return this;

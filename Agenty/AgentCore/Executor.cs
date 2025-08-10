@@ -6,8 +6,8 @@ public class Executor : IExecutor
     private readonly ILLMClient _llmClient;
     private readonly IPlanner _planner;
     private readonly IAgentMemory _agentMemory;
-    private readonly IToolManager _toolRegistry;
-    private readonly IToolManager _builtInTools;
+    private readonly ITools _toolRegistry;
+    private readonly ITools _builtInTools;
     private readonly IAgentLogger? _logger;
 
     public Func<Tool, Task<string>>? OnToolInvoking { get; set; }
@@ -17,8 +17,8 @@ public class Executor : IExecutor
         ILLMClient llmClient,
         IPlanner planner,
         IAgentMemory agentMemory,
-        IToolManager toolRegistry,
-        IToolManager builtInTools,
+        ITools toolRegistry,
+        ITools builtInTools,
         IAgentLogger? logger = null)
     {
         _llmClient = llmClient;
@@ -30,7 +30,7 @@ public class Executor : IExecutor
 
         OnToolInvoking = info =>
         {
-            _logger?.Log("Executor", $"[Tool Call]: '{info.Name}' with: {info.ArgsRegisteredSchema}");
+            _logger?.Log("Executor", $"[Tool Call]: '{info.Name}' with: {info.SchemaDefinition}");
             return Task.FromResult("");
         };
 

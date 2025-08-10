@@ -50,73 +50,48 @@ namespace Agenty.LLMCore
                 }
             }
         }
-
-        public Task<Tool> GetToolCallResponse(ChatHistory prompt, IToolManager tools)
-            => ProcessToolCall(prompt, tools);
-
-        public Task<Tool> GetToolCallResponse(ChatHistory prompt, params Tool[] tools)
-            => ProcessToolCall(prompt, new ToolManager(tools));
-        public async Task<Tool> ProcessToolCall(ChatHistory prompt, IToolManager tools, bool forceToolCall = false, int maxRetries = 3)
+        public async Task<ToolCall> GetToolCallResponse(ChatHistory prompt, ITools tools, bool forceToolCall = false)
         {
-            if (tools == null || !tools.RegisteredTools.Any()) throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
-
-            var intPrompt = ChatHistory.Clone(prompt);
             List<ChatTool> chatTools = ToChatTools(tools);
 
             ChatCompletionOptions options = new() { ToolChoice = forceToolCall ? ChatToolChoice.CreateRequiredChoice() : ChatToolChoice.CreateAutoChoice() };
 
             chatTools.ForEach(t => options.Tools.Add(t));
 
-            for (int attempt = 0; attempt <= maxRetries; attempt++)
+            var response = await _chatClient.CompleteChatAsync(ToChatMessages(prompt), options);
+            var result = response.Value;
+
+            var chatToolCall = result?.ToolCalls?.FirstOrDefault();
+            if (chatToolCall != null)
             {
-                var response = await _chatClient.CompleteChatAsync(ToChatMessages(intPrompt), options);
-                var result = response.Value;
-
-                try
+                if (tools.Contains(chatToolCall.FunctionName))
                 {
-                    var chatToolCall = result?.ToolCalls?.FirstOrDefault();
-                    if (chatToolCall != null)
-                    {
-                        var tool = tools.Get(chatToolCall.FunctionName);
-                        if (tool != null)
-                        {
-                            tool.Id = chatToolCall.Id ?? Guid.NewGuid().ToString();
-                            tool.ArgsToolCallSchema = chatToolCall.FunctionArguments.ToObjectFromJson<JsonObject>() ?? new JsonObject();
-                            tool.Parameters = tools.ParseToolParams(tool.Name, tool.ArgsToolCallSchema);
-                            tool.AssistantMessage = result?.Content?.FirstOrDefault()?.Text;
-                            return tool;
-                        }
-                    }
-
-                    string? content = result?.Content?.FirstOrDefault()?.Text;
-                    if (!string.IsNullOrWhiteSpace(content))
-                    {
-                        var tool = tools.TryExtractInlineToolCall(content);
-                        if (tool != null)
-                            return tool;
-
-                        return new Tool { AssistantMessage = content };
-                    }
+                    var name = chatToolCall.FunctionName;
+                    var args = chatToolCall.FunctionArguments.ToObjectFromJson<JsonObject>() ?? new JsonObject();
+                    return new
+                    (
+                        chatToolCall.Id ?? Guid.NewGuid().ToString(),
+                        name,
+                        args,
+                        null,
+                        result?.Content?.FirstOrDefault()?.Text
+                    );
                 }
-                catch (Exception ex)
-                {
-                    intPrompt.Add(Role.Assistant, $"The last response failed with [{ex.Message}].");
-                    continue;
-                }
-
-                intPrompt.Add(Role.Assistant, $"The last response was empty or invalid. Please return a valid tool call using one of: {string.Join(", ", tools.RegisteredTools.Select(t => t.Name))}.");
             }
 
-            return new Tool { AssistantMessage = "Couldn't generate a valid tool call/response." };
+            string? content = result?.Content?.FirstOrDefault()?.Text;
+            if (!string.IsNullOrWhiteSpace(content)) return new(content);
+
+            return new("");
         }
 
-        private static List<ChatTool> ToChatTools(IToolManager tools)
+        private static List<ChatTool> ToChatTools(ITools tools)
         {
             return tools.RegisteredTools
                             .Select(tool => ChatTool.CreateFunctionTool(
                                 tool.Name,
                                 tool.Description,
-                                BinaryData.FromString(tool.ArgsRegisteredSchema.ToJsonString())))
+                                BinaryData.FromString(tool.SchemaDefinition.ToJsonString())))
                             .ToList();
         }
 
@@ -155,7 +130,7 @@ namespace Agenty.LLMCore
                         ChatToolCall.CreateFunctionToolCall(
                             id: msg.toolCallInfo.Id,
                             functionName: msg.toolCallInfo.Name,
-                            functionArguments: BinaryData.FromObjectAsJson(msg.toolCallInfo.ArgsToolCallSchema))
+                            functionArguments: BinaryData.FromObjectAsJson(msg.toolCallInfo.Arguments))
                             }),
                     Role.Assistant => string.IsNullOrWhiteSpace(msg.Content)
                         ? (isLast

@@ -7,10 +7,10 @@ using static System.Runtime.InteropServices.JavaScript.JSType;
 namespace Agenty.LLMCore
 {
     public enum Role { System, Assistant, User, Tool }
-    public record Chat(Role Role, string? Content, Tool? toolCallInfo = null);
+    public record Chat(Role Role, string? Content, ToolCall? toolCallInfo = null);
     public class ChatHistory() : List<Chat>
     {
-        public ChatHistory Add(Role role, string? content = null, Tool? tool = null)
+        public ChatHistory Add(Role role, string? content = null, ToolCall? tool = null)
         {
             Add(new Chat(role, content, tool));
             return this;
@@ -32,12 +32,11 @@ namespace Agenty.LLMCore
         void Initialize(string url, string apiKey, string modelName);
         Task<string> GetResponse(ChatHistory prompt);
         IAsyncEnumerable<string> GetStreamingResponse(ChatHistory prompt);
-        Task<Tool> GetToolCallResponse(ChatHistory prompt, IToolManager tools);
-        Task<Tool> GetToolCallResponse(ChatHistory prompt, params Tool[] tools);
+        Task<ToolCall> GetToolCallResponse(ChatHistory prompt, ITools tools, bool forceToolCall = false);
         Task<JsonObject> GetStructuredResponse(ChatHistory prompt, JsonObject responseFormat);
     }
 
-    public interface IToolManager
+    public interface ITools
     {
         IReadOnlyList<Tool> RegisteredTools { get; }
         void Register(params Delegate[] funcs);
@@ -45,33 +44,37 @@ namespace Agenty.LLMCore
         Tool? Get(Delegate func);
         Tool? Get(string toolName);
         bool Contains(string toolName);
-        JsonObject GetToolsSchema();
-        object?[] ParseToolParams(string toolName, JsonObject arguments);
-        Tool? TryExtractInlineToolCall(string content);
-        Task<T?> Invoke<T>(Tool toolCall);
     }
-
 
     public class Tool
     {
-        public string Id { get; set; }
         public string Name { get; set; }
         public string Description { get; set; }
-        public JsonObject ArgsRegisteredSchema { get; set; }
-        public JsonObject ArgsToolCallSchema { get; set; }
-        public object?[] Parameters { get; set; }
+        public JsonObject SchemaDefinition { get; set; }
+        [JsonIgnore] public Delegate? Function { get; set; }
+        public override string ToString() => $"{Name} - {Description} | Args: {string.Join(", ", SchemaDefinition?["parameters"]?["properties"]?.AsObject().Select(p => p.Key) ?? [])}";
+    }
 
-        [JsonIgnore]
-        public string? AssistantMessage { get; set; } // non-null if no tool call
+    public class ToolCall(string id, string name, JsonObject arguments, object?[]? parameters = null, string? message = null)
+    {
+        public string Id { get; private set; } = id;
+        public string Name { get; private set; } = name;
+        public JsonObject Arguments { get; private set; } = arguments;
+        public string? AssistantMessage { get; set; } = message;
+        [JsonIgnore] public object?[]? Parameters { get; private set; } = parameters;
 
-        [JsonIgnore]
-        public bool forceToolCall { get; set; } = false;
+        // Secondary constructor: message-only
+        public ToolCall(string message)
+            : this("", "", new JsonObject(), [], message) { }
 
-        [JsonIgnore]
-        public Delegate? Function { get; set; }
-        public override string ToString() => $"Tool Info: '{Name}' (id: {Id}) with Parameters: " +
-            $"[{string.Join(", ", Parameters?.Select(p => p?.ToString() ?? "null")
-                ?? Enumerable.Empty<string>())}]";
+        public override string ToString()
+        {
+            var argsStr = Arguments != null && Arguments.Count > 0
+                ? string.Join(", ", Arguments.Select(kvp => $"{kvp.Key}: {kvp.Value?.ToJsonString()}"))
+                : "none";
+
+            return $"ToolCall Info: '{Name}' (id: {Id}) with Arguments: [{argsStr}]";
+        }
     }
 
 }
