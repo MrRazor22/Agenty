@@ -50,7 +50,7 @@ namespace Agenty.LLMCore
                 }
             }
         }
-        public async Task<ToolCall> GetToolCallResponse(ChatHistory prompt, ITools tools, bool forceToolCall = false)
+        public async Task<ToolCall> GetToolCallResponse(ChatHistory prompt, IEnumerable<Tool> tools, bool forceToolCall = false)
         {
             List<ChatTool> chatTools = ToChatTools(tools);
 
@@ -64,7 +64,7 @@ namespace Agenty.LLMCore
             var chatToolCall = result?.ToolCalls?.FirstOrDefault();
             if (chatToolCall != null)
             {
-                if (tools.Contains(chatToolCall.FunctionName))
+                if (tools.Any(t => t.Name.Equals(chatToolCall.FunctionName, StringComparison.InvariantCultureIgnoreCase)))
                 {
                     var name = chatToolCall.FunctionName;
                     var args = chatToolCall.FunctionArguments.ToObjectFromJson<JsonObject>() ?? new JsonObject();
@@ -85,10 +85,9 @@ namespace Agenty.LLMCore
             return new("");
         }
 
-        private static List<ChatTool> ToChatTools(ITools tools)
+        private static List<ChatTool> ToChatTools(IEnumerable<Tool> tools)
         {
-            return tools.RegisteredTools
-                            .Select(tool => ChatTool.CreateFunctionTool(
+            return tools.Select(tool => ChatTool.CreateFunctionTool(
                                 tool.Name,
                                 tool.Description,
                                 BinaryData.FromString(tool.SchemaDefinition.ToJsonString())))

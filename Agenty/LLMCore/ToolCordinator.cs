@@ -25,7 +25,7 @@ namespace Agenty.LLMCore
             var intPrompt = ChatHistory.Clone(prompt);
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
-                var response = await llm.GetToolCallResponse(intPrompt, tools, forceToolCall);
+                var response = await llm.GetToolCallResponse(intPrompt, tools.RegisteredTools, forceToolCall);
 
                 try
                 {

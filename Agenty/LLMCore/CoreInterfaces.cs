@@ -32,7 +32,7 @@ namespace Agenty.LLMCore
         void Initialize(string url, string apiKey, string modelName);
         Task<string> GetResponse(ChatHistory prompt);
         IAsyncEnumerable<string> GetStreamingResponse(ChatHistory prompt);
-        Task<ToolCall> GetToolCallResponse(ChatHistory prompt, ITools tools, bool forceToolCall = false);
+        Task<ToolCall> GetToolCallResponse(ChatHistory prompt, IEnumerable<Tool> tools, bool forceToolCall = false);
         Task<JsonObject> GetStructuredResponse(ChatHistory prompt, JsonObject responseFormat);
     }
 
