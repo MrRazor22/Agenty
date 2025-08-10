@@ -19,6 +19,58 @@ namespace Agenty.LLMCore
         private const string JsonName = "name";
         private const string JsonArguments = "arguments";
         private const string JsonMessage = "message";
+        #region regex
+        // Match any tag that includes "tool" and contains a well-formed JSON block
+        static readonly Regex TagPattern = new Regex(
+            @"(?i)                # Ignore case
+            [\[\{\(<]             # opening bracket of any type
+            [^\]\}\)>]*?          # non-greedy anything except closing brackets
+            \b\w*tool\w*\b        # word 'tool' inside (word boundary optional)
+            [^\]\}\)>]*?          # again anything before closing
+            [\]\}\)>]             # closing bracket
+            ",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace
+        );
+
+        static readonly Regex ToolTagPattern = new Regex(
+            $@"(?ix)                  # Ignore case + Ignore whitespace
+            (?<open>{TagPattern})     # opening tag like [TOOL_REQUEST]
+            \s*                       # optional whitespace/newlines
+            (?<json>\{{[\s\S]*?\}})   # JSON object
+            \s*                       # optional whitespace/newlines
+            (?<close>{TagPattern})    # closing tag like [END_TOOL_REQUEST]
+            ",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace
+        );
+
+        static readonly Regex LooseToolJsonPattern = new Regex(
+            $@"
+            (?<json>
+                \{{
+                  \s*""{JsonName}""\s*:\s*""[^""]+""
+                  \s*,\s*
+                  ""{JsonArguments}""\s*:\s*\{{[\s\S]*\}}
+                  (?:\s*,\s*""[^""]+""\s*:\s*[^}}]+)*   # allow extra props like {JsonMessage}
+                  \s*
+                \}}
+            )
+            ",
+            RegexOptions.Compiled | RegexOptions.IgnorePatternWhitespace | RegexOptions.IgnoreCase
+        );
+
+        static readonly Regex MessageOnlyPattern = new Regex(
+            $@"
+            (?<json>
+                \{{
+                  \s*""{JsonMessage}""\s*:\s*""[^""]+""
+                  \s*
+                \}}
+            )
+            ",
+            RegexOptions.Compiled | RegexOptions.IgnorePatternWhitespace | RegexOptions.IgnoreCase
+        );
+        #endregion
+
         public Task<ToolCall> GetDefaultToolCall(ChatHistory prompt, params Tool[] tools)
             => GetDefaultToolCall(prompt, new Tools(tools));
         public async Task<ToolCall> GetDefaultToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false, int maxRetries = 3)
@@ -73,20 +125,19 @@ namespace Agenty.LLMCore
         {
             if (tools == null || !tools.RegisteredTools.Any()) throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
 
+            var intPrompt = new ChatHistory();
+            var systemPrompt = BuildSystemPrompt(tools, false);
+            intPrompt.Add(Role.System, systemPrompt);
+            intPrompt.AddRange(prompt.Where(m => m.Role != Role.System));
+
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
-                var intPrompt = new ChatHistory();
-
-                var systemPrompt = BuildSystemPrompt(tools, attempt > 0);
-                intPrompt.Add(Role.System, systemPrompt);
-                intPrompt.AddRange(prompt.Where(m => m.Role != Role.System));
-
                 try
                 {
                     var response = await llm.GetStructuredResponse(intPrompt, GetToolCallSchema(tools));
                     if (response != null)
                     {
-                        var content = response.ToJsonString();
+                        var content = response.ToString();
                         var toolCall = TryExtractInlineToolCall(content, tools);
                         if (toolCall != null) return toolCall;
                     }
@@ -136,55 +187,13 @@ namespace Agenty.LLMCore
             return prompt;
         }
 
-        #region regex
-        // Match any tag that includes "tool" and contains a well-formed JSON block
-        static readonly string tagPattern = @"(?i)
-            [\[\{\(<]         # opening bracket of any type
-            [^\]\}\)>]*?      # non-greedy anything except closing brackets
-            \b\w*tool\w*\b    # word “tool” inside (word boundary optional if you want partials)
-            [^\]\}\)>]*?      # again anything before closing
-            [\]\}\)>]         # closing bracket
-        ";
-
-        static readonly string toolTagPattern = @$"(?ix)
-            (?<open>{tagPattern})         # opening tag like [TOOL_REQUEST]
-            \s*                           # optional whitespace/newlines
-            (?<json>\{{[\s\S]*?\}})         # JSON object
-            \s*                           # optional whitespace/newlines
-            (?<close>{tagPattern})        # closing tag like [END_TOOL_REQUEST]
-        ";
-
-        static readonly string looseToolJsonPattern = $@"
-            (?<json>
-                \{{
-                  \s*""{JsonName}""\s*:\s*""[^""]+""
-                  \s*,\s*
-                  ""{JsonArguments}""\s*:\s*\{{[\s\S]*\}}
-                  (?:\s*,\s*""[^""]+""\s*:\s*[^}}]+)*   # allow extra props like {JsonMessage}
-                  \s*
-                \}}
-            )
-        ";
-
-        static readonly string messageOnlyPattern = $@"
-            (?<json>
-                \{{
-                  \s*""{JsonMessage}""\s*:\s*""[^""]+""
-                  \s*
-                \}}
-            )
-        ";
-        #endregion
         private ToolCall? TryExtractInlineToolCall(string content, ITools tools)
         {
-            var opts = RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace;
-
-            var match = Regex.Matches(content, toolTagPattern, opts)
-                 .Cast<Match>()
-                 .Concat(Regex.Matches(content, looseToolJsonPattern, opts).Cast<Match>())
-                 .Concat(Regex.Matches(content, messageOnlyPattern, opts).Cast<Match>())
-                 .OrderBy(m => m.Index)
-                 .FirstOrDefault();
+            var matches = ToolTagPattern.Matches(content).Cast<Match>()
+                .Concat(LooseToolJsonPattern.Matches(content).Cast<Match>())
+                .Concat(MessageOnlyPattern.Matches(content).Cast<Match>())
+                .OrderBy(m => m.Index);
+            var match = matches.FirstOrDefault();
 
             string jsonStr;
             string cleaned = "";
@@ -252,7 +261,6 @@ namespace Agenty.LLMCore
             // Final fallback
             return string.IsNullOrEmpty(cleaned) ? null : new(cleaned);
         }
-
         private object?[] ParseToolParams(string toolName, ITools tools, JsonObject arguments)
         {
             var tool = tools.Get(toolName);
