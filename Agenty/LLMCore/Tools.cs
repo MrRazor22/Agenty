@@ -66,23 +66,21 @@ public class ToolManager(IEnumerable<Tool>? tools = null) : ITools
         var description = method.GetCustomAttribute<DescriptionAttribute>()?.Description ?? method.Name;
         var parameters = method.GetParameters();
 
-        var schema = new JsonObject
-        {
-            ["type"] = "object",
-            ["properties"] = new JsonObject(),
-            ["required"] = new JsonArray()
-        };
+        var properties = new JsonObject();
+        var required = new JsonArray();
 
         foreach (var param in parameters)
         {
             var name = param.Name!;
             var desc = param.GetCustomAttribute<DescriptionAttribute>()?.Description ?? name;
-            var typeSchema = GetSchemaForType(param.ParameterType);
+            var typeSchema = param.ParameterType.GetSchemaForType();
             typeSchema["description"] ??= desc;
 
-            ((JsonObject)schema["properties"]!)[name] = typeSchema;
-            if (!param.IsOptional) ((JsonArray)schema["required"]!).Add(name);
+            properties[name] = typeSchema;
+            if (!param.IsOptional) required.Add(name);
         }
+
+        var schema = new JsonObject().UpdateStandardTypeSchema(properties, required);
 
         return new Tool
         {
@@ -91,85 +89,6 @@ public class ToolManager(IEnumerable<Tool>? tools = null) : ITools
             SchemaDefinition = schema,
             Function = func
         };
-    }
-
-    private JsonObject GetSchemaForType(Type type, HashSet<Type>? visited = null)
-    {
-        visited ??= new HashSet<Type>();
-        type = Nullable.GetUnderlyingType(type) ?? type;
-
-        if (type.IsEnum)
-            return new JsonObject
-            {
-                ["type"] = "string",
-                ["enum"] = new JsonArray(Enum.GetNames(type).Select((e) => JsonValue.Create(e)).ToArray()),
-                ["description"] = $"One of: {string.Join(", ", Enum.GetNames(type))}"
-            };
-
-        if (Util.IsSimpleType(type))
-            return new JsonObject { ["type"] = MapClrTypeToJsonType(type) };
-
-        if (type.IsArray)
-            return new JsonObject { ["type"] = "array", ["items"] = GetSchemaForType(type.GetElementType()!, visited) };
-
-        if (typeof(IEnumerable).IsAssignableFrom(type) && type.IsGenericType)
-            return new JsonObject { ["type"] = "array", ["items"] = GetSchemaForType(type.GetGenericArguments()[0], visited) };
-
-        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>) &&
-            type.GetGenericArguments()[0] == typeof(string))
-        {
-            var valueType = type.GetGenericArguments()[1];
-            return new JsonObject { ["type"] = "object", ["additionalProperties"] = GetSchemaForType(valueType, visited) };
-        }
-
-        if (visited.Contains(type)) return new JsonObject();
-        visited.Add(type);
-
-        var props = new JsonObject();
-        var required = new JsonArray();
-
-        foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-        {
-            var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
-            var propSchema = GetSchemaForType(propType, visited);
-            propSchema["description"] = prop.GetCustomAttribute<DescriptionAttribute>()?.Description ?? prop.Name;
-
-            if (prop.GetCustomAttribute<EmailAddressAttribute>() != null)
-                propSchema["format"] = "email";
-            if (prop.GetCustomAttribute<StringLengthAttribute>() is { } len)
-            {
-                propSchema["minLength"] = len.MinimumLength;
-                propSchema["maxLength"] = len.MaximumLength;
-            }
-            if (prop.GetCustomAttribute<RegularExpressionAttribute>() is { } regex)
-                propSchema["pattern"] = regex.Pattern;
-
-            props[prop.Name] = propSchema;
-            if (!IsOptional(prop)) required.Add(prop.Name);
-        }
-
-        return new JsonObject
-        {
-            ["type"] = "object",
-            ["properties"] = props,
-            ["required"] = required
-        };
-    }
-
-    private static bool IsOptional(PropertyInfo prop)
-    {
-        var type = prop.PropertyType;
-        return Nullable.GetUnderlyingType(type) != null || (type.IsClass && type != typeof(string));
-    }
-
-    private static string? MapClrTypeToJsonType(Type type)
-    {
-        if (type == typeof(Enum)) return "Enum";
-        if (type == typeof(string)) return "string";
-        if (type == typeof(bool)) return "boolean";
-        if (type == typeof(int) || type == typeof(long)) return "integer";
-        if (type == typeof(float) || type == typeof(double) || type == typeof(decimal)) return "number";
-        return "object";
     }
 
     public override string ToString() =>

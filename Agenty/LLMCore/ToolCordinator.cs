@@ -260,7 +260,7 @@ namespace Agenty.LLMCore
             var argsObj = arguments ?? throw new ArgumentException("ToolCallInfo.Parameters is null");
 
             // Handle case where parameters are passed as a single wrapped object
-            if (methodParams.Length == 1 && !Util.IsSimpleType(methodParams[0].ParameterType) &&
+            if (methodParams.Length == 1 && !methodParams[0].ParameterType.IsSimpleType() &&
                 !argsObj.ContainsKey(methodParams[0].Name!))
             {
                 argsObj = new JsonObject { [methodParams[0].Name!] = argsObj };
