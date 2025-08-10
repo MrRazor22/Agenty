@@ -211,11 +211,6 @@ namespace Agenty.LLMCore
                 // No cleaned text since we're using the whole content
             }
 
-            Console.WriteLine("=======================");
-            Console.WriteLine("RAW extracted jsonStr:");
-            Console.WriteLine(jsonStr);
-            Console.WriteLine("======================");
-
             JsonObject? node = null;
             try
             {
