@@ -47,7 +47,7 @@ namespace Agenty
                 ToolCall toolCall;
                 try
                 {
-                    toolCall = await toolCordinator.GetDefaultToolCall(chat, tools);
+                    toolCall = await toolCordinator.GetStructuredToolCall(chat, tools);
                 }
                 catch (Exception ex)
                 {
@@ -95,7 +95,7 @@ namespace Agenty
 
                 try
                 {
-                    currentToolCall = await toolCordinator.GetDefaultToolCall(chat, tools);
+                    currentToolCall = await toolCordinator.GetStructuredToolCall(chat, tools);
                 }
                 catch (Exception ex)
                 {

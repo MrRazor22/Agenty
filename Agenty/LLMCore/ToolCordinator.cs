@@ -73,13 +73,14 @@ namespace Agenty.LLMCore
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
                 var intPrompt = new ChatHistory();
+
                 var systemPrompt = BuildSystemPrompt(tools, attempt > 0);
                 intPrompt.Add(Role.System, systemPrompt);
                 intPrompt.AddRange(prompt.Where(m => m.Role != Role.System));
 
                 try
                 {
-                    var response = await llm.GetStructuredResponse(intPrompt, GetToolsSchemaConditional(tools));
+                    var response = await llm.GetStructuredResponse(intPrompt, GetToolCallSchema(tools));
                     if (response != null)
                     {
                         var content = response.ToJsonString();
@@ -103,15 +104,31 @@ namespace Agenty.LLMCore
         {
             var toolsList = string.Join(", ", tools.RegisteredTools.Select(t => t.Name));
 
-            var prompt = $@"Tools: {toolsList}
+            var prompt = $@"Available tools: {toolsList}
 
-                Call tool once, then answer user. Don't repeat tool calls.
+When the user's question requires using a tool, respond with a JSON object to call that tool exactly once.
+After the tool call, do not call any other tools or repeat calls.
 
-                JSON format:
-                - Tool: {{""name"":""tool_name"",""arguments"":{{...}},""message"":""...""}}
-                - Answer: {{""name"":""none"",""arguments"":{{}},""message"":""your answer""}}";
+JSON formats:
 
-            if (isRetry) prompt += "\nRetry: use valid JSON.";
+- To call a tool, respond with:
+  {{
+    ""name"": ""tool_name"",
+    ""arguments"": {{ ... }},
+    ""message"": """"
+  }}
+
+- To respond directly without calling any tool, respond with:
+  {{
+    ""message"": ""your answer here""
+  }}
+
+Only call a tool if necessary to answer the question. Otherwise, reply directly with the message.
+
+Do not repeat tool calls or combine multiple tools in one response.";
+
+            if (isRetry) prompt += "\nRetry: respond only with valid JSON in the formats described above.";
+
             return prompt;
         }
 
@@ -134,16 +151,24 @@ namespace Agenty.LLMCore
         ";
 
         static readonly string looseToolJsonPattern = @"
-                    (?<json>
-                        \{
-                          \s*""name""\s*:\s*""[^""]+""
-                          \s*,\s*
-                          ""arguments""\s*:\s*\{[\s\S]*\}
-                          (?:\s*,\s*""[^""]+""\s*:\s*[^}]+)*   # allow extra props like message
-                          \s*
-                        \}
-                    )
-                ";
+            (?<json>
+                \{
+                  \s*""name""\s*:\s*""[^""]+""
+                  \s*,\s*
+                  ""arguments""\s*:\s*\{[\s\S]*\}
+                  (?:\s*,\s*""[^""]+""\s*:\s*[^}]+)*   # allow extra props like message
+                  \s*
+                \}
+            )
+        ";
+        static readonly string messageOnlyPattern = @"
+            (?<json>
+                \{
+                  \s*""message""\s*:\s*""[^""]+""
+                  \s*
+                \}
+            )
+        ";
         #endregion
         private ToolCall? TryExtractInlineToolCall(string content, ITools tools)
         {
@@ -152,6 +177,7 @@ namespace Agenty.LLMCore
             var match = Regex.Matches(content, toolTagPattern, opts)
                  .Cast<Match>()
                  .Concat(Regex.Matches(content, looseToolJsonPattern, opts).Cast<Match>())
+                 .Concat(Regex.Matches(content, messageOnlyPattern, opts).Cast<Match>())
                  .OrderBy(m => m.Index)
                  .FirstOrDefault();
 
@@ -183,25 +209,39 @@ namespace Agenty.LLMCore
             }
             catch { /* invalid JSON */ }
 
-            if (node != null && node.ContainsKey("name") && node.ContainsKey("arguments"))
+            if (node != null)
             {
-                var name = node["name"]!.ToString();
-                var args = node["arguments"] as JsonObject ?? new JsonObject();
-                var message = node["message"]?.ToString();
+                var hasName = node.ContainsKey("name");
+                var hasArgs = node.ContainsKey("arguments");
+                var hasMessage = node.ContainsKey("message");
 
-                if (string.IsNullOrEmpty(name) || name.Equals("none", StringComparison.OrdinalIgnoreCase))
+                // Case 1: No tool call - just a message (new schema)
+                if (!hasName && !hasArgs && hasMessage)
                 {
-                    return new ToolCall(message ?? cleaned ?? "No message provided");
+                    return new ToolCall(node["message"]?.ToString() ?? cleaned ?? "No message provided");
                 }
-                if (tools.Contains(name))
+
+                // Case 2: Tool call with name and arguments
+                if (hasName && hasArgs)
                 {
-                    return new(
-                        Guid.NewGuid().ToString(),
-                        name,
-                        args,
-                        ParseToolParams(name, tools, args),
-                        message ?? cleaned
-                    );
+                    var name = node["name"]!.ToString();
+                    var args = node["arguments"] as JsonObject ?? new JsonObject();
+                    var message = node["message"]?.ToString();
+
+                    if (string.IsNullOrEmpty(name) || name.Equals("none", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return new ToolCall(message ?? cleaned ?? "No message provided");
+                    }
+                    if (tools.Contains(name))
+                    {
+                        return new(
+                            Guid.NewGuid().ToString(),
+                            name,
+                            args,
+                            ParseToolParams(name, tools, args),
+                            message ?? cleaned
+                        );
+                    }
                 }
             }
             // Final fallback
@@ -311,6 +351,43 @@ namespace Agenty.LLMCore
                 ["message"] = new JsonObject { ["type"] = "string" }
             },
             ["required"] = new JsonArray { "name", "arguments", "message" }
+        }
+            }
+            .Concat(
+                tools.RegisteredTools.Select(tool => new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["name"] = new JsonObject { ["const"] = tool.Name },
+                        ["arguments"] = JsonNode.Parse(tool.SchemaDefinition?.ToJsonString() ??
+                            """{"type": "object", "additionalProperties": false}""")?.AsObject() ??
+                            new JsonObject { ["type"] = "object", ["additionalProperties"] = false },
+                        ["message"] = new JsonObject { ["type"] = "string" }
+                    },
+                    ["required"] = new JsonArray { "name", "arguments", "message" }
+                })
+            );
+
+            return new JsonObject
+            {
+                ["type"] = "object",
+                ["anyOf"] = new JsonArray(schemaParts.ToArray())
+            };
+        }
+
+        private JsonObject GetToolCallSchema(ITools tools)
+        {
+            var schemaParts = new JsonNode[]
+            {
+        new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["message"] = new JsonObject { ["type"] = "string" }
+            },
+            ["required"] = new JsonArray { "message" }
         }
             }
             .Concat(
