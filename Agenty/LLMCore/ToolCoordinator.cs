@@ -71,13 +71,13 @@ namespace Agenty.LLMCore
         );
         #endregion
 
-        public Task<ToolCall> GetDefaultToolCall(ChatHistory prompt, params Tool[] tools)
+        public Task<ToolCall> GetDefaultToolCall(Conversations prompt, params Tool[] tools)
             => GetDefaultToolCall(prompt, new Tools(tools));
-        public async Task<ToolCall> GetDefaultToolCall(ChatHistory prompt, ITools tools, bool forceToolCall = false, int maxRetries = 3)
+        public async Task<ToolCall> GetDefaultToolCall(Conversations prompt, ITools tools, bool forceToolCall = false, int maxRetries = 3)
         {
             if (tools == null || !tools.RegisteredTools.Any()) throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
 
-            var intPrompt = ChatHistory.Clone(prompt);
+            var intPrompt = Conversations.Clone(prompt);
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
                 var response = await llm.GetToolCallResponse(intPrompt, tools.RegisteredTools, forceToolCall);
@@ -121,11 +121,11 @@ namespace Agenty.LLMCore
             return new("Couldn't generate a valid tool call/response.");
         }
 
-        public async Task<ToolCall> GetStructuredToolCall(ChatHistory prompt, ITools tools, int maxRetries = 3)
+        public async Task<ToolCall> GetStructuredToolCall(Conversations prompt, ITools tools, int maxRetries = 3)
         {
             if (tools == null || !tools.RegisteredTools.Any()) throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
 
-            var intPrompt = new ChatHistory();
+            var intPrompt = new Conversations();
             var systemPrompt = BuildSystemPrompt(tools, false);
             intPrompt.Add(Role.System, systemPrompt);
             intPrompt.AddRange(prompt.Where(m => m.Role != Role.System));

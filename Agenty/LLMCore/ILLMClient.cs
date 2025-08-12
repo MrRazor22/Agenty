@@ -9,10 +9,10 @@ namespace Agenty.LLMCore
     public interface ILLMClient
     {
         void Initialize(string url, string apiKey, string modelName);
-        Task<string> GetResponse(ChatHistory prompt);
-        IAsyncEnumerable<string> GetStreamingResponse(ChatHistory prompt);
-        Task<ToolCall> GetToolCallResponse(ChatHistory prompt, IEnumerable<Tool> tools, bool forceToolCall = false);
-        Task<JsonObject> GetStructuredResponse(ChatHistory prompt, JsonObject responseFormat);
+        Task<string> GetResponse(Conversations prompt);
+        IAsyncEnumerable<string> GetStreamingResponse(Conversations prompt);
+        Task<ToolCall> GetToolCallResponse(Conversations prompt, IEnumerable<Tool> tools, bool forceToolCall = false);
+        Task<JsonObject> GetStructuredResponse(Conversations prompt, JsonObject responseFormat);
     }
 
 }

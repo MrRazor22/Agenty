@@ -12,15 +12,15 @@ namespace Agenty.AgentCore
         public Action<string>? OnChatHistoryUpdated { get; set; }
 
         public IScratchpad Thoughts => _thoughts;
-        public ChatHistory ChatHistory => _chatHistory;
+        public Conversations ChatHistory => _chatHistory;
 
         private readonly Scratchpad _thoughts;
-        private readonly ChatHistory _chatHistory;
+        private readonly Conversations _chatHistory;
 
         public AgentMemory(IAgentLogger? logger = null)
         {
             _thoughts = new Scratchpad(() => OnThoughtGenerated);
-            _chatHistory = new ChatHistory();
+            _chatHistory = new Conversations();
             _logger = logger;
             OnThoughtGenerated = t => _logger?.Log("ScratchPad", $"{t}");
             OnChatHistoryUpdated = c => _logger?.Log("ChatHistory", $"{c}");

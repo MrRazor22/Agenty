@@ -36,7 +36,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
                 throw new InvalidOperationException("Client not initialized. Call Initialize() first.");
         }
 
-        public async Task<string> GetResponse(ChatHistory prompt)
+        public async Task<string> GetResponse(Conversations prompt)
         {
             EnsureInitialized();
             var response = await _chatClient!.CompleteChatAsync(prompt.ToChatMessages());
@@ -46,7 +46,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             return textContent;
         }
 
-        public async IAsyncEnumerable<string> GetStreamingResponse(ChatHistory prompt)
+        public async IAsyncEnumerable<string> GetStreamingResponse(Conversations prompt)
         {
             EnsureInitialized();
 
@@ -59,7 +59,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
                 }
             }
         }
-        public async Task<ToolCall> GetToolCallResponse(ChatHistory prompt, IEnumerable<Tool> tools, bool forceToolCall = false)
+        public async Task<ToolCall> GetToolCallResponse(Conversations prompt, IEnumerable<Tool> tools, bool forceToolCall = false)
         {
             EnsureInitialized();
 
@@ -96,7 +96,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             return new("");
         }
 
-        public async Task<JsonObject> GetStructuredResponse(ChatHistory prompt, JsonObject responseFormat)
+        public async Task<JsonObject> GetStructuredResponse(Conversations prompt, JsonObject responseFormat)
         {
             EnsureInitialized();
 

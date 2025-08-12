@@ -21,7 +21,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
         }
 
         // Converts ChatHistory to IEnumerable<ChatMessage> suitable for OpenAI chat completion
-        public static IEnumerable<ChatMessage> ToChatMessages(this ChatHistory history)
+        public static IEnumerable<ChatMessage> ToChatMessages(this Conversations history)
         {
             var messages = history.ToList();
 
