@@ -32,16 +32,21 @@ namespace Agenty
             tools.RegisterAll<ConversionTools>();
             tools.RegisterAll<MathTools>();
 
-            var chatHistory = new Conversations();
-            chatHistory.OnChat += (chat) =>
+            var chatHistory = new Conversation();
+            chatHistory.OnChat += chat =>
             {
-                var level = (chat.Role == Role.Assistant || chat.Role == Role.User || chat.Role == Role.Tool)
-                    ? LogLevel.Information : LogLevel.Debug;
-
-                var content = !string.IsNullOrWhiteSpace(chat.Content) ? chat.Content : chat.toolCallInfo?.ToString();
-                if (string.IsNullOrWhiteSpace(content)) content = "<empty>";
-
-                logger.Log(level, nameof(Conversations), $"{chat.Role}: '{content}'");
+                logger.Log(
+                    chat.Role is Role.Assistant or Role.User or Role.Tool ? LogLevel.Information : LogLevel.Debug,
+                    nameof(Conversation),
+                    $"{chat.Role}: '{(string.IsNullOrWhiteSpace(chat.Content) ? chat.toolCallInfo?.ToString() ?? "<empty>" : chat.Content)}'",
+                    chat.Role switch
+                    {
+                        Role.User => ConsoleColor.Cyan,
+                        Role.Assistant => ConsoleColor.Green,
+                        Role.Tool => ConsoleColor.Yellow,
+                        _ => (ConsoleColor?)null
+                    }
+                );
             };
 
             chatHistory.Add(Role.System, "You are an assistant." +
@@ -79,7 +84,7 @@ namespace Agenty
             Console.WriteLine("👋 Exiting Agenty ChatBot.");
         }
 
-        private static async Task ExecuteToolChain(ToolCall initialCall, Conversations chat, ITools tools, ToolCoordinator toolCordinator)
+        private static async Task ExecuteToolChain(ToolCall initialCall, Conversation chat, ITools tools, ToolCoordinator toolCordinator)
         {
             ToolCall currentToolCall = initialCall;
 

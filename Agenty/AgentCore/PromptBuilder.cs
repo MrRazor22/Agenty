@@ -15,18 +15,18 @@ namespace Agenty.AgentCore
             this.memory = memory;
         }
 
-        public Conversations StepExecute()
+        public Conversation StepExecute()
         {
-            return new Conversations()
+            return new Conversation()
                 .Add(Role.User, memory.Goal)
                 .Add(Role.User, memory.Plan.ToString())
                 .Add(Role.User, memory.Thoughts.ToString())
                 .Add(Role.User, memory.Plan.GetCurrentStep());
         }
 
-        public Conversations StepEvaluate()
+        public Conversation StepEvaluate()
         {
-            return new Conversations()
+            return new Conversation()
                 .Add(Role.User, memory.Goal)
                 .Add(Role.User, memory.Plan.ToString())
                 .Add(Role.User, memory.Thoughts.ToString());

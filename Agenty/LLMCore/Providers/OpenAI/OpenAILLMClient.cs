@@ -1,5 +1,6 @@
 ﻿using Agenty.LLMCore.JsonSchema;
 using HtmlAgilityPack;
+using Microsoft.VisualBasic;
 using Microsoft.VisualStudio.TestPlatform.CommunicationUtilities;
 using OpenAI;
 using OpenAI.Chat;
@@ -36,7 +37,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
                 throw new InvalidOperationException("Client not initialized. Call Initialize() first.");
         }
 
-        public async Task<string> GetResponse(Conversations prompt)
+        public async Task<string> GetResponse(Conversation prompt)
         {
             EnsureInitialized();
             var response = await _chatClient!.CompleteChatAsync(prompt.ToChatMessages());
@@ -46,20 +47,17 @@ namespace Agenty.LLMCore.Providers.OpenAI
             return textContent;
         }
 
-        public async IAsyncEnumerable<string> GetStreamingResponse(Conversations prompt)
+        public async IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt)
         {
             EnsureInitialized();
 
-            AsyncCollectionResult<StreamingChatCompletionUpdate> responseUpdates = _chatClient!.CompleteChatStreamingAsync(prompt.ToChatMessages());
-            await foreach (var update in responseUpdates)
+            await foreach (var update in _chatClient!.CompleteChatStreamingAsync(prompt.ToChatMessages()))
             {
                 foreach (var part in update.ContentUpdate)
-                {
                     yield return part.Text;
-                }
             }
         }
-        public async Task<ToolCall> GetToolCallResponse(Conversations prompt, IEnumerable<Tool> tools, bool forceToolCall = false)
+        public async Task<ToolCall> GetToolCallResponse(Conversation prompt, IEnumerable<Tool> tools, bool forceToolCall = false)
         {
             EnsureInitialized();
 
@@ -96,7 +94,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             return new("");
         }
 
-        public async Task<JsonObject> GetStructuredResponse(Conversations prompt, JsonObject responseFormat)
+        public async Task<JsonObject> GetStructuredResponse(Conversation prompt, JsonObject responseFormat)
         {
             EnsureInitialized();
 

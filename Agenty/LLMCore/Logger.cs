@@ -5,6 +5,7 @@ namespace Agenty.LLMCore
     {
         void Log(LogLevel level, string source, string message);
         void Log(LogLevel level, string source, string message, Exception exception);
+        void Log(LogLevel level, string source, string message, ConsoleColor? colorOverride = null);
     }
 
     public class ConsoleLogger : ILogger
@@ -43,6 +44,17 @@ namespace Agenty.LLMCore
             }
             Console.ForegroundColor = originalColor;
         }
+
+        public void Log(LogLevel level, string source, string message, ConsoleColor? colorOverride = null)
+        {
+            if (level < _minLevel) return;
+
+            var originalColor = Console.ForegroundColor;
+            Console.ForegroundColor = colorOverride ?? GetColor(level);
+            Console.WriteLine($"[{level}] [{source}] {message}");
+            Console.ForegroundColor = originalColor;
+        }
+
 
         private ConsoleColor GetColor(LogLevel level)
         {

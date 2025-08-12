@@ -42,7 +42,7 @@ namespace Agenty.AgentCore
         string Goal { get; set; }
         IPlan Plan { get; set; }
         IScratchpad Thoughts { get; }
-        Conversations ChatHistory { get; }
+        Conversation ChatHistory { get; }
         void Clear();
     }
 
