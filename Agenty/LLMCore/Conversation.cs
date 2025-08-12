@@ -1,13 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
-using System;
-using System.Collections.Generic;
-using System.Data;
-using System.Linq;
-using System.Reflection.Metadata;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Agenty.LLMCore
+﻿namespace Agenty.LLMCore
 {
     public enum Role { System, Assistant, User, Tool }
     public record Chat(Role Role, string? Content, ToolCall? toolCallInfo = null);
