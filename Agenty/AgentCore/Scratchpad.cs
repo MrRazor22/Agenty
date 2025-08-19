@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Agenty.LLMCore;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -9,10 +10,16 @@ namespace Agenty.AgentCore
 {
     public class ScratchpadEntry
     {
+        public ScratchpadEntry() { }
+        public ScratchpadEntry(string action, string insights)
+        {
+            this.ActionTaken = action;
+            this.Insights = insights;
+        }
         [Description("Description of the action taken, e.g. tool called with parameters, or reasoning step without a tool call")]
         public string ActionTaken { get; set; }
 
-        [Description("Agent’s interpretation or notes based on tool result or reasoning outcome")]
+        [Description("interpretation or notes based on tool result or reasoning outcome")]
         public string Insights { get; set; }
     }
 
@@ -29,6 +36,19 @@ namespace Agenty.AgentCore
             _entries.RemoveRange(stepIndex, _entries.Count - stepIndex);
         }
         public void Clear() => _entries.Clear();
+
+        public override string ToString()
+        {
+            if (!_entries.Any()) return "";
+            var sb = new StringBuilder();
+            int idx = 1;
+            foreach (var entry in _entries)
+            {
+                sb.Append($"Step {idx} - Action Taken: {entry.ActionTaken}. Insights: {entry.Insights}. ");
+                idx++;
+            }
+            return sb.ToString().Trim();
+        }
     }
 
 }

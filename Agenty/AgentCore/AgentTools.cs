@@ -1,33 +1,28 @@
-﻿using Agenty.LLMCore;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
-using System.Numerics;
-using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace Agenty.AgentCore
 {
-    public class AgentTools
+    internal class AgentTools
     {
-
-        [Description("Creates a new plan with ordered steps for the agent to follow.")]
-        public static Plan CreatePlan(
-    [Description("An ordered list of step descriptions.")] List<PlanStep> steps)
+        [Description("Returns the immediate next step to execute for a given task.")]
+        public static PlanStep GetNextStep(
+        [Description("The next step object with description and tool name.")] PlanStep step)
         {
-            var plan = new Plan();
-            foreach (var step in steps) plan.AddStep(step);
-            return plan;
+            return step;
         }
 
-        [Description("Updates the scratchpad with the latest action and insights from the agent.")]
+        [Description("Updates the scratchpad with latest action and insights.")]
         public static ScratchpadEntry UpdateScratchpad(
-    [Description("The latest scratchpad entry with action and insights")] ScratchpadEntry entry)
+            [Description("The latest scratchpad entry with action and insights")] ScratchpadEntry entry)
         {
             return entry;
         }
+
 
         [Description("Evaluates the current progress and returns feedback on alignment with the goal.")]
         public static FeedBack EvaluateProgress(
@@ -36,7 +31,5 @@ namespace Agenty.AgentCore
             // The LLM should analyze the provided context and return a FeedBack object.
             return new FeedBack();
         }
-
     }
-
 }

@@ -17,10 +17,12 @@ namespace Agenty.LLMCore
     {
         IReadOnlyList<Tool> RegisteredTools { get; }
         void Register(params Delegate[] funcs);
-        void RegisterAll<T>();
+        void Register(Delegate func, params string[] tags);
+        void RegisterAll<T>(params string[] tags);
         Tool? Get(Delegate func);
         Tool? Get(string toolName);
-        IEnumerable<Tool> GetTools<TTuple>();
+        IEnumerable<Tool> GetTools(params Type[] toolTypes);
+        IEnumerable<Tool> GetByTags(bool include = true, params string[] tags);
         bool Contains(string toolName);
     }
     public class ToolRegistry(IEnumerable<Tool>? tools = null) : IToolRegistry
@@ -37,10 +39,17 @@ namespace Agenty.LLMCore
                 _registeredTools.Add(tool);
             }
         }
-        public void RegisterAll<T>()
+        public void Register(Delegate func, params string[] tags)
         {
-            var methods = typeof(T).GetMethods(BindingFlags.Public | BindingFlags.Static)
-                .Where(m => m.GetCustomAttribute<DescriptionAttribute>() != null);
+            var tool = CreateToolFromDelegate(func);
+            if (tags?.Length > 0)
+                tool.Tags.AddRange(tags.Distinct(StringComparer.OrdinalIgnoreCase));
+
+            _registeredTools.Add(tool);
+        }
+        public void RegisterAll<T>(params string[] tags)
+        {
+            var methods = typeof(T).GetMethods(BindingFlags.Public | BindingFlags.Static);
 
             foreach (var method in methods)
             {
@@ -52,7 +61,7 @@ namespace Agenty.LLMCore
                             .Concat(new[] { method.ReturnType })
                             .ToArray()), method);
 
-                    Register(del);
+                    Register(del, tags);
                 }
                 catch
                 {
@@ -66,27 +75,19 @@ namespace Agenty.LLMCore
             var method = func.Method;
             return _registeredTools.FirstOrDefault(t => t.Function?.Method == method);
         }
-        public IEnumerable<Tool> GetTools<TTuple>()
-        {
-            var tupleType = typeof(TTuple);//If TTuple = (WeatherTool, ConversionTools), then tupleType = typeof(ValueTuple<WeatherTool, ConversionTools>)
-
-            //This is the branch for "single type" (non-tuple case).
-            if (!tupleType.IsGenericType || tupleType.GetGenericTypeDefinition() != typeof(ValueTuple<>)
-                && !tupleType.FullName!.StartsWith("System.ValueTuple"))
-            {
-                return GetTools(tupleType);
-            }
-
-            //Example: ValueTuple<WeatherTool, ConversionTools> → [WeatherTool, ConversionTools]
-            var types = tupleType.GetGenericArguments();
-            return GetTools(types);
-        }
-
-        private IEnumerable<Tool> GetTools(params Type[] types)
+        public IEnumerable<Tool> GetTools(params Type[] types)
         {
             return _registeredTools.Where(t =>
                 t.Function?.Method.DeclaringType != null &&
                 types.Contains(t.Function.Method.DeclaringType));
+        }
+        public IEnumerable<Tool> GetByTags(bool include = true, params string[] tags)
+        {
+            if (tags == null || tags.Length == 0) return _registeredTools;
+
+            return include
+                ? _registeredTools.Where(t => t.Tags.Any(tag => tags.Contains(tag, StringComparer.OrdinalIgnoreCase)))
+                : _registeredTools.Where(t => !t.Tags.Any(tag => tags.Contains(tag, StringComparer.OrdinalIgnoreCase)));
         }
 
 
@@ -118,14 +119,16 @@ namespace Agenty.LLMCore
                 .Type<object>()
                 .Properties(properties)
                 .Required(required)
+                .AdditionalProperties(false)
                 .Build();
 
             return new Tool
             {
                 Name = method.Name,
                 Description = description,
-                SchemaDefinition = schema,
-                Function = func
+                ParametersSchema = schema,
+                Function = func,
+                Tags = new List<string>()
             };
         }
 

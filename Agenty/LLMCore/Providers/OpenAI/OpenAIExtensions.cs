@@ -16,7 +16,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
                 ChatTool.CreateFunctionTool(
                     tool.Name,
                     tool.Description ?? "",
-                    BinaryData.FromString(tool.SchemaDefinition?.ToJsonString() ?? "{\"type\":\"object\"}"))
+                    BinaryData.FromString(tool.ParametersSchema?.ToJsonString() ?? "{\"type\":\"object\"}"))
             ).ToList();
         }
 

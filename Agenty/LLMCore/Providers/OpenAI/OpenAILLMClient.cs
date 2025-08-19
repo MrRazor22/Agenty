@@ -97,7 +97,9 @@ namespace Agenty.LLMCore.Providers.OpenAI
         public async Task<JsonObject> GetStructuredResponse(Conversation prompt, JsonObject responseFormat)
         {
             EnsureInitialized();
-
+            Console.WriteLine("====================================");
+            Console.WriteLine(responseFormat);
+            Console.WriteLine("===============================");
             ChatCompletionOptions options = new()
             {
                 ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(

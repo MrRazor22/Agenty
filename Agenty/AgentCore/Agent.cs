@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Agenty.LLMCore;
+using Agenty.LLMCore.Providers.OpenAI;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -8,66 +10,63 @@ namespace Agenty.AgentCore
 {
     public class Agent : IAgent
     {
-        private readonly IPlanner _planner;
-        private readonly IExecutor _executor;
-        private readonly ICritic _critic;
-        private readonly Prompts _prompts;
-        private readonly AgentMemory _memory = new();
+        private string _goal = "";
+        private Plan _currentPlan = new();
+        private readonly Scratchpad _scratchpad = new();
+        private FeedBack? _criticFeedback;
+
         private int stepsSinceLastCritique = 0;
-        private int critiqueInterval = 3; // example, critique every 3 steps
+        private int critiqueInterval = 3;
         private int lastGoodStepIndex = 0;
 
-        public Agent(IPlanner planner, IExecutor executor, ICritic critic, Prompts? prompts = null)
+        private ILLMClient _llm;
+        private ToolCoordinator _toolCoordinator;
+        private IToolRegistry _toolRegistry = new ToolRegistry();
+
+        private Agent() { }
+        public static Agent Create() => new Agent();
+        public Agent WithLLM(string baseUrl, string apiKey, string modelName = "any_model")
         {
-            _prompts = prompts ?? new Prompts(_memory);
-            _planner = planner;
-            _executor = executor;
-            _critic = critic;
+            _llm = new OpenAILLMClient();
+            _llm.Initialize(baseUrl, apiKey, modelName);
+            _toolCoordinator = new ToolCoordinator(_llm, _toolRegistry);
+            return this;
+        }
+
+        public Agent WithTools<T>()
+        {
+            _toolRegistry.RegisterAll<T>();
+            return this;
+        }
+
+        public Agent WithTools(params Delegate[] tools)
+        {
+            _toolRegistry.Register(tools);
+            return this;
+        }
+
+        public Agent WithComponents(int critiqueInterval = 3)
+        {
+            this._toolRegistry.RegisterAll<AgentTools>("agent");
+            this.critiqueInterval = critiqueInterval;
+            return this;
         }
 
         public async Task<string> ExecuteAsync(string goal)
         {
-            _memory.Goal = goal;
+            var toolsForMessage = _toolRegistry
+                .GetByTags(false, "agent")
+                .Select(t => t.ToString()); // uses your Tool.ToString()
 
-            var plan = await _planner.CreatePlanAsync(goal, _memory.Scratchpad.Entries);
-            _memory.UpdatePlan(plan);
+            var toolsText = string.Join(", ", toolsForMessage);
+            _goal = goal;
+            var chat = new Conversation()
+                .Add(Role.System, "You are a helpfull assistant")
+                .Add(Role.User, $"Returns the immediate next step to execute for a given task: [{_goal}] with the tools [{toolsText}]");
+            PlanStep step = await _toolCoordinator.GetStructuredResponse<PlanStep>(chat, AgentTools.GetNextStep);
 
-            while (!_memory.IsPlanComplete())
-            {
-                var step = _memory.GetCurrentStep();
-                if (step == null) break;
-
-                var scratchEntry = await _executor.ExecuteStepAsync(step, _memory.Scratchpad.Entries);
-                _memory.AddScratchpadEntry(scratchEntry);
-
-                stepsSinceLastCritique++;
-
-                if (stepsSinceLastCritique >= critiqueInterval)
-                {
-                    var feedback = await _critic.ReviewAsync(_memory.Scratchpad.Entries);
-                    _memory.UpdateFeedback(feedback);
-
-                    if (feedback.IsAlignedWithGoal)
-                    {
-                        lastGoodStepIndex = _memory.CurrentPlan.CurrentStepIndex;
-                    }
-                    else
-                    {
-                        var newPlan = await _planner.CreateRecoveryPlanAsync(goal, _memory.Scratchpad.Entries);
-                        _memory.UpdatePlan(newPlan, lastGoodStepIndex);
-                        stepsSinceLastCritique = 0;
-                        continue;
-                    }
-
-                    stepsSinceLastCritique = 0;
-                }
-
-                _memory.AdvanceStep();
-            }
-
-            return _memory.Scratchpad.Entries.LastOrDefault()?.Insights ?? "No result";
+            return step.Description + " | " + step.ToolName;
         }
+
     }
-
-
 }

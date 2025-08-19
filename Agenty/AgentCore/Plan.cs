@@ -30,15 +30,30 @@ namespace Agenty.AgentCore
         {
             CurrentStepIndex = stepIndex;
         }
+        public override string ToString()
+        {
+            if (_steps.Count == 0) return "Plan is empty.";
+
+            var sb = new StringBuilder();
+            sb.AppendLine("Plan:");
+            for (int i = 0; i < _steps.Count; i++)
+            {
+                var step = _steps[i];
+                string marker = i == CurrentStepIndex ? "👉 " : "   ";
+                sb.AppendLine($"{marker}{i + 1}. {step.Description} (Tool: {step.ToolName})");
+            }
+
+            return sb.ToString();
+        }
     }
 
+    [Description("Represents a single actionable step in the execution plan.")]
     public class PlanStep
     {
-        [Description("Text describing the step to be executed.")]
+        [Description("Clear instruction for what to do in this step, including how to use a specific tool if relevant.")]
         public string Description { get; set; } = "";
 
-        [Description("Optional: Name of the tool intended to execute this step.")]
-        public string? ToolName { get; set; }
+        [Description("The exact name of the tool that should be used to perform this step. Leave empty if no tool is required.")]
+        public string ToolName { get; set; } = "";
     }
-
 }

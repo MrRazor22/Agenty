@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 
 namespace Agenty.LLMCore
 {
-    internal class ToolCoordinator(ILLMClient llm)
+    internal class ToolCoordinator(ILLMClient llm, IToolRegistry toolRegistry)
     {
         private const string JsonName = "name";
         private const string JsonArguments = "arguments";
@@ -71,31 +71,67 @@ namespace Agenty.LLMCore
         );
         #endregion
 
-        public Task<ToolCall> GetDefaultToolCall(Conversation prompt, params Tool[] tools)
-            => GetDefaultToolCall(prompt, new Tools(tools));
-        public async Task<ToolCall> GetDefaultToolCall(Conversation prompt, ITools tools, bool forceToolCall = false, int maxRetries = 3)
+
+        public async Task<ToolCall> GetToolCall(
+           Conversation prompt,
+           bool forceToolCall = false,
+           int maxRetries = 0) => await GetDefaultToolCall(
+            prompt,
+            toolRegistry.RegisteredTools,
+            forceToolCall,
+            maxRetries);
+        public async Task<ToolCall> GetDefaultToolCall<TTuple>(
+            Conversation prompt,
+            bool forceToolCall = false,
+            int maxRetries = 0)
         {
-            if (tools == null || !tools.RegisteredTools.Any()) throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
+            var tupleType = typeof(TTuple);
+
+            // Single type (non-tuple)
+            if (!tupleType.IsGenericType ||
+                (tupleType.GetGenericTypeDefinition() != typeof(ValueTuple<>) &&
+                 !tupleType.FullName!.StartsWith("System.ValueTuple")))
+            {
+                var single = toolRegistry.GetTools(tupleType).ToList();
+                return await GetDefaultToolCall(prompt, single, forceToolCall, maxRetries);
+            }
+
+            // Multiple types inside tuple
+            var types = tupleType.GetGenericArguments();
+            var toolSubSet = toolRegistry.GetTools(types).ToList();
+
+            return await GetDefaultToolCall(prompt, toolSubSet, forceToolCall, maxRetries);
+        }
+
+        public async Task<ToolCall> GetDefaultToolCall(
+            Conversation prompt,
+            IEnumerable<Tool> tools,
+            bool forceToolCall = false,
+            int maxRetries = 0)
+        {
+            if (tools == null || !tools.Any())
+                throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
 
             var intPrompt = Conversation.Clone(prompt);
+
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
-                var response = await llm.GetToolCallResponse(intPrompt, tools.RegisteredTools, forceToolCall);
+                var response = await llm.GetToolCallResponse(intPrompt, tools, forceToolCall);
 
                 try
                 {
                     if (response != null)
                     {
-                        if (tools.Contains(response.Name))
+                        if (tools.Any(t => t.Name == response.Name))
                         {
                             var name = response.Name;
                             var args = response.Arguments;
-                            return new
-                            (
+
+                            return new ToolCall(
                                 response.Id ?? Guid.NewGuid().ToString(),
                                 name,
                                 args,
-                                ParseToolParams(name, tools, args),
+                                ParseToolParams(name, args),
                                 response.AssistantMessage
                             );
                         }
@@ -103,9 +139,10 @@ namespace Agenty.LLMCore
                         string? content = response.AssistantMessage;
                         if (!string.IsNullOrWhiteSpace(content))
                         {
-                            var toolCall = TryExtractInlineToolCall(content, tools);
+                            var toolCall = TryExtractInlineToolCall(content);
                             if (toolCall != null) return toolCall;
-                            return new(content);
+
+                            return new ToolCall(content);
                         }
                     }
                 }
@@ -115,31 +152,44 @@ namespace Agenty.LLMCore
                     continue;
                 }
 
-                intPrompt.Add(Role.Assistant, $"The last response was empty or invalid. Please return a valid tool call using one of: {string.Join(", ", tools.RegisteredTools.Select(t => t.Name))}.");
+                intPrompt.Add(
+                    Role.Assistant,
+                    $"The last response was empty or invalid. " +
+                    $"Please return a valid tool call using one of: {string.Join(", ", tools.Select(t => t.Name))}."
+                );
             }
 
-            return new("Couldn't generate a valid tool call/response.");
+            return new ToolCall("Couldn't generate a valid tool call/response.");
         }
 
-        public async Task<ToolCall> GetStructuredToolCall(Conversation prompt, ITools tools, int maxRetries = 3)
+        public async Task<T?> GetStructuredResponse<T>(
+            Conversation prompt,
+            Delegate method,
+            int maxRetries = 3)
         {
-            if (tools == null || !tools.RegisteredTools.Any()) throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
+            if (toolRegistry == null || !toolRegistry.RegisteredTools.Any())
+                throw new ArgumentNullException(nameof(toolRegistry), "No tools provided for function call response.");
+            if (method == null) throw new ArgumentNullException(nameof(method));
 
-            var intPrompt = new Conversation();
-            var systemPrompt = BuildSystemPrompt(tools, false);
-            intPrompt.Add(Role.System, systemPrompt);
-            intPrompt.AddRange(prompt.Where(m => m.Role != Role.System));
+            var tool = toolRegistry.Get(method);
+            if (tool == null) throw new ArgumentNullException(nameof(tool));
+
+            var intPrompt = Conversation.Clone(prompt);
 
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
                 try
                 {
-                    var response = await llm.GetStructuredResponse(intPrompt, GetToolCallSchema(tools));
-                    if (response != null)
+                    var arguments = await llm.GetStructuredResponse(intPrompt, GetToolSchema(tool));
+                    var argsParsed = ParseToolParams(tool.Name, arguments);
+                    if (argsParsed != null)
                     {
-                        var content = response.ToString();
-                        var toolCall = TryExtractInlineToolCall(content, tools);
-                        if (toolCall != null) return toolCall;
+                        var toolCall = new ToolCall(new Guid().ToString(), tool.Name, arguments, argsParsed, "");
+                        if (toolCall != null)
+                        {
+                            // Use existing Invoke<T> helper
+                            return await Invoke<T>(toolCall);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -148,117 +198,69 @@ namespace Agenty.LLMCore
                     continue;
                 }
 
-                intPrompt.Add(Role.Assistant, $"The last response was empty or invalid. Please return a valid tool call using one of: {string.Join(", ", tools.RegisteredTools.Select(t => t.Name))}.");
+                intPrompt.Add(Role.Assistant,
+                    $"The last response was empty or invalid. Please return a valid Json response for tool {tool.Name}.");
             }
 
-            return new("Couldn't generate a valid tool call/response.");
+            return default;
         }
-
-        private string BuildSystemPrompt(ITools tools, bool isRetry)
-        {
-            var options = new JsonSerializerOptions { WriteIndented = true };
-            var toolCallExample = new JsonObject
-            {
-                [JsonName] = "tool_name",
-                [JsonArguments] = "{...}", // empty args example
-                [JsonMessage] = ""
-            };
-            var directResponseExample = new JsonObject { [JsonMessage] = "your answer here" };
-
-            var prompt = $@"
-
-            When the user's question requires using a tool, respond with a JSON object to call that tool exactly once.
-            After the tool call, do not call any other tools or repeat calls.
-
-            JSON formats:
-
-            - To call a tool, respond with:
-              {JsonSerializer.Serialize(toolCallExample, options)}
-
-            - To respond directly without calling any tool, respond with:
-              {JsonSerializer.Serialize(directResponseExample, options)}
-
-            Only call a tool if necessary to answer the question. Otherwise, reply directly with the message.
-
-            Do not repeat tool calls or combine multiple tools in one response.";
-
-            if (isRetry) prompt += "\nRetry: respond only with valid JSON in the formats described above.";
-
-            return prompt;
-        }
-
-        private ToolCall? TryExtractInlineToolCall(string content, ITools tools)
+        private ToolCall? TryExtractInlineToolCall(string content)
         {
             var matches = ToolTagPattern.Matches(content).Cast<Match>()
                 .Concat(LooseToolJsonPattern.Matches(content).Cast<Match>())
                 .Concat(MessageOnlyPattern.Matches(content).Cast<Match>())
-                .OrderBy(m => m.Index);
-            var match = matches.FirstOrDefault();
+                .OrderBy(m => m.Index)
+                .ToList();
 
-            string jsonStr;
-            string cleaned = "";
+            string fallback = matches.Any() ? content.Substring(0, matches[0].Index).Trim() : content.Trim();
 
-            if (match != null)
+            foreach (var match in matches)
             {
-                // Found regex pattern match
-                cleaned = content.Substring(0, match.Index).Trim();
-                jsonStr = match.Groups["json"].Value.Trim();
-            }
-            else
-            {
-                // No regex match - try parsing entire content as JSON (for structured responses)
-                jsonStr = content.Trim();
-                // No cleaned text since we're using the whole content
-            }
+                string jsonStr = match.Groups["json"].Value.Trim();
+                JsonObject? node = null;
+                try { node = JsonNode.Parse(jsonStr)?.AsObject(); }
+                catch { /* invalid JSON, skip */ }
 
-            JsonObject? node = null;
-            try
-            {
-                node = JsonNode.Parse(jsonStr)?.AsObject();
-            }
-            catch { /* invalid JSON */ }
+                if (node == null) continue;
 
-            if (node != null)
-            {
                 var hasName = node.ContainsKey(JsonName);
                 var hasArgs = node.ContainsKey(JsonArguments);
                 var hasMessage = node.ContainsKey(JsonMessage);
 
-                // Case 1: No tool call - just a message (new schema)
-                if (!hasName && !hasArgs && hasMessage)
-                {
-                    return new ToolCall(node[JsonMessage]?.ToString() ?? cleaned ?? "No message provided");
-                }
-
-                // Case 2: Tool call with name and arguments
+                // Tool call with name & args
                 if (hasName && hasArgs)
                 {
                     var name = node[JsonName]!.ToString();
                     var args = node[JsonArguments] as JsonObject ?? new JsonObject();
                     var message = node[JsonMessage]?.ToString();
 
-                    if (string.IsNullOrEmpty(name) || name.Equals("none", StringComparison.OrdinalIgnoreCase))
+                    if (!string.IsNullOrEmpty(name) && toolRegistry.Contains(name))
                     {
-                        return new ToolCall(message ?? cleaned ?? "No message provided");
-                    }
-                    if (tools.Contains(name))
-                    {
-                        return new(
+                        // First valid tool found -> return immediately
+                        return new ToolCall(
                             Guid.NewGuid().ToString(),
                             name,
                             args,
-                            ParseToolParams(name, tools, args),
-                            message ?? cleaned
+                            ParseToolParams(name, args),
+                            message ?? fallback
                         );
                     }
                 }
+
+                // Message-only pattern
+                if (!hasName && !hasArgs && hasMessage)
+                {
+                    return new ToolCall(node[JsonMessage]?.ToString() ?? fallback);
+                }
             }
-            // Final fallback
-            return string.IsNullOrEmpty(cleaned) ? null : new(cleaned);
+
+            // No valid tool call found -> fallback to text before first match
+            return string.IsNullOrEmpty(fallback) ? null : new ToolCall(fallback);
         }
-        private object?[] ParseToolParams(string toolName, ITools tools, JsonObject arguments)
+
+        private object?[] ParseToolParams(string toolName, JsonObject arguments)
         {
-            var tool = tools.Get(toolName);
+            var tool = toolRegistry.Get(toolName);
             if (tool?.Function == null)
                 throw new InvalidOperationException($"Tool '{toolName}' not registered or has no function.");
 
@@ -309,52 +311,36 @@ namespace Agenty.LLMCore
             return paramValues;
         }
 
-        private JsonObject GetToolCallSchema(ITools tools)
-        {
-            var messageSchema = new JsonSchemaBuilder()
-                .Type<object>()
-                .Properties(new JsonObject
-                {
-                    [JsonMessage] = new JsonSchemaBuilder().Type<string>().Build()
-                })
-                .Required(new JsonArray { JsonMessage })
-                .Build();
 
-            var toolSchemas = tools.RegisteredTools.Select(tool =>
-            {
-                var argumentsSchema = tool.SchemaDefinition != null
-                    ? JsonNode.Parse(tool.SchemaDefinition.ToJsonString())?.AsObject()
+        public JsonObject GetToolSchema(Tool tool)
+        {
+            var argumentsSchema = tool.ParametersSchema != null
+                    ? JsonNode.Parse(tool.ParametersSchema.ToJsonString())?.AsObject()
                     : new JsonSchemaBuilder()
                         .Type<object>()
                         .AdditionalProperties(new JsonSchemaBuilder().AdditionalProperties(false).Build())
                         .Build();
+            return argumentsSchema;
+            //var properties = new JsonObject
+            //{
+            //    [JsonName] = new JsonObject { ["const"] = tool.Name },
+            //    [JsonArguments] = argumentsSchema ?? new JsonObject()
+            //};
 
-                var properties = new JsonObject
-                {
-                    [JsonName] = new JsonObject { ["const"] = tool.Name },
-                    [JsonArguments] = argumentsSchema ?? new JsonObject(),
-                    [JsonMessage] = new JsonSchemaBuilder().Type<string>().Build()
-                };
-
-                return new JsonSchemaBuilder()
-                    .Type<object>()
-                    .Properties(properties)
-                    .Required(new JsonArray { JsonName, JsonArguments, JsonMessage })
-                    .Build();
-            });
-
-            return new JsonSchemaBuilder()
-                .Type<object>()
-                .AnyOf(new[] { messageSchema }.Concat(toolSchemas).ToArray())
-                .Build();
+            //return new JsonSchemaBuilder()
+            //    .Type<object>()
+            //    .Properties(properties)
+            //    .Required(new JsonArray { JsonName, JsonArguments })
+            //    .Build();
         }
 
-        public async Task<T?> Invoke<T>(ToolCall tool, ITools tools)
+
+        public async Task<T?> Invoke<T>(ToolCall tool)
         {
             if (tool == null) throw new ArgumentNullException(nameof(tool));
             var paramValues = tool.Parameters;
 
-            var func = tools.Get(tool.Name)?.Function!;
+            var func = toolRegistry.Get(tool.Name)?.Function!;
             var method = func.Method;
             var returnType = method.ReturnType;
 

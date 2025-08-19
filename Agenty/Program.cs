@@ -18,116 +18,40 @@ namespace Agenty
     {
         public static async Task Main(string[] args)
         {
-            ILogger logger = new LLMCore.ConsoleLogger();
+            var agent = Agent.Create()
+                        .WithLLM("http://127.0.0.1:1234/v1", "lmstudio")
+                        .WithTools<MathTools>()
+                        .WithTools<WeatherTool>()
+                        .WithTools<GeoTools>()
+                        .WithTools<ConversionTools>()
+                        .WithTools<SearchTools>()
+                        .WithComponents(critiqueInterval: 3);
 
-            var llm = new OpenAILLMClient();
-            llm.Initialize("http://127.0.0.1:1234/v1", "lmstudio", "any_model");
-
-            ToolCoordinator toolCordinator = new ToolCoordinator(llm);
-
-            ITools tools = new Tools();
-            tools.RegisterAll<SearchTools>();
-            tools.RegisterAll<GeoTools>(); // auto-registers static methods in UserTools
-            tools.RegisterAll<WeatherTool>();
-            tools.RegisterAll<ConversionTools>();
-            tools.RegisterAll<MathTools>();
-
-            var chatHistory = new Conversation();
-            chatHistory.OnChat += chat =>
-            {
-                logger.Log(
-                    chat.Role is Role.Assistant or Role.User or Role.Tool ? LogLevel.Information : LogLevel.Debug,
-                    nameof(Conversation),
-                    $"{chat.Role}: '{(string.IsNullOrWhiteSpace(chat.Content) ? chat.toolCallInfo?.ToString() ?? "<empty>" : chat.Content)}'",
-                    chat.Role switch
-                    {
-                        Role.User => ConsoleColor.Cyan,
-                        Role.Assistant => ConsoleColor.Green,
-                        Role.Tool => ConsoleColor.Yellow,
-                        _ => (ConsoleColor?)null
-                    }
-                );
-            };
-
-            chatHistory.Add(Role.System, "You are an assistant." +
-                 "For complex tasks, always Plan and answer step by step" +
-                 "if not sure on what to respind, express that to user directly" +
-                 "Use relevant tools if needed, or respond directly." +
-                 "Provide your answers short and sweet");
-
-
-            Console.WriteLine("🤖 Welcome to Agenty ChatBot! Type 'exit' to quit.\n");
+            Console.WriteLine("🤖 Agenty Agent ready. Type 'exit' to quit.");
 
             while (true)
             {
-                Console.Write("You: ");
+                Console.Write("\nYou: ");
                 string? input = Console.ReadLine();
                 if (string.IsNullOrWhiteSpace(input) || input.Equals("exit", StringComparison.OrdinalIgnoreCase))
                     break;
 
-                chatHistory.Add(Role.User, input);
+                Console.WriteLine("Agent thinking...");
 
-                ToolCall toolCall;
                 try
                 {
-                    toolCall = await toolCordinator.GetDefaultToolCall(chatHistory, tools);
+                    string result = await agent.ExecuteAsync(input);
+                    Console.WriteLine($"Agent: {result}");
                 }
                 catch (Exception ex)
                 {
-                    chatHistory.Add(Role.Assistant, "Error fetching tool call.");
-                    continue;
+                    Console.WriteLine($"Error: {ex.Message}");
                 }
-
-                await ExecuteToolChain(toolCall, chatHistory, tools, toolCordinator);
             }
 
-            Console.WriteLine("👋 Exiting Agenty ChatBot.");
+            Console.WriteLine("👋 Exiting Agenty.");
         }
 
-        private static async Task ExecuteToolChain(ToolCall initialCall, Conversation chat, ITools tools, ToolCoordinator toolCordinator)
-        {
-            ToolCall currentToolCall = initialCall;
-
-            while (true)
-            {
-                if (!string.IsNullOrWhiteSpace(currentToolCall.AssistantMessage))
-                {
-                    chat.Add(Role.Assistant, currentToolCall.AssistantMessage);
-                }
-
-                if (string.IsNullOrWhiteSpace(currentToolCall.Name))
-                    return;
-
-                chat.Add(Role.Assistant, tool: currentToolCall);
-
-                object? result;
-                try
-                {
-                    result = await toolCordinator.Invoke<object>(currentToolCall, tools);
-                }
-                catch (Exception ex)
-                {
-                    chat.Add(Role.Assistant, $"Tool invocation failed - {ex}");
-                    return;
-                }
-
-                chat.Add(Role.Tool, result?.ToString(), currentToolCall);
-
-                try
-                {
-                    currentToolCall = await toolCordinator.GetDefaultToolCall(chat, tools);
-                }
-                catch (Exception ex)
-                {
-                    chat.Add(Role.Assistant, $"Error fetching next step - {ex}");
-                    return;
-                }
-
-                if (string.IsNullOrWhiteSpace(currentToolCall.AssistantMessage) &&
-                    string.IsNullOrWhiteSpace(currentToolCall.Name))
-                    return;
-            }
-        }
     }
 }
 
