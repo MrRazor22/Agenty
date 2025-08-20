@@ -15,13 +15,25 @@ namespace Agenty.LLMCore
         public JsonObject ParametersSchema { get; set; }
         [JsonIgnore] public Delegate? Function { get; set; }
         [JsonIgnore] public List<string> Tags { get; set; } = new();
+        //public override string ToString()
+        //{
+        //    var props = ParametersSchema?["properties"]?.AsObject();
+        //    var args = props != null
+        //        ? string.Join(", ", props.Select(p => $"{p.Key}"))
+        //        : "";
+
+        //    var argPart = args.Length > 0 ? $"({args})" : "()";
+
+        //    return !string.IsNullOrWhiteSpace(Description)
+        //        ? $"{Name}{argPart} => {Description}"
+        //        : $"{Name}{argPart}";
+        //}
         public override string ToString()
         {
             return !string.IsNullOrWhiteSpace(Description)
-                ? $"{Name} → {Description}"
+                ? $"{Name}({Description})"
                 : $"{Name}";
         }
-
     }
 
     public class ToolCall(string id, string name, JsonObject arguments, object?[]? parameters = null, string? message = null)

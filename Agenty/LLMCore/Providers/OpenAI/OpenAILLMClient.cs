@@ -94,12 +94,14 @@ namespace Agenty.LLMCore.Providers.OpenAI
             return new("");
         }
 
-        public async Task<JsonObject> GetStructuredResponse(Conversation prompt, JsonObject responseFormat)
+        public async Task<JsonNode> GetStructuredResponse(Conversation prompt, JsonObject responseFormat)
         {
             EnsureInitialized();
-            Console.WriteLine("====================================");
-            Console.WriteLine(responseFormat);
-            Console.WriteLine("===============================");
+
+            //Console.WriteLine("=========================================");
+            //Console.WriteLine(responseFormat);
+            //Console.WriteLine("=========================================");
+
             ChatCompletionOptions options = new()
             {
                 ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
@@ -111,7 +113,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             ChatCompletion completion = await _chatClient!.CompleteChatAsync(prompt.ToChatMessages(), options);
 
             using JsonDocument structuredJson = JsonDocument.Parse(completion.Content[0].Text);
-            return JsonNode.Parse(structuredJson.RootElement.GetRawText())!.AsObject();
+            return JsonNode.Parse(structuredJson.RootElement.GetRawText())!;
         }
 
     }

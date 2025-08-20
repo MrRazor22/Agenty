@@ -1,5 +1,4 @@
-﻿using Agenty.LLMCore;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -8,14 +7,33 @@ using System.Threading.Tasks;
 
 namespace Agenty.AgentCore
 {
+    public enum StepAction
+    {
+        Call,
+        Finish,
+        AskUser
+    }
+
+    public sealed class PlanStep
+    {
+        public StepAction Action { get; set; }
+        public string? Tool { get; set; }
+        public Dictionary<string, object>? Args { get; set; }
+    }
+
+
+    public class FeedBack
+    {
+        [Description("True if the overall goal accomplished.")]
+        public bool IsGoalAccomplished { get; set; }
+
+        [Description("Concise explanation summarizing the understanding from current step executed")]
+        public string Understanding { get; set; } = "";
+
+    }
+
     public class ScratchpadEntry
     {
-        public ScratchpadEntry() { }
-        public ScratchpadEntry(string action, string insights)
-        {
-            this.ActionTaken = action;
-            this.Insights = insights;
-        }
         [Description("Description of the action taken, e.g. tool called with parameters, or reasoning step without a tool call")]
         public string ActionTaken { get; set; }
 
@@ -50,5 +68,4 @@ namespace Agenty.AgentCore
             return sb.ToString().Trim();
         }
     }
-
 }

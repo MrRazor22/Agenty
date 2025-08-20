@@ -10,8 +10,8 @@
             var chat = new Chat(role, content, tool);
             Add(chat);
             OnChat?.Invoke(chat);
-            string toolInfo = tool != null ? $" | ToolCall: {tool}" : "";
-            Console.WriteLine($"[Conversation] Added chat - Role: {role}, Content: {content}{toolInfo}");
+            //string toolInfo = tool != null ? $" | ToolCall: {tool}" : "";
+            //Console.WriteLine($"[Conversation] Added chat - Role: {role}, Content: {content}{toolInfo}");
             return this;
         }
         public static Conversation Clone(Conversation original)

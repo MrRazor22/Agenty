@@ -75,12 +75,12 @@ namespace Agenty.LLMCore
         public async Task<ToolCall> GetToolCall(
            Conversation prompt,
            bool forceToolCall = false,
-           int maxRetries = 0) => await GetDefaultToolCall(
+           int maxRetries = 0) => await GetToolCall(
             prompt,
-            toolRegistry.RegisteredTools,
             forceToolCall,
-            maxRetries);
-        public async Task<ToolCall> GetDefaultToolCall<TTuple>(
+            maxRetries,
+            toolRegistry.RegisteredTools.ToArray());
+        public async Task<ToolCall> GetToolCall<TTuple>(
             Conversation prompt,
             bool forceToolCall = false,
             int maxRetries = 0)
@@ -92,22 +92,22 @@ namespace Agenty.LLMCore
                 (tupleType.GetGenericTypeDefinition() != typeof(ValueTuple<>) &&
                  !tupleType.FullName!.StartsWith("System.ValueTuple")))
             {
-                var single = toolRegistry.GetTools(tupleType).ToList();
-                return await GetDefaultToolCall(prompt, single, forceToolCall, maxRetries);
+                var single = toolRegistry.GetTools(tupleType).ToArray();
+                return await GetToolCall(prompt, forceToolCall, maxRetries, single);
             }
 
             // Multiple types inside tuple
             var types = tupleType.GetGenericArguments();
-            var toolSubSet = toolRegistry.GetTools(types).ToList();
+            var toolSubSet = toolRegistry.GetTools(types).ToArray();
 
-            return await GetDefaultToolCall(prompt, toolSubSet, forceToolCall, maxRetries);
+            return await GetToolCall(prompt, forceToolCall, maxRetries, toolSubSet);
         }
 
-        public async Task<ToolCall> GetDefaultToolCall(
+        public async Task<ToolCall> GetToolCall(
             Conversation prompt,
-            IEnumerable<Tool> tools,
             bool forceToolCall = false,
-            int maxRetries = 0)
+            int maxRetries = 0,
+            params Tool[] tools)
         {
             if (tools == null || !tools.Any())
                 throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
@@ -126,6 +126,11 @@ namespace Agenty.LLMCore
                         {
                             var name = response.Name;
                             var args = response.Arguments;
+
+                            Console.WriteLine("=========================================");
+                            Console.WriteLine(name);
+                            Console.WriteLine(args);
+                            Console.WriteLine("=========================================");
 
                             return new ToolCall(
                                 response.Id ?? Guid.NewGuid().ToString(),
@@ -162,48 +167,39 @@ namespace Agenty.LLMCore
             return new ToolCall("Couldn't generate a valid tool call/response.");
         }
 
-        public async Task<T?> GetStructuredResponse<T>(
-            Conversation prompt,
-            Delegate method,
-            int maxRetries = 3)
+        public async Task<T?> GetStructuredResponse<T>(Conversation prompt, int maxRetries = 3)
         {
-            if (toolRegistry == null || !toolRegistry.RegisteredTools.Any())
-                throw new ArgumentNullException(nameof(toolRegistry), "No tools provided for function call response.");
-            if (method == null) throw new ArgumentNullException(nameof(method));
-
-            var tool = toolRegistry.Get(method);
-            if (tool == null) throw new ArgumentNullException(nameof(tool));
-
             var intPrompt = Conversation.Clone(prompt);
 
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
                 try
                 {
-                    var arguments = await llm.GetStructuredResponse(intPrompt, GetToolSchema(tool));
-                    var argsParsed = ParseToolParams(tool.Name, arguments);
-                    if (argsParsed != null)
+                    var jsonResponse = await llm.GetStructuredResponse(intPrompt, JsonSchemaExtensions.GetSchemaFor<T>());
+                    if (jsonResponse != null)
                     {
-                        var toolCall = new ToolCall(new Guid().ToString(), tool.Name, arguments, argsParsed, "");
-                        if (toolCall != null)
-                        {
-                            // Use existing Invoke<T> helper
-                            return await Invoke<T>(toolCall);
-                        }
+                        var jsonString = jsonResponse.ToJsonString();
+                        var result = JsonHelper.DeserializeJson<T>(jsonString);
+                        if (result != null) return result;
                     }
                 }
                 catch (Exception ex)
                 {
-                    intPrompt.Add(Role.Assistant, $"The last response failed with [{ex.Message}].");
+                    if (attempt == maxRetries) throw;
+
+                    intPrompt.Add(Role.Assistant,
+                        $"The last response failed with [{ex.Message}]. Please provide a valid JSON response matching the schema.");
                     continue;
                 }
 
                 intPrompt.Add(Role.Assistant,
-                    $"The last response was empty or invalid. Please return a valid Json response for tool {tool.Name}.");
+                    $"The last response was empty or invalid. Please return a valid JSON response for type {typeof(T).Name}.");
             }
 
             return default;
         }
+
+
         private ToolCall? TryExtractInlineToolCall(string content)
         {
             var matches = ToolTagPattern.Matches(content).Cast<Match>()
@@ -290,11 +286,7 @@ namespace Agenty.LLMCore
                 {
                     try
                     {
-                        paramValues[i] = JsonSerializer.Deserialize(node.ToJsonString(), p.ParameterType, new JsonSerializerOptions
-                        {
-                            Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
-                            PropertyNameCaseInsensitive = true
-                        });
+                        paramValues[i] = JsonHelper.DeserializeJson(node.ToJsonString(), p.ParameterType);
                     }
                     catch
                     {
@@ -310,30 +302,6 @@ namespace Agenty.LLMCore
 
             return paramValues;
         }
-
-
-        public JsonObject GetToolSchema(Tool tool)
-        {
-            var argumentsSchema = tool.ParametersSchema != null
-                    ? JsonNode.Parse(tool.ParametersSchema.ToJsonString())?.AsObject()
-                    : new JsonSchemaBuilder()
-                        .Type<object>()
-                        .AdditionalProperties(new JsonSchemaBuilder().AdditionalProperties(false).Build())
-                        .Build();
-            return argumentsSchema;
-            //var properties = new JsonObject
-            //{
-            //    [JsonName] = new JsonObject { ["const"] = tool.Name },
-            //    [JsonArguments] = argumentsSchema ?? new JsonObject()
-            //};
-
-            //return new JsonSchemaBuilder()
-            //    .Type<object>()
-            //    .Properties(properties)
-            //    .Required(new JsonArray { JsonName, JsonArguments })
-            //    .Build();
-        }
-
 
         public async Task<T?> Invoke<T>(ToolCall tool)
         {

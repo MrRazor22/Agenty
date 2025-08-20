@@ -14,6 +14,11 @@ namespace Agenty.LLMCore.JsonSchema
 {
     public static class JsonSchemaExtensions
     {
+        public static JsonObject GetSchemaFor<T>()
+        {
+            return GetSchemaForType(typeof(T));
+        }
+
         public static JsonObject GetSchemaForType(this Type type, HashSet<Type>? visited = null)
         {
             visited ??= new HashSet<Type>();
@@ -89,6 +94,7 @@ namespace Agenty.LLMCore.JsonSchema
                 .Type<object>()
                 .Properties(props)
                 .Required(required)
+                .AdditionalProperties(false)
                 .Build();
         }
 

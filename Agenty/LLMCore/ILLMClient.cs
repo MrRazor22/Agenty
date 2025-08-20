@@ -12,7 +12,7 @@ namespace Agenty.LLMCore
         Task<string> GetResponse(Conversation prompt);
         IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt);
         Task<ToolCall> GetToolCallResponse(Conversation prompt, IEnumerable<Tool> tools, bool forceToolCall = false);
-        Task<JsonObject> GetStructuredResponse(Conversation prompt, JsonObject responseFormat);
+        Task<JsonNode> GetStructuredResponse(Conversation prompt, JsonObject responseFormat);
     }
 
 }
