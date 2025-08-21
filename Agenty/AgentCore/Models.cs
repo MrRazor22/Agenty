@@ -14,11 +14,10 @@ namespace Agenty.AgentCore
         AskUser
     }
 
-    public sealed class PlanStep
+    public class PlanStep
     {
-        public StepAction Action { get; set; }
+        public string NextStep { get; set; }
         public string? Tool { get; set; }
-        public Dictionary<string, object>? Args { get; set; }
     }
 
 

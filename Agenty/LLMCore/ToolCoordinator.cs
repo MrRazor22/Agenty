@@ -11,6 +11,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 
 namespace Agenty.LLMCore
 {
@@ -127,10 +128,10 @@ namespace Agenty.LLMCore
                             var name = response.Name;
                             var args = response.Arguments;
 
-                            Console.WriteLine("=========================================");
-                            Console.WriteLine(name);
-                            Console.WriteLine(args);
-                            Console.WriteLine("=========================================");
+                            //Console.WriteLine("=========================================");
+                            //Console.WriteLine(name);
+                            //Console.WriteLine(args);
+                            //Console.WriteLine("=========================================");
 
                             return new ToolCall(
                                 response.Id ?? Guid.NewGuid().ToString(),
@@ -302,6 +303,57 @@ namespace Agenty.LLMCore
 
             return paramValues;
         }
+
+
+        // Non-generic overload: defaults to string
+        public async Task<string?> ExecuteToolCall(
+            Conversation chat,
+            params Tool[] tools)
+        {
+            return await ExecuteToolCall<string>(chat, tools: tools) ?? "";
+        }
+        // Generic version
+        public async Task<T?> ExecuteToolCall<T>(
+            Conversation chat,
+            params Tool[] tools)
+        {
+            var toolCall = await GetToolCall(chat, tools: tools);
+
+            // Log assistant message
+            if (!string.IsNullOrWhiteSpace(toolCall.AssistantMessage))
+            {
+                Console.WriteLine($"[TOOLCALL] Assistant message: {toolCall.AssistantMessage}");
+                chat.Add(Role.Assistant, toolCall.AssistantMessage);
+            }
+
+            T? result = default;
+
+            // Invoke tool if a tool name exists
+            if (!string.IsNullOrWhiteSpace(toolCall.Name))
+            {
+                Console.WriteLine($"[TOOLCALL] Invoking tool: {toolCall.Name} ========================>");
+                chat.Add(Role.Assistant, tool: toolCall);
+
+                try
+                {
+                    // Use T here instead of object
+                    result = await Invoke<T>(toolCall);
+                    Console.WriteLine($"[TOOL RESULT] {result}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ERROR] Tool invocation failed: {ex}");
+                    chat.Add(Role.Assistant, $"Tool invocation failed - {ex}");
+                }
+
+                chat.Add(Role.Tool, result?.ToString(), toolCall);
+            }
+
+            return result;
+        }
+
+
+
 
         public async Task<T?> Invoke<T>(ToolCall tool)
         {

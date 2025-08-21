@@ -2,9 +2,12 @@
 using Agenty.LLMCore.Providers.OpenAI;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
+using System.Runtime.ConstrainedExecution;
 using System.Text;
 using System.Threading.Tasks;
+using Xunit.Sdk;
 
 namespace Agenty.AgentCore
 {
@@ -52,151 +55,136 @@ namespace Agenty.AgentCore
 
         public async Task<string> ExecuteAsync(string goal)
         {
-            _goal = goal;
-            _scratchpad.Clear(); // Clear previous execution history
-            var isDone = false;
-            int maxSteps = 100; // Add step limit to prevent infinite loops
-            int stepCount = 0;
+            Console.WriteLine($"[START] Executing goal: {goal}");
 
-            while (!isDone && stepCount < maxSteps)
+            var chat = new Conversation();
+            chat.Add(Role.System,
+    "You are a careful, step-by-step assistant. " +
+    "For complex queries, plan actions one at a time. " +
+    "If unsure, say 'I don't know'. " +
+    $"Use the listed tools ({_toolRegistry}) ONLY if needed. " +
+    "Keep your responses short, clear, and actionable.");
+
+            chat.Add(Role.User, goal);
+
+            bool IsDone = false;
+            string final = "";
+
+            string reflection = null;
+
+            while (IsDone == false)
             {
-                stepCount++;
-                string context = _scratchpad.Entries.Any() ?
-                    $"Here are the actions taken so far to move towards accomplishing the goal: {_scratchpad}" : "Did Nothing";
-                string latestContext = _scratchpad.Entries.Any() ?
-                    $"Here is your previous action taken: {_scratchpad.Entries.LastOrDefault().ActionTaken} amd Insights you got: {_scratchpad.Entries.LastOrDefault().Insights}, so plan based on these insights "
-                    : "";
-
-                //planner
-                //var chat = new Conversation()
-                //     .Add(Role.System,
-                //         "You are a planning assistant tasked with providing the NEXT actionable step for any user goal." +
-                //         $"Here is the list of tools user can access: [{_toolRegistry}]. " +
-                //         $"What we did so far for this goal: {context} " +
-                //         $"{latestContext}" +
-                //         "What one single step to do next? JUST TELL EXACTLY ONE SIMPLE ACTION TO DO NEXT TO MOVE FORWARD FROM CURRENT POSITION")
-                //        .Add(Role.User, $"{_goal}");
-
-
-                //var whatNext = await _llm.GetResponse(chat);
-                //Console.WriteLine($"THOUGHTS: {whatNext}");
-
-                PlanStep step = await _toolCoordinator.GetStructuredResponse<PlanStep>(new Conversation()
-                    .Add(Role.System,
-                     $"Here is the list of tools user can access: [{_toolRegistry}]. " +
-                        "Extract each actionable step from the user goal. " +
-                        "Each step must name the exact tool and include a specific description tied to the actual goal, " +
-                        "not a vague phrase like 'evaluate expression'. " +
-                        "Description should explain concretely what is being done in this case.")
-                    .Add(Role.User, $"User goal: {_goal}"));
-                //+ $"\nPlanner output: {whatNext}"));
-
-                Console.WriteLine("========================================> PLAN GENERATED");
-                Console.WriteLine($" {step.Description} | {step.ToolName}\n");
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                //executor
-                var executorChat = new Conversation()
-    .Add(Role.System, $"You are an execution assistant. Execute the step provided: '{step.Description}' for the original goal: '{_goal}'. " +
-                      $"Tools accessible: [{_toolRegistry.Get(step.ToolName)?.ToString() ?? _toolRegistry.ToString()}]. " +
-                      "Extract any necessary parameters from the original goal and use the tool with those specific parameters.")
-    .Add(Role.User, $"Step: {step.Description}, Original Goal: {_goal}");
-
-                ToolCall toolCall;
-                if (_toolRegistry.Get(step.ToolName) != null)
-                    toolCall = await _toolCoordinator.GetToolCall(executorChat, tools: _toolRegistry.Get(step.ToolName));
-                else
-                    toolCall = await _toolCoordinator.GetToolCall(executorChat);
-
-                object? result = "No step execution result";
-                if (!string.IsNullOrWhiteSpace(toolCall.AssistantMessage) &&
-                    string.IsNullOrWhiteSpace(toolCall.Name))
+                PlanStep nxt = null;
+                while (string.IsNullOrWhiteSpace(nxt?.NextStep))
                 {
-                    result = toolCall.AssistantMessage;
-                }
-                if (!string.IsNullOrWhiteSpace(toolCall.Name))
-                {
-                    try
+                    if (reflection == null)
                     {
-                        result = await _toolCoordinator.Invoke<object>(toolCall);
+                        var nxtChat = Conversation.Clone(chat);
+                        nxtChat.Add(Role.User,
+    "Decide the next single action to move toward the goal. " +
+    "If a tool is needed, specify its exact name from the list of tools. " +
+    "Do NOT include irrelevant actions. " +
+    "Respond with only two fields: NextStep and Tool.");
+
+                        nxt = await _toolCoordinator.GetStructuredResponse<PlanStep>(nxtChat);
+
+                        if (string.IsNullOrWhiteSpace(nxt.NextStep))
+                        {
+                            Console.WriteLine("[PLANNER] Got empty reflection, retrying...");
+                            continue;
+                        }
+
+                        Console.WriteLine($"[PLANNER RESULT] {nxt.NextStep} | {nxt.Tool}");
+                        chat.Add(Role.User, $"Perform the action: {nxt.NextStep} with the tool {nxt.Tool}");
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        result = $"Tool invocation failed - {ex}";
+                        var nxtChat = Conversation.Clone(chat);
+                        nxtChat.Add(Role.User, $"I think your previous answer direction was wrong because i think you should {reflection}");
+                        nxtChat.Add(Role.User,
+                            "Give me what next simple one action you want to do next to move forward in accomplising my query, and also let me know thw tool to be used for that from list of tools you have access to.");
+
+                        nxt = await _toolCoordinator.GetStructuredResponse<PlanStep>(nxtChat);
+
+                        if (nxt != null || string.IsNullOrWhiteSpace(nxt.NextStep) || (string.IsNullOrEmpty(nxt.Tool) && _toolRegistry.Get(nxt?.Tool) != null))
+                        {
+                            Console.WriteLine("[PLANNER] Got empty reflection, retrying...");
+                            continue;
+                        }
+
+                        Console.WriteLine($"[PLANNER RESULT] {nxt.NextStep} | {nxt.Tool}");
+                        chat.Add(Role.User, $"Perform the action: {nxt.NextStep} with the tool {nxt.Tool}");
                     }
                 }
-                Console.WriteLine($"RESULT: {result?.ToString()}");
 
-                //feedback 
-                var critiqChat = new Conversation()
-                    .Add(Role.System, $"You are a feedback assistant who evaluates progress toward accomplishing the goal: '{_goal}' so that planner assistnat can listten and follow your feedback and course correct " +
-                        $"{context} " +
-                        $"{latestContext}" +
-                        $"Your job is to: " +
-                        $"1. Determine if the ENTIRE GOAL is now accomplished based on ALL steps taken so far " +
-                        $"2. if goal not accomplished, clealry state why it was not accomplished and corrective actions to be taken" +
-                        $"IMPORTANT: The goal is accomplished when the random number task is complete. " +
-                        $"Do NOT repeat completed tasks. Be concise and accurate.")
-                    .Add(Role.User, $"Goal: {_goal}");
+                Console.WriteLine("[LOOP] Getting tool call...");
+                ToolCall toolCall = null;
+                if (_toolRegistry.Get(nxt?.Tool) == null)
+                    await _toolCoordinator.ExecuteToolCall(chat, _toolRegistry.RegisteredTools.ToArray());
+                else await _toolCoordinator.ExecuteToolCall(chat, _toolRegistry.Get(nxt?.Tool));
 
-                FeedBack feedBack = await _toolCoordinator.GetStructuredResponse<FeedBack>(critiqChat);
-                Console.WriteLine($"FEEDBACK: {feedBack.Understanding} | {feedBack.IsGoalAccomplished}");
 
-                // CRITICAL FIX: Actually add the entry to the scratchpad
-                var scratchPadEntry = new ScratchpadEntry
+                Console.WriteLine("[VALIDATION] Checking if goal is satisfied...");
+                var validationChat = Conversation.Clone(chat);
+                validationChat.Add(Role.Assistant,
+    $"Does your response fully satisfy the user's goal: \"{goal}\"? " +
+    "Answer with only 'true' or 'false'.");
+
+                IsDone = await _toolCoordinator.GetStructuredResponse<bool>(validationChat);
+                Console.WriteLine($"[VALIDATION RESULT] IsDone = {IsDone}");
+
+                if (IsDone)
                 {
-                    ActionTaken = step.Description,
-                    Insights = feedBack.Understanding
-                };
-                _scratchpad.AddEntry(scratchPadEntry); // This was missing!
+                    while (string.IsNullOrWhiteSpace(final))
+                    {
+                        Console.WriteLine("[FINAL] Attempting to generate final response...");
+                        var finalChat = Conversation.Clone(chat);
 
-                isDone = feedBack.IsGoalAccomplished;
+                        finalChat.Add(Role.User,
+    $"Provide a concise final answer to the goal: \"{goal}\". " +
+    "Use 2–3 sentences. " +
+    "Be honest and clear. Do not leave blank.");
 
-                if (isDone)
+                        final = await _llm.GetResponse(finalChat);
+
+                        if (string.IsNullOrEmpty(final))
+                        {
+                            Console.WriteLine("[FINAL] Got empty final response, retrying...");
+                            continue;
+                        }
+
+                        Console.WriteLine($"[FINAL RESULT] =================================================================>");
+                    }
+
+                }
+
+                if (!IsDone || string.IsNullOrEmpty(final))
                 {
-                    return $"Goal accomplished after {stepCount} steps.";
+                    Console.WriteLine("[REFLECTION] Generating reflection...");
+                    while (string.IsNullOrWhiteSpace(reflection))
+                    {
+                        var reflectChat = Conversation.Clone(chat);
+                        reflectChat.Add(Role.User,
+                            "Reflect on progress toward the goal. " +
+                            "Answer in one short sentence only. " +
+                            "Do not leave blank. Be beutally honest.");
+
+                        reflection = await _llm.GetResponse(reflectChat);
+
+                        if (string.IsNullOrWhiteSpace(reflection))
+                        {
+                            Console.WriteLine("[REFLECTION] Got empty reflection, retrying...");
+                            continue;
+                        }
+
+                        Console.WriteLine($"[REFLECTION RESULT] {reflection}");
+                        chat.Add(Role.Assistant, reflection);
+                    }
                 }
             }
 
-            return $"Execution completed or step limit ({maxSteps}) reached after {stepCount} steps.";
+            return final;
         }
+
     }
 }

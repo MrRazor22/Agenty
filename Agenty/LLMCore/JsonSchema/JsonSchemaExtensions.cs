@@ -69,8 +69,11 @@ namespace Agenty.LLMCore.JsonSchema
                 var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
                 var propSchema = propType.GetSchemaForType(visited);
 
-                var description = prop.GetCustomAttribute<DescriptionAttribute>()?.Description ?? prop.Name;
-                propSchema[JsonSchemaConstants.DescriptionKey] = description;
+                if (!string.IsNullOrEmpty(prop.GetCustomAttribute<DescriptionAttribute>()?.Description))
+                {
+                    var description = prop.GetCustomAttribute<DescriptionAttribute>()?.Description;
+                    propSchema[JsonSchemaConstants.DescriptionKey] = description;
+                }
 
                 if (prop.GetCustomAttribute<EmailAddressAttribute>() != null)
                     propSchema[JsonSchemaConstants.FormatKey] = "email";
@@ -103,10 +106,12 @@ namespace Agenty.LLMCore.JsonSchema
             var type = prop.PropertyType;
             return Nullable.GetUnderlyingType(type) != null || type.IsClass && type != typeof(string);
         }
-        public static bool IsSimpleType(this Type type)
-        {
-            return type.IsPrimitive || type == typeof(string) || type == typeof(decimal) || type == typeof(DateTime);
-        }
+        public static bool IsSimpleType(this Type type) =>
+            type.IsPrimitive ||
+            type == typeof(string) ||
+            type == typeof(decimal) ||
+            type == typeof(DateTime) ||
+            type == typeof(Guid);
 
         public static string MapClrTypeToJsonType(this Type type)
         {
