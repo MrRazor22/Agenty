@@ -6,6 +6,8 @@ using System.ComponentModel;
 using System.Linq;
 using System.Runtime.ConstrainedExecution;
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Xunit.Sdk;
 
@@ -53,137 +55,150 @@ namespace Agenty.AgentCore
             return this;
         }
 
-        public async Task<string> ExecuteAsync(string goal)
+        public async Task<string> ExecuteAsync(string goal, int maxRounds = 10)
         {
             Console.WriteLine($"[START] Executing goal: {goal}");
 
             var chat = new Conversation();
             chat.Add(Role.System,
-    "You are a careful, step-by-step assistant. " +
-    "For complex queries, plan actions one at a time. " +
-    "If unsure, say 'I don't know'. " +
-    $"Use the listed tools ({_toolRegistry}) ONLY if needed. " +
-    "Keep your responses short, clear, and actionable.");
+                $@"You operate by running a loop with the following steps: Thought, Action, Observation.
+                You are provided with function signatures within <tools></tools> XML tags.
+                You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug
+                into functions. Pay special attention to the properties 'types'. You should use those types as in a Python dict.
 
-            chat.Add(Role.User, goal);
+                For each function call return a json object with function name and arguments within <tool_call></tool_call> XML tags as follows:
 
-            bool IsDone = false;
-            string final = "";
+                <tool_call>
+                {{""name"": ""<function-name>"", ""arguments"": <args-dict>, ""id"": <monotonically-increasing-id>}}
+                </tool_call>
 
-            string reflection = null;
+                Here are the available tools / actions:
 
-            while (IsDone == false)
+                <tools>
+                {_toolRegistry}
+                </tools>
+
+                Example session:
+
+                <question>What's the current temperature in Madrid?</question>
+                <thought>I need to get the current weather in Madrid</thought>
+                <tool_call> {{ ""function"", ""id"": ""0"",{{""function"": {{""name"": ""FetchWeather"",""arguments"": {{""location"": ""Madrid"", ""unit"": ""celsius""}}}}</tool_call>
+
+                You will be called again with this:
+
+                <observation>{{0: {{""temperature"": 25, ""unit"": ""celsius""}}}}</observation>
+
+                You then output:
+
+                <response>The current temperature in Madrid is 25 degrees Celsius</response>
+
+                Additional constraints:
+
+                - If the user asks you something unrelated to any of the tools above, answer freely enclosing your answer with <response></response> tags.
+                ");
+
+            chat.Add(Role.User, WrapTag(goal, "question"));
+
+            for (int round = 0; round < maxRounds; round++)
             {
-                PlanStep nxt = null;
-                while (string.IsNullOrWhiteSpace(nxt?.NextStep))
+                // 1. Get LLM completion (thought, tool_call, or response)
+                var completion = await _llm.GetResponse(chat);
+
+                // 2. Try to extract <response>
+                var response = ExtractTagContent(completion, "response");
+                if (!string.IsNullOrWhiteSpace(response))
                 {
-                    if (reflection == null)
-                    {
-                        var nxtChat = Conversation.Clone(chat);
-                        nxtChat.Add(Role.User,
-    "Decide the next single action to move toward the goal. " +
-    "If a tool is needed, specify its exact name from the list of tools. " +
-    "Do NOT include irrelevant actions. " +
-    "Respond with only two fields: NextStep and Tool.");
-
-                        nxt = await _toolCoordinator.GetStructuredResponse<PlanStep>(nxtChat);
-
-                        if (string.IsNullOrWhiteSpace(nxt.NextStep))
-                        {
-                            Console.WriteLine("[PLANNER] Got empty reflection, retrying...");
-                            continue;
-                        }
-
-                        Console.WriteLine($"[PLANNER RESULT] {nxt.NextStep} | {nxt.Tool}");
-                        chat.Add(Role.User, $"Perform the action: {nxt.NextStep} with the tool {nxt.Tool}");
-                    }
-                    else
-                    {
-                        var nxtChat = Conversation.Clone(chat);
-                        nxtChat.Add(Role.User, $"I think your previous answer direction was wrong because i think you should {reflection}");
-                        nxtChat.Add(Role.User,
-                            "Give me what next simple one action you want to do next to move forward in accomplising my query, and also let me know thw tool to be used for that from list of tools you have access to.");
-
-                        nxt = await _toolCoordinator.GetStructuredResponse<PlanStep>(nxtChat);
-
-                        if (nxt != null || string.IsNullOrWhiteSpace(nxt.NextStep) || (string.IsNullOrEmpty(nxt.Tool) && _toolRegistry.Get(nxt?.Tool) != null))
-                        {
-                            Console.WriteLine("[PLANNER] Got empty reflection, retrying...");
-                            continue;
-                        }
-
-                        Console.WriteLine($"[PLANNER RESULT] {nxt.NextStep} | {nxt.Tool}");
-                        chat.Add(Role.User, $"Perform the action: {nxt.NextStep} with the tool {nxt.Tool}");
-                    }
+                    return response;
                 }
 
-                Console.WriteLine("[LOOP] Getting tool call...");
-                ToolCall toolCall = null;
-                if (_toolRegistry.Get(nxt?.Tool) == null)
-                    await _toolCoordinator.ExecuteToolCall(chat, _toolRegistry.RegisteredTools.ToArray());
-                else await _toolCoordinator.ExecuteToolCall(chat, _toolRegistry.Get(nxt?.Tool));
-
-
-                Console.WriteLine("[VALIDATION] Checking if goal is satisfied...");
-                var validationChat = Conversation.Clone(chat);
-                validationChat.Add(Role.Assistant,
-    $"Does your response fully satisfy the user's goal: \"{goal}\"? " +
-    "Answer with only 'true' or 'false'.");
-
-                IsDone = await _toolCoordinator.GetStructuredResponse<bool>(validationChat);
-                Console.WriteLine($"[VALIDATION RESULT] IsDone = {IsDone}");
-
-                if (IsDone)
+                // 3. Extract <thought> and <tool_call>
+                var thought = ExtractTagContent(completion, "thought");
+                if (!string.IsNullOrWhiteSpace(thought))
                 {
-                    while (string.IsNullOrWhiteSpace(final))
-                    {
-                        Console.WriteLine("[FINAL] Attempting to generate final response...");
-                        var finalChat = Conversation.Clone(chat);
-
-                        finalChat.Add(Role.User,
-    $"Provide a concise final answer to the goal: \"{goal}\". " +
-    "Use 2–3 sentences. " +
-    "Be honest and clear. Do not leave blank.");
-
-                        final = await _llm.GetResponse(finalChat);
-
-                        if (string.IsNullOrEmpty(final))
-                        {
-                            Console.WriteLine("[FINAL] Got empty final response, retrying...");
-                            continue;
-                        }
-
-                        Console.WriteLine($"[FINAL RESULT] =================================================================>");
-                    }
-
+                    Console.WriteLine($"[THOUGHT] {thought}");
                 }
 
-                if (!IsDone || string.IsNullOrEmpty(final))
+                var observations = new Dictionary<string, object>();
+                var toolCall = await _toolCoordinator.GetToolCall(chat);
+                string result = "No valid response from tool call information provided";
+                // Log assistant message
+                if (!string.IsNullOrWhiteSpace(toolCall.AssistantMessage))
                 {
-                    Console.WriteLine("[REFLECTION] Generating reflection...");
-                    while (string.IsNullOrWhiteSpace(reflection))
-                    {
-                        var reflectChat = Conversation.Clone(chat);
-                        reflectChat.Add(Role.User,
-                            "Reflect on progress toward the goal. " +
-                            "Answer in one short sentence only. " +
-                            "Do not leave blank. Be beutally honest.");
-
-                        reflection = await _llm.GetResponse(reflectChat);
-
-                        if (string.IsNullOrWhiteSpace(reflection))
-                        {
-                            Console.WriteLine("[REFLECTION] Got empty reflection, retrying...");
-                            continue;
-                        }
-
-                        Console.WriteLine($"[REFLECTION RESULT] {reflection}");
-                        chat.Add(Role.Assistant, reflection);
-                    }
+                    result = toolCall.AssistantMessage;
                 }
+
+                // Invoke tool if a tool name exists
+                if (!string.IsNullOrWhiteSpace(toolCall.Name))
+                {
+                    try
+                    {
+                        // Use T here instead of object
+                        result = await _toolCoordinator.Invoke<string>(toolCall);
+                        //Console.WriteLine($"[TOOL RESULT] {result}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[ERROR] Tool invocation failed: {ex}");
+                        result = $"Tool call failed - {ex.Message}";
+                        //chat.Add(Role.Assistant, $"Tool invocation failed - {ex}");
+                    }
+
+                    //chat.Add(Role.Tool, result?.ToString(), toolCall);
+                }
+                observations[toolCall.Id] = result;
+                Console.WriteLine($"[OBSERVATION] {result}");
+                chat.Add(Role.User, WrapTag(JsonSerializer.Serialize(observations), "observation"));
+
+                //var toolCallJsons = ExtractAllTagContents(completion, "tool_call");
+                //if (toolCallJsons.Count > 0)
+                //{
+                //    var observations = new Dictionary<string, object>();
+                //    foreach (var toolCallJson in toolCallJsons)
+                //    {
+                //        var toolCall = ToolCall.FromJson(toolCallJson);
+                //        var tool = _toolRegistry.Get(toolCall.Name);
+                //        if (tool == null)
+                //        {
+                //            Console.WriteLine($"[ERROR] Tool not found: {toolCall.Name}");
+                //            continue;
+                //        }
+
+                //        // Validate and execute tool call
+                //        var result = await _toolCoordinator.ExecuteToolCall(chat, tool);
+                //        observations[toolCall.Id] = result;
+                //        Console.WriteLine($"[TOOL RESULT] {toolCall.Name} => {result}");
+                //    }
+
+                // 4. Add observation to chat
+                //chat.Add(Role.User, WrapTag(JsonSerializer.Serialize(observations), "observation"));
+                //}
             }
 
-            return final;
+            // Fallback: return last LLM response
+            return await _llm.GetResponse(chat);
+        }
+
+        // Helper methods for tag extraction (implement as needed)
+        private string ExtractTagContent(string text, string tag)
+        {
+            var match = Regex.Match(text, $"<{tag}>([\\s\\S]*?)</{tag}>", RegexOptions.IgnoreCase);
+            return match.Success ? match.Groups[1].Value.Trim() : null;
+        }
+
+        private List<string> ExtractAllTagContents(string text, string tag)
+        {
+            var matches = Regex.Matches(text, $"<{tag}>([\\s\\S]*?)</{tag}>", RegexOptions.IgnoreCase);
+            return matches.Select(m => m.Groups[1].Value.Trim()).ToList();
+        }
+
+        public string WrapTag(string content, string tag = "")
+        {
+            // Wrap with tag if provided
+            if (!string.IsNullOrWhiteSpace(tag))
+            {
+                content = $"<{tag}>{content}</{tag}>";
+            }
+            return content;
         }
 
     }

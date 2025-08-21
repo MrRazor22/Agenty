@@ -10,7 +10,7 @@ namespace Agenty.AgentCore
 {
     public interface IAgent
     {
-        Task<string> ExecuteAsync(string goal);
+        Task<string> ExecuteAsync(string goal, int maxRounds = 10);
     }
 
 

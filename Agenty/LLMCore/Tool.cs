@@ -15,24 +15,18 @@ namespace Agenty.LLMCore
         public JsonObject ParametersSchema { get; set; }
         [JsonIgnore] public Delegate? Function { get; set; }
         [JsonIgnore] public List<string> Tags { get; set; } = new();
-        //public override string ToString()
-        //{
-        //    var props = ParametersSchema?["properties"]?.AsObject();
-        //    var args = props != null
-        //        ? string.Join(", ", props.Select(p => $"{p.Key}"))
-        //        : "";
-
-        //    var argPart = args.Length > 0 ? $"({args})" : "()";
-
-        //    return !string.IsNullOrWhiteSpace(Description)
-        //        ? $"{Name}{argPart} => {Description}"
-        //        : $"{Name}{argPart}";
-        //}
         public override string ToString()
         {
+            var props = ParametersSchema?["properties"]?.AsObject();
+            var args = props != null
+                ? string.Join(", ", props.Select(p => p.Key))
+                : "";
+
+            var argPart = args.Length > 0 ? $"({args})" : "()";
+
             return !string.IsNullOrWhiteSpace(Description)
-                ? $"{Name}({Description})"
-                : $"{Name}";
+                ? $"{Name}{argPart} => {Description}"
+                : $"{Name}{argPart}";
         }
     }
 
@@ -55,6 +49,19 @@ namespace Agenty.LLMCore
                 : "none";
 
             return $"Name: '{Name}' (id: {Id}) with Arguments: [{argsStr}]";
+        }
+
+        // Add this static method for JSON deserialization
+        public static ToolCall FromJson(string json)
+        {
+            var node = System.Text.Json.Nodes.JsonNode.Parse(json)?.AsObject();
+            if (node == null)
+                throw new ArgumentException("Invalid JSON for ToolCall.");
+
+            var id = node.TryGetPropertyValue("id", out var idNode) ? idNode?.ToString() ?? "" : "";
+            var name = node.TryGetPropertyValue("name", out var nameNode) ? nameNode?.ToString() ?? "" : "";
+            var args = node.TryGetPropertyValue("arguments", out var argsNode) && argsNode is JsonObject jo ? jo : new JsonObject();
+            return new ToolCall(id, name, args);
         }
     }
 }
