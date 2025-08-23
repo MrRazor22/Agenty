@@ -1,9 +1,10 @@
-﻿using System;
+﻿using OpenAI;
+using OpenAI.Chat;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
-using OpenAI;
-using OpenAI.Chat;
 
 namespace Agenty.LLMCore.Providers.OpenAI
 {
@@ -58,6 +59,30 @@ namespace Agenty.LLMCore.Providers.OpenAI
                     _ => throw new InvalidOperationException($"Unknown message role {msg.Role}")
                 };
             }
+        }
+
+        public static JsonObject ToOpenAiSchema(this Tool tool)
+        {
+            // Ensure parameters schema has "type": "object"
+            if (!tool.ParametersSchema.ContainsKey("type"))
+                tool.ParametersSchema["type"] = "object";
+
+            return new JsonObject
+            {
+                ["name"] = tool.Name,
+                ["description"] = tool.Description,
+                ["parameters"] = tool.ParametersSchema?.DeepClone()
+            };
+        }
+
+        public static string ToOpenAiSchemaJson(this Tool tool, bool indented = true)
+        {
+            var options = new JsonSerializerOptions
+            {
+                WriteIndented = indented
+            };
+
+            return JsonSerializer.Serialize(tool.ToOpenAiSchema(), options);
         }
     }
 }

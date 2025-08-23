@@ -40,7 +40,9 @@ namespace Agenty.LLMCore.Providers.OpenAI
         public async Task<string> GetResponse(Conversation prompt)
         {
             EnsureInitialized();
-            var response = await _chatClient!.CompleteChatAsync(prompt.ToChatMessages());
+            ChatCompletionOptions options = new() { ToolChoice = ChatToolChoice.CreateNoneChoice() };
+
+            var response = await _chatClient!.CompleteChatAsync(prompt.ToChatMessages(), options);
 
             var contentParts = response.Value.Content;
             var textContent = string.Join("", contentParts.Select(part => part.Text));

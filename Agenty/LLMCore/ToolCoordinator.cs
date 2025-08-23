@@ -201,7 +201,7 @@ namespace Agenty.LLMCore
         }
 
 
-        private ToolCall? TryExtractInlineToolCall(string content)
+        public ToolCall? TryExtractInlineToolCall(string content, bool strict = false)
         {
             var matches = ToolTagPattern.Matches(content).Cast<Match>()
                 .Concat(LooseToolJsonPattern.Matches(content).Cast<Match>())
@@ -250,6 +250,9 @@ namespace Agenty.LLMCore
                     return new ToolCall(node[JsonMessage]?.ToString() ?? fallback);
                 }
             }
+
+            if (strict) return new("No valid tool call found");
+
 
             // No valid tool call found -> fallback to text before first match
             return string.IsNullOrEmpty(fallback) ? null : new ToolCall(fallback);

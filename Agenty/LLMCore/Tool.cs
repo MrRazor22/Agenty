@@ -1,7 +1,9 @@
-﻿using System;
+﻿using Agenty.LLMCore.Providers.OpenAI;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -17,26 +19,36 @@ namespace Agenty.LLMCore
         [JsonIgnore] public List<string> Tags { get; set; } = new();
         public override string ToString()
         {
-            var props = ParametersSchema?["properties"]?.AsObject();
-            var args = props != null
-                ? string.Join(", ", props.Select(p => p.Key))
-                : "";
+            //var props = ParametersSchema?["properties"]?.AsObject();
+            //var args = props != null
+            //    ? string.Join(", ", props.Select(p => p.Key))
+            //    : "";
 
-            var argPart = args.Length > 0 ? $"({args})" : "()";
+            //var argPart = args.Length > 0 ? $"({args})" : "()";
 
-            return !string.IsNullOrWhiteSpace(Description)
-                ? $"{Name}{argPart} => {Description}"
-                : $"{Name}{argPart}";
+            //return !string.IsNullOrWhiteSpace(Description)
+            //    ? $"{Name}{argPart} => {Description}"
+            //    : $"{Name}{argPart}";
+            return this.ToOpenAiSchemaJson();
         }
     }
 
     public class ToolCall(string id, string name, JsonObject arguments, object?[]? parameters = null, string? message = null)
     {
+        [JsonPropertyName("id")]
         public string Id { get; private set; } = id;
+
+        [JsonPropertyName("name")]
         public string Name { get; private set; } = name;
+
+        [JsonPropertyName("arguments")]
         public JsonObject Arguments { get; private set; } = arguments;
+
+        [JsonIgnore]
+        public object?[]? Parameters { get; private set; } = parameters;
+
+        [JsonIgnore] // Exclude AssistantMessage if not needed
         public string? AssistantMessage { get; set; } = message;
-        [JsonIgnore] public object?[]? Parameters { get; private set; } = parameters;
 
         // Secondary constructor: message-only
         public ToolCall(string message)
@@ -49,19 +61,6 @@ namespace Agenty.LLMCore
                 : "none";
 
             return $"Name: '{Name}' (id: {Id}) with Arguments: [{argsStr}]";
-        }
-
-        // Add this static method for JSON deserialization
-        public static ToolCall FromJson(string json)
-        {
-            var node = System.Text.Json.Nodes.JsonNode.Parse(json)?.AsObject();
-            if (node == null)
-                throw new ArgumentException("Invalid JSON for ToolCall.");
-
-            var id = node.TryGetPropertyValue("id", out var idNode) ? idNode?.ToString() ?? "" : "";
-            var name = node.TryGetPropertyValue("name", out var nameNode) ? nameNode?.ToString() ?? "" : "";
-            var args = node.TryGetPropertyValue("arguments", out var argsNode) && argsNode is JsonObject jo ? jo : new JsonObject();
-            return new ToolCall(id, name, args);
         }
     }
 }
