@@ -27,13 +27,15 @@ namespace Agenty.AgentCore
             _llm = new OpenAILLMClient();
             _llm.Initialize(baseUrl, apiKey, modelName);
             _toolCoordinator = new ToolCoordinator(_llm, _toolRegistry);
-            chat = new Conversation().Add(Role.System, GenerateSystemPrompt());
             return this;
         }
 
         public ReActAgent WithTools<T>()
         {
             _toolRegistry.RegisterAll<T>();
+
+            chat = new Conversation().Add(Role.System, GenerateSystemPrompt());
+            Console.WriteLine("Sys prompt: " + GenerateSystemPrompt());
             return this;
         }
 
