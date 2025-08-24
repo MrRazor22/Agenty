@@ -356,9 +356,8 @@ namespace Agenty.LLMCore
         }
 
 
-
-
-        public async Task<T?> Invoke<T>(ToolCall tool)
+        // Non-generic: automatically returns string for complex objects
+        public async Task<dynamic> Invoke(ToolCall tool)
         {
             if (tool == null) throw new ArgumentNullException(nameof(tool));
             var paramValues = tool.Parameters;
@@ -367,7 +366,9 @@ namespace Agenty.LLMCore
             var method = func.Method;
             var returnType = method.ReturnType;
 
-            // Handle async methods (Task or Task<T>)
+            object? result = null;
+
+            // Handle async methods
             if (typeof(Task).IsAssignableFrom(returnType))
             {
                 var task = (Task)func.DynamicInvoke(paramValues)!;
@@ -375,24 +376,38 @@ namespace Agenty.LLMCore
 
                 if (returnType.IsGenericType && returnType.GetGenericTypeDefinition() == typeof(Task<>))
                 {
-                    var resultProperty = returnType.GetProperty("Result");
-                    var taskResult = resultProperty!.GetValue(task);
-                    return (T?)taskResult;
-                }
-                else
-                {
-                    return default; // For Task (non-generic)
+                    var resultProperty = returnType.GetProperty("Result")!;
+                    result = resultProperty.GetValue(task);
                 }
             }
             else
             {
                 // Sync return
-                var result = func.DynamicInvoke(paramValues);
-                if (result == null) return default;
-                if (result is T typedResult) return typedResult;
-                throw new InvalidCastException($"Expected result of type {typeof(T).Name}, got {result.GetType().Name}.");
+                result = func.DynamicInvoke(paramValues);
             }
+
+            if (result == null) return null;
+
+            // Return primitives as-is, strings as-is, else ToString() for complex objects
+            if (result is string || result.GetType().IsPrimitive)
+                return result;
+
+            return result.ToString();
         }
+
+        public async Task<T?> Invoke<T>(ToolCall tool)
+        {
+            var result = await Invoke(tool); // call non-generic version
+            if (result == null) return default;
+
+            if (result is T typedResult) return typedResult;
+
+            if (typeof(T) == typeof(string))
+                return (T)(object)result.ToString()!;
+
+            throw new InvalidCastException($"Expected result of type {typeof(T).Name}, got {result.GetType().Name}.");
+        }
+
     }
 
 }

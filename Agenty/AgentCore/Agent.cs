@@ -16,21 +16,13 @@ namespace Agenty.AgentCore
 {
     public class ReActAgent : IAgent
     {
-        private string _goal = "";
-        private readonly Scratchpad _scratchpad = new();
-        private FeedBack? _criticFeedback;
-
-        private int stepsSinceLastCritique = 0;
-        private int critiqueInterval = 3;
-        private int lastGoodStepIndex = 0;
-
         private ILLMClient _llm;
         private ToolCoordinator _toolCoordinator;
         private IToolRegistry _toolRegistry = new ToolRegistry();
 
         private ReActAgent() { }
         public static ReActAgent Create() => new ReActAgent();
-        public ReActAgent WithLLM(string baseUrl, string apiKey, string modelName = "any_model")
+        public ReActAgent WithLLM(string baseUrl, string apiKey, string modelName)
         {
             _llm = new OpenAILLMClient();
             _llm.Initialize(baseUrl, apiKey, modelName);
@@ -47,12 +39,6 @@ namespace Agenty.AgentCore
         public ReActAgent WithTools(params Delegate[] tools)
         {
             _toolRegistry.Register(tools);
-            return this;
-        }
-
-        public ReActAgent WithComponents(int critiqueInterval = 3)
-        {
-            this.critiqueInterval = critiqueInterval;
             return this;
         }
 
@@ -137,7 +123,7 @@ namespace Agenty.AgentCore
                 Here are the available tools / actions:
 
                 <tools>
-                {_toolRegistry}
+                {_toolRegistry.ToString()}
                 </tools>
                 
                 Follow this format in your response:
@@ -145,7 +131,7 @@ namespace Agenty.AgentCore
                 Example session (tool use needed):
                 <question>What's the current temperature in Madrid?</question>
                 <thought>I need to get the current weather in Madrid</thought>
-                <tool_call> {{ ""function"", ""id"": ""0"",{{""function"": {{""name"": ""FetchWeather"",""arguments"": {{""location"": ""Madrid"", ""unit"": ""celsius""}}}}</tool_call>
+                <tool_call> {{""name"": ""FetchWeather"",""arguments"": {{""location"": ""Madrid"", ""unit"": ""celsius""}}}}</tool_call>
 
                 You will be called again with this:
 
@@ -206,7 +192,7 @@ namespace Agenty.AgentCore
 
             try
             {
-                return await _toolCoordinator.Invoke<string>(toolCall);
+                return await _toolCoordinator.Invoke(toolCall);
             }
             catch (Exception ex)
             {

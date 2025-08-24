@@ -24,8 +24,7 @@ namespace Agenty
                         .WithTools<WeatherTool>()
                         .WithTools<GeoTools>()
                         .WithTools<ConversionTools>()
-                        .WithTools<SearchTools>()
-                        .WithComponents(critiqueInterval: 3);
+                        .WithTools<SearchTools>();
 
             Console.WriteLine("🤖 Agenty Agent ready. Type 'exit' to quit.");
 
