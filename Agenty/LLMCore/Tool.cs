@@ -36,7 +36,7 @@ namespace Agenty.LLMCore
     public class ToolCall(string id, string name, JsonObject arguments, object?[]? parameters = null, string? message = null)
     {
         [JsonPropertyName("id")]
-        public string Id { get; private set; } = id;
+        public string Id { get; set; } = id;
 
         [JsonPropertyName("name")]
         public string Name { get; private set; } = name;

@@ -15,11 +15,23 @@ using System.Xml.Linq;
 
 namespace Agenty.LLMCore
 {
-    internal class ToolCoordinator(ILLMClient llm, IToolRegistry toolRegistry)
+    public interface IToolCoordinator
     {
-        private const string JsonName = "name";
-        private const string JsonArguments = "arguments";
-        private const string JsonMessage = "message";
+        Task<ToolCall> GetToolCall(Conversation prompt, bool forceToolCall = false, int maxRetries = 0, params Tool[] tools);
+        Task<ToolCall> GetToolCall<TTuple>(Conversation prompt, bool forceToolCall = false, int maxRetries = 0);
+        ToolCall? TryExtractInlineToolCall(string content, bool strict = false);
+        Task<T?> GetStructuredResponse<T>(Conversation prompt, int maxRetries = 3);
+        Task<string?> ExecuteToolCall(Conversation chat, params Tool[] tools);
+        Task<T?> ExecuteToolCall<T>(Conversation chat, params Tool[] tools);
+        Task<string> HandleToolCall(ToolCall toolCall);
+        Task<dynamic> Invoke(ToolCall tool);
+        Task<T?> Invoke<T>(ToolCall tool);
+    }
+    internal class ToolCoordinator(ILLMClient llm, IToolRegistry toolRegistry) : IToolCoordinator
+    {
+        private const string ToolJsonNameTag = "name";
+        private const string ToolJsonArgumentsTag = "arguments";
+        private const string ToolJsonAssistantMessageTag = "message";
         #region regex
         // Match any tag that includes "tool" and contains a well-formed JSON block
         static readonly Regex TagPattern = new Regex(
@@ -48,10 +60,10 @@ namespace Agenty.LLMCore
             $@"
             (?<json>
                 \{{
-                  \s*""{JsonName}""\s*:\s*""[^""]+""
+                  \s*""{ToolJsonNameTag}""\s*:\s*""[^""]+""
                   \s*,\s*
-                  ""{JsonArguments}""\s*:\s*\{{[\s\S]*\}}
-                  (?:\s*,\s*""[^""]+""\s*:\s*[^}}]+)*   # allow extra props like {JsonMessage}
+                  ""{ToolJsonArgumentsTag}""\s*:\s*\{{[\s\S]*\}}
+                  (?:\s*,\s*""[^""]+""\s*:\s*[^}}]+)*   # allow extra props like {ToolJsonAssistantMessageTag}
                   \s*
                 \}}
             )
@@ -63,7 +75,7 @@ namespace Agenty.LLMCore
             $@"
             (?<json>
                 \{{
-                  \s*""{JsonMessage}""\s*:\s*""[^""]+""
+                  \s*""{ToolJsonAssistantMessageTag}""\s*:\s*""[^""]+""
                   \s*
                 \}}
             )
@@ -71,7 +83,6 @@ namespace Agenty.LLMCore
             RegexOptions.Compiled | RegexOptions.IgnorePatternWhitespace | RegexOptions.IgnoreCase
         );
         #endregion
-
 
         public async Task<ToolCall> GetToolCall(
            Conversation prompt,
@@ -216,45 +227,63 @@ namespace Agenty.LLMCore
                 string jsonStr = match.Groups["json"].Value.Trim();
                 JsonObject? node = null;
                 try { node = JsonNode.Parse(jsonStr)?.AsObject(); }
-                catch { /* invalid JSON, skip */ }
+                catch
+                {
+                    if (strict) return new ToolCall($"Invalid JSON format in tool call: `{jsonStr}`");
+                    continue;
+                }
 
                 if (node == null) continue;
 
-                var hasName = node.ContainsKey(JsonName);
-                var hasArgs = node.ContainsKey(JsonArguments);
-                var hasMessage = node.ContainsKey(JsonMessage);
+                var hasName = node.ContainsKey(ToolJsonNameTag);
+                var hasArgs = node.ContainsKey(ToolJsonArgumentsTag);
+                var hasMessage = node.ContainsKey(ToolJsonAssistantMessageTag);
 
                 // Tool call with name & args
                 if (hasName && hasArgs)
                 {
-                    var name = node[JsonName]!.ToString();
-                    var args = node[JsonArguments] as JsonObject ?? new JsonObject();
-                    var message = node[JsonMessage]?.ToString();
+                    var name = node[ToolJsonNameTag]!.ToString();
+                    var args = node[ToolJsonArgumentsTag] as JsonObject ?? new JsonObject();
+                    var message = node[ToolJsonAssistantMessageTag]?.ToString();
 
-                    if (!string.IsNullOrEmpty(name) && toolRegistry.Contains(name))
+                    if (string.IsNullOrEmpty(name))
                     {
-                        // First valid tool found -> return immediately
-                        return new ToolCall(
-                            Guid.NewGuid().ToString(),
+                        return new ToolCall("Tool call missing required 'name' field.");
+                    }
+                    if (!toolRegistry.Contains(name))
+                    {
+                        return new ToolCall($"Tool `{name}` is not registered. Available tools: {string.Join(", ", toolRegistry.RegisteredTools.Select(t => t.Name))}");
+                    }
+
+                    var id = node.ContainsKey("id") && node["id"] != null
+                                    ? node["id"]!.ToString()
+                                    : Guid.NewGuid().ToString();
+
+                    return new ToolCall(
+                            id,
                             name,
                             args,
                             ParseToolParams(name, args),
                             message ?? fallback
                         );
-                    }
                 }
 
                 // Message-only pattern
                 if (!hasName && !hasArgs && hasMessage)
                 {
-                    return new ToolCall(node[JsonMessage]?.ToString() ?? fallback);
+                    return new ToolCall(node[ToolJsonAssistantMessageTag]?.ToString() ?? fallback);
+                }
+                // Detailed error feedback
+                if (strict)
+                {
+                    if (!hasName && hasArgs)
+                        return new ToolCall("Tool call has arguments but no 'name' field.");
+                    if (hasName && !hasArgs)
+                        return new ToolCall($"Tool call for `{node[ToolJsonNameTag]}` is missing 'arguments'.");
                 }
             }
+            if (strict) return new ToolCall("No valid tool call structure found. Expected { \"name\": ..., \"arguments\": {...} }");
 
-            if (strict) return new("No valid tool call found");
-
-
-            // No valid tool call found -> fallback to text before first match
             return string.IsNullOrEmpty(fallback) ? null : new ToolCall(fallback);
         }
 
@@ -353,6 +382,29 @@ namespace Agenty.LLMCore
             }
 
             return result;
+        }
+
+        public async Task<string> HandleToolCall(ToolCall toolCall)
+        {
+            if (string.IsNullOrEmpty(toolCall.Name) && string.IsNullOrEmpty(toolCall.AssistantMessage))
+            {
+                return "No valid tool call provided";
+            }
+            else if (!string.IsNullOrWhiteSpace(toolCall.AssistantMessage))
+            {
+                return toolCall.AssistantMessage;
+            }
+
+            try
+            {
+                var result = await Invoke(toolCall);
+                return result ?? "Tool returned no result";
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Tool invocation failed: {ex}");
+                return $"Tool execution error: {ex.Message}";
+            }
         }
 
 
