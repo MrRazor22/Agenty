@@ -133,6 +133,6 @@ namespace Agenty.LLMCore
         }
 
         public override string ToString() =>
-            string.Join(", ", RegisteredTools.Select(t => t.ToString()));
+            string.Join("], [", RegisteredTools.Select(t => t.ToString()));
     }
 }

@@ -139,10 +139,10 @@ namespace Agenty.LLMCore
                             var name = response.Name;
                             var args = response.Arguments;
 
-                            //Console.WriteLine("=========================================");
-                            //Console.WriteLine(name);
-                            //Console.WriteLine(args);
-                            //Console.WriteLine("=========================================");
+                            Console.WriteLine("=========================================");
+                            Console.WriteLine(name);
+                            Console.WriteLine(args);
+                            Console.WriteLine("=========================================");
 
                             return new ToolCall(
                                 response.Id ?? Guid.NewGuid().ToString(),
@@ -243,7 +243,9 @@ namespace Agenty.LLMCore
                 if (hasName && hasArgs)
                 {
                     var name = node[ToolJsonNameTag]!.ToString();
-                    var args = node[ToolJsonArgumentsTag] as JsonObject ?? new JsonObject();
+                    var args = node[ToolJsonArgumentsTag] is JsonObject argObj
+                                ? JsonNode.Parse(argObj.ToJsonString())!.AsObject()
+                                : new JsonObject();
                     var message = node[ToolJsonAssistantMessageTag]?.ToString();
 
                     if (string.IsNullOrEmpty(name))

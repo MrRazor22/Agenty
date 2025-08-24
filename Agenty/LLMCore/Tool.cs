@@ -29,7 +29,8 @@ namespace Agenty.LLMCore
             //return !string.IsNullOrWhiteSpace(Description)
             //    ? $"{Name}{argPart} => {Description}"
             //    : $"{Name}{argPart}";
-            return this.ToOpenAiSchemaJson();
+            return Name;
+            //return this.ToOpenAiSchemaJson();
         }
     }
 

@@ -7,12 +7,12 @@ using System.Threading.Tasks;
 
 namespace Agenty.AgentCore
 {
-    public enum StepAction
-    {
-        Call,
-        Finish,
-        AskUser
-    }
+    //public enum StepAction
+    //{
+    //    Call,
+    //    Finish,
+    //    AskUser
+    //}
 
     public class PlanStep
     {

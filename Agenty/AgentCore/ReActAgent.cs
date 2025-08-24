@@ -35,7 +35,7 @@ namespace Agenty.AgentCore
             _toolRegistry.RegisterAll<T>();
 
             chat = new Conversation().Add(Role.System, GenerateSystemPrompt());
-            Console.WriteLine("Sys prompt: " + GenerateSystemPrompt());
+            // Console.WriteLine("Sys prompt: " + GenerateSystemPrompt());
             return this;
         }
 
@@ -53,14 +53,56 @@ namespace Agenty.AgentCore
                 try
                 {
                     var completion = await _llm.GetResponse(chat);
-
-                    if (string.IsNullOrWhiteSpace(completion))
+                    chat.Add(Role.Assistant, completion, isTemporary: true);
+                    #region Guardrails
+                    if (completion.Contains("<response>") && completion.Contains("<tool_call>"))
                     {
-                        Console.WriteLine("[WARN] Empty completion received");
+                        Console.WriteLine("[RETRYING] You must not output <response> in the same turn as a <tool_call>. After the tool_call and wait for system to provide <observation>.");
+                        chat.Add(Role.System, "You must not output <response> in the same turn as a <tool_call>. After the tool_call and wait for system to provide <observation>.", isTemporary: true);
                         continue;
                     }
 
-                    Console.WriteLine($"[LLM_RESPONSE] {completion}");
+                    if (completion.Contains("<observation>"))
+                    {
+                        Console.WriteLine("[RETRYING] You must never output <observation>. Only the system provides <observation> after a <tool_call>.");
+                        chat.Add(Role.System, "You must never output <observation>. Only the System provides <observation> after a <tool_call>.", isTemporary: true);
+                        continue;
+                    }
+
+                    // If no valid action was found, give simple feedback
+                    if (!completion.Contains("<thought>") && !completion.Contains("<response>") && !completion.Contains("<tool_call>"))
+                    {
+                        Console.WriteLine("[RETRYING] Please use <thought>, <tool_call>, or <response> tags.");
+                        chat.Add(Role.System, WrapTag("Please use <thought>, <tool_call>, or <response> tags.", "observation"), isTemporary: true);
+                        continue;
+                    }
+
+                    if (completion.Contains("<tool_call>") && !completion.Contains("</tool_call>"))
+                    {
+                        Console.WriteLine("[RETRYING] Invalid tool call. You must return a complete JSON object wrapped in <tool_call>...</tool_call>.");
+                        chat.Add(
+                            Role.System,
+                            "Invalid tool call. Respond only with:\n<tool_call>{ \"name\": \"ToolName\", \"arguments\": { ... } }</tool_call>",
+                            isTemporary: true
+                        );
+                    }
+
+                    // Stop if we get too many empty responses in a row
+                    if (string.IsNullOrWhiteSpace(completion))
+                    {
+                        consecutiveFailures++;
+                        if (consecutiveFailures >= 3)
+                        {
+                            return "I'm having trouble responding. Please try rephrasing your request.";
+                        }
+                    }
+                    else
+                    {
+                        consecutiveFailures = 0;
+                    }
+                    #endregion
+
+                    //Console.WriteLine($"[LLM_RESPONSE] {completion}");
 
                     // Handle <thought>
                     if (TryExtractAllTags(completion, "thought", out string thoughts))
@@ -94,8 +136,8 @@ namespace Agenty.AgentCore
 
                                     if (toolCall == null)
                                     {
-                                        Console.WriteLine("[WARN] Failed to parse tool call JSON");
-                                        chat.Add(Role.User, WrapTag("Tool call parsing failed. Check your JSON format.", "observation"));
+                                        Console.WriteLine("[RETRYING] Tool call parsing failed. Check your JSON format.");
+                                        chat.Add(Role.User, WrapTag("Tool call parsing failed. Check your JSON format.", "observation"), isTemporary: true);
                                         continue;
                                     }
 
@@ -108,15 +150,15 @@ namespace Agenty.AgentCore
 
                                     // Add observation
                                     var observationData = new Dictionary<string, object> { [toolCall.Id] = observation };
-                                    chat.Add(Role.User, WrapTag(JsonSerializer.Serialize(observationData), "observation"));
+                                    chat.Add(Role.System, WrapTag(JsonSerializer.Serialize(observationData), "observation"));
 
                                     Console.WriteLine($"[OBSERVATION] {observation}");
                                     anyToolExecuted = true;
                                 }
                                 catch (Exception ex)
                                 {
-                                    Console.WriteLine($"[ERROR] Tool call failed: {ex}");
-                                    chat.Add(Role.User, WrapTag($"Tool '{toolCallJson}' failed: {ex.Message}. Continue without this data.", "observation"));
+                                    Console.WriteLine($"[RETRYING] Tool '{{toolCallJson}}' failed: {{ex.Message}}. Continue without this data.");
+                                    chat.Add(Role.System, WrapTag($"Tool '{toolCallJson}' failed: {ex.Message}. Continue without this data.", "observation"), isTemporary: true);
                                 }
                             }
 
@@ -126,32 +168,11 @@ namespace Agenty.AgentCore
                             }
                         }
                     }
-
-                    // If no valid action was found, give simple feedback
-                    if (!completion.Contains("<thought>") && !completion.Contains("<response>") && !completion.Contains("<tool_call>"))
-                    {
-                        Console.WriteLine("[WARN] No valid tags found");
-                        chat.Add(Role.User, WrapTag("Please use <thought>, <tool_call>, or <response> tags.", "observation"));
-                    }
-
-                    // Stop if we get too many empty responses in a row
-                    if (string.IsNullOrWhiteSpace(completion))
-                    {
-                        consecutiveFailures++;
-                        if (consecutiveFailures >= 3)
-                        {
-                            return "I'm having trouble responding. Please try rephrasing your request.";
-                        }
-                    }
-                    else
-                    {
-                        consecutiveFailures = 0;
-                    }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[ERROR] Round failed: {ex}");
-                    chat.Add(Role.User, WrapTag($"An error occurred: {ex.Message}. Please continue.", "observation"));
+                    Console.WriteLine($"[RETRYING] An error occurred: {ex.Message}. Please continue.");
+                    chat.Add(Role.System, WrapTag($"An error occurred: {ex.Message}. Please continue.", "observation"), isTemporary: true);
                 }
             }
 
@@ -160,36 +181,69 @@ namespace Agenty.AgentCore
 
         private string GenerateSystemPrompt()
         {
-            return $@"You are a helpful assistant that can use tools to complete tasks.
+            return $@"You operate by running a loop with the following steps: Thought, Action, Observation.
+                You are provided with function signatures within <tools></tools> XML tags.
+                You may call one or more functions to assist with the user query. Don't make assumptions about what values to plug
+                into functions. Pay special attention to the properties 'types'. You should use those types as in a Python dict.
 
-                    AVAILABLE TOOLS:
-                    <tools>
-                    {_toolRegistry}
-                    </tools>
+                For each function call return a json object with function name and arguments within <tool_call></tool_call> XML tags as follows:
 
-                    FORMAT YOUR RESPONSES USING THESE TAGS:
-                    <thought>Your reasoning about what to do next</thought>
-                    <tool_call>{{""name"": ""ToolName"", ""arguments"": {{""param"": ""value""}}, ""id"": ""1""}}</tool_call>
-                    <response>Your final answer to the user</response>
+                <tool_call>
+                {{""name"": ""<function-name>"", ""arguments"": <args-dict>, ""id"": <monotonically-increasing-id>}}
+                </tool_call>
 
-                    CRITICAL RULES:
-                    1. If a tool call fails, say ""I couldn't get [specific data] because the tool failed""
-                    2. Never make up or guess information - only use actual tool results
-                    3. Use simple, clear tool calls - double-check your JSON format
-                    4. If you can't complete part of a task, explain what you could and couldn't do
+                Here are the available tools / actions:
 
-                    EXAMPLE:
-                    User: Get weather for Paris and a random number 1-10
+                <tools>
+                {_toolRegistry.ToString()}
+                </tools>
+                
+                Follow this format in your response:
 
-                    <thought>I need weather for Paris and a random number. Let me call both tools.</thought>
-                    <tool_call>{{""name"": ""GetWeather"", ""arguments"": {{""location"": ""Paris""}}, ""id"": ""1""}}</tool_call>
-                    <tool_call>{{""name"": ""GenerateRandom"", ""arguments"": {{""min"": 1, ""max"": 10}}, ""id"": ""2""}}</tool_call>
+                Example session (tool use needed):
+                <question>What's the current temperature in Madrid?</question>
+                <thought>I need to get the current weather in Madrid</thought>
+                <tool_call> {{""name"": ""FetchWeather"",""arguments"": {{""location"": ""Madrid"", ""unit"": ""celsius""}}, ""id"": ""0""}}</tool_call>
 
-                    (After getting results...)
-                    <response>The weather in Paris is 22°C and sunny. Your random number is: 7</response>
+                You will be called again with this:
 
-                    If a tool fails:
-                    <response>I got the weather (22°C, sunny) but couldn't generate the random number because the tool failed.</response>";
+                <observation>{{0: {{""temperature"": 25, ""unit"": ""celsius""}}}}</observation>
+
+                You then output:
+
+                <response>The current temperature in Madrid is 25 degrees Celsius</response>
+                
+                ---
+
+                Example session (tool use **not** needed):
+                <question>Who is the capital of Japan?</question>         
+                <thought>This is general knowledge. No tool call is needed</thought>
+                <response>The capital of Japan is Tokyo.</response>
+
+                ---
+
+                Guidelines:
+                - ""Always output in one of these formats:
+
+                <thought> ... </thought>
+
+                <response> ... </response>
+
+                <tool_call>{{json}}</tool_call>
+                Do not use sny other markers.""
+                - If you output a <tool_call> tag, you must **wait for an <observation> response from the system**. 
+                - Never invent or hallucinate <observation> yourself.
+                - If the system replies `[ERROR] Tool call Incomplete`, you must immediately retry outputting a corrected <tool_call>.
+                - Use '<tool_call>' only when external data or computation is required.
+                - If the answer is known or can be reasoned directly, skip tool use and respond immediately.
+                - Always include a '<thought>' explaining your reasoning before deciding to use a tool or not.
+                - Final answers must be enclosed strictly within <response> tags, with no additional text outside the tags.
+                - Do not re-call the same tool unless the observation indicates an error or missing data.
+                - Always base reasoning strictly on the latest <observation>.
+                - Never re-invent or reinterpret values from tools.
+                - Treat tool outputs as ground truth and use them directly in reasoning.
+                - Valid tags are only: <thought>, <tool_call>, <observation>, <response>.
+                ";
         }
 
         private bool TryExtractAllTags(string text, string tag, out string joinedContent)
@@ -208,8 +262,10 @@ namespace Agenty.AgentCore
 
         private bool TryExtractAllTags(string text, string tag, out List<string> content)
         {
-            //if (text.Contains("<tool_call>") && !text.Contains("</tool_call>")) text += "</tool_call>";
-
+            if (text.Contains("<tool_call>") && !text.Contains("</tool_call>"))
+            {
+                text += "</tool_call>";
+            }
             var matches = Regex.Matches(text, $"<{tag}>([\\s\\S]*?)</{tag}>", RegexOptions.IgnoreCase);
 
             if (matches.Count > 0)
