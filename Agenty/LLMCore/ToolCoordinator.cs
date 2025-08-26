@@ -116,13 +116,13 @@ namespace Agenty.LLMCore
         }
 
         public async Task<ToolCall> GetToolCall(
-            Conversation prompt,
-            bool forceToolCall = false,
-            int maxRetries = 0,
-            params Tool[] tools)
+    Conversation prompt,
+    bool forceToolCall = false,
+    int maxRetries = 0,
+    params Tool[] tools)
         {
             if (tools == null || !tools.Any())
-                throw new ArgumentNullException(nameof(tools), "No tools provided for function call response.");
+                throw new ArgumentException("No tools available.", nameof(tools));
 
             var intPrompt = Conversation.Clone(prompt);
 
@@ -136,47 +136,41 @@ namespace Agenty.LLMCore
                     {
                         if (tools.Any(t => t.Name == response.Name))
                         {
-                            var name = response.Name;
-                            var args = response.Arguments;
-
-                            Console.WriteLine("=========================================");
-                            Console.WriteLine(name);
-                            Console.WriteLine(args);
-                            Console.WriteLine("=========================================");
-
                             return new ToolCall(
                                 response.Id ?? Guid.NewGuid().ToString(),
-                                name,
-                                args,
-                                ParseToolParams(name, args),
+                                response.Name,
+                                response.Arguments,
+                                ParseToolParams(response.Name, response.Arguments),
                                 response.AssistantMessage
                             );
                         }
 
-                        string? content = response.AssistantMessage;
-                        if (!string.IsNullOrWhiteSpace(content))
+                        if (!string.IsNullOrWhiteSpace(response.AssistantMessage))
                         {
-                            var toolCall = TryExtractInlineToolCall(content);
+                            var toolCall = TryExtractInlineToolCall(response.AssistantMessage);
                             if (toolCall != null) return toolCall;
 
-                            return new ToolCall(content);
+                            intPrompt.Add(Role.System,
+                                $"Invalid format. Return one tool call as JSON: {{id, name, arguments}}. " +
+                                $"Valid tools: {string.Join(", ", tools.Select(t => t.Name))}.");
+                            continue;
                         }
                     }
                 }
-                catch (Exception ex)
+                catch
                 {
-                    intPrompt.Add(Role.Assistant, $"The last response failed with [{ex.Message}].");
+                    intPrompt.Add(Role.System,
+                        $"Arguments error. Return valid JSON tool call with fields: id, name, arguments. " +
+                        $"Tools: {string.Join(", ", tools.Select(t => t.Name))}.");
                     continue;
                 }
 
-                intPrompt.Add(
-                    Role.Assistant,
-                    $"The last response was empty or invalid. " +
-                    $"Please return a valid tool call using one of: {string.Join(", ", tools.Select(t => t.Name))}."
-                );
+                intPrompt.Add(Role.System,
+                    $"Empty or invalid. Return exactly one JSON tool call. " +
+                    $"Tools: {string.Join(", ", tools.Select(t => t.Name))}.");
             }
 
-            return new ToolCall("Couldn't generate a valid tool call/response.");
+            return new ToolCall("No valid tool called.");
         }
 
         public async Task<T?> GetStructuredResponse<T>(Conversation prompt, int maxRetries = 3)
