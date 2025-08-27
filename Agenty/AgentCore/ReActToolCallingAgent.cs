@@ -47,11 +47,11 @@ namespace Agenty.AgentCore
             ToolCall toolCall;
             toolCall = await _coord.GetToolCall(chat);
 
-            await RunToolLoop(toolCall, chat);
+            await ExecuteToolChaining(toolCall, chat);
             return chat.LastOrDefault()?.Content ?? "";
         }
 
-        private async Task RunToolLoop(ToolCall call, Conversation chat)
+        private async Task ExecuteToolChaining(ToolCall call, Conversation chat)
         {
             while (call != ToolCall.Empty)
             {
