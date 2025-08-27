@@ -10,6 +10,15 @@ namespace Agenty.LLMCore.Providers.OpenAI
 {
     public static class OpenAIExtensions
     {
+        public static ChatToolChoice ToChatToolChoice(this ToolCallMode mode)
+        {
+            return mode switch
+            {
+                ToolCallMode.None => ChatToolChoice.CreateNoneChoice(),
+                ToolCallMode.Required => ChatToolChoice.CreateRequiredChoice(),
+                _ => ChatToolChoice.CreateAutoChoice()
+            };
+        }
         // Converts your Tool collection to OpenAI ChatTools (functions)
         public static List<ChatTool> ToChatTools(this IEnumerable<Tool> tools)
         {

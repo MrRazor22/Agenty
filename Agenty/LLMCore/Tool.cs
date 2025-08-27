@@ -55,6 +55,20 @@ namespace Agenty.LLMCore
         public ToolCall(string message)
             : this("", "", new JsonObject(), [], message) { }
 
+        // === Empty ToolCall singleton ===
+        public static ToolCall Empty { get; } = new(
+            id: string.Empty,
+            name: string.Empty,
+            arguments: new JsonObject(),
+            parameters: null,
+            message: string.Empty
+        );
+
+        // === Check if this is Empty ===
+        public bool IsEmpty =>
+            string.IsNullOrWhiteSpace(Name) &&
+            string.IsNullOrWhiteSpace(AssistantMessage);
+
         public override string ToString()
         {
             var argsStr = Arguments != null && Arguments.Count > 0

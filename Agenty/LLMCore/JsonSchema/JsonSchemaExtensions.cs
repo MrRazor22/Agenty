@@ -97,7 +97,7 @@ namespace Agenty.LLMCore.JsonSchema
                 .Type<object>()
                 .Properties(props)
                 .Required(required)
-                .AdditionalProperties(false)
+                //.AdditionalProperties(false)
                 .Build();
         }
 

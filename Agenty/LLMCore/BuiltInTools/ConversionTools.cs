@@ -1,19 +1,32 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.ComponentModel;
-using System.Linq;
-using System.Text;
+using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace Agenty.LLMCore.BuiltInTools
 {
-    internal class ConversionTools
+    class ConversionTools
     {
-        [Description("Converts currency amount and returns detailed result.")]
-        public static async Task<CurrencyConversionResult> ConvertCurrency(
-        [Description("Currency conversion request")] CurrencyConversionRequest request)
+        private static readonly HttpClient _httpClient = new HttpClient
         {
+            Timeout = TimeSpan.FromSeconds(10)
+        };
+
+        [Description("Converts currency amount using live exchange rates and returns a detailed result.")]
+        public static async Task<CurrencyConversionResult> ConvertCurrency(
+            [Description("Currency conversion request with source, target, and amount.")]
+            CurrencyConversionRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.From) || string.IsNullOrWhiteSpace(request.To))
+            {
+                return new CurrencyConversionResult
+                {
+                    Success = false,
+                    ErrorMessage = "From/To currency codes cannot be empty."
+                };
+            }
+
             var result = new CurrencyConversionResult
             {
                 From = request.From.ToUpperInvariant(),
@@ -24,15 +37,14 @@ namespace Agenty.LLMCore.BuiltInTools
 
             try
             {
-                using var client = new HttpClient();
                 var url = $"https://open.er-api.com/v6/latest/{result.From}";
-                var response = await client.GetStringAsync(url);
+                var response = await _httpClient.GetStringAsync(url);
 
                 using var doc = JsonDocument.Parse(response);
                 var root = doc.RootElement;
 
-                if (root.TryGetProperty("result", out var resultProp) &&
-                    resultProp.GetString() == "success" &&
+                if (root.TryGetProperty("result", out var status) &&
+                    status.GetString() == "success" &&
                     root.TryGetProperty("rates", out var rates) &&
                     rates.TryGetProperty(result.To, out var toRate))
                 {
@@ -43,12 +55,14 @@ namespace Agenty.LLMCore.BuiltInTools
                 }
                 else
                 {
-                    result.ErrorMessage = root.GetProperty("error-type").GetString() ?? "Unknown error";
+                    result.ErrorMessage = root.TryGetProperty("error-type", out var errorProp)
+                        ? errorProp.GetString()
+                        : "Unknown error from exchange API.";
                 }
             }
             catch (Exception ex)
             {
-                result.ErrorMessage = ex.Message;
+                result.ErrorMessage = $"Conversion failed: {ex.Message}";
             }
 
             return result;
@@ -56,8 +70,8 @@ namespace Agenty.LLMCore.BuiltInTools
 
         [Description("Converts a local time in a given timezone to UTC.")]
         public static string ConvertToUtc(
-[Description("Time in local format (yyyy-MM-dd HH:mm)")] string localTime,
-[Description("Timezone ID (e.g., Asia/Kolkata)")] string timezone)
+            [Description("Local time string in format yyyy-MM-dd HH:mm")] string localTime,
+            [Description("Timezone ID, e.g., 'Asia/Kolkata' or 'America/New_York'")] string timezone)
         {
             try
             {
@@ -96,17 +110,9 @@ namespace Agenty.LLMCore.BuiltInTools
         public bool Success { get; set; }
         public string? ErrorMessage { get; set; }
 
-        public override string ToString()
-        {
-            if (Success)
-            {
-                return $"{Amount} {From} = {ConvertedAmount:F4} {To} (Rate: {Rate:F6}, Retrieved: {TimestampUtc:u})";
-            }
-            else
-            {
-                return $"Conversion failed: {ErrorMessage ?? "Unknown error"}";
-            }
-        }
+        public override string ToString() =>
+            Success
+                ? $"{Amount} {From} = {ConvertedAmount:F4} {To} (Rate: {Rate:F6}, Retrieved: {TimestampUtc:u})"
+                : $"Conversion failed: {ErrorMessage ?? "Unknown error"}";
     }
-
 }

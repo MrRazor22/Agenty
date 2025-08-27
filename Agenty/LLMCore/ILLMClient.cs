@@ -11,7 +11,7 @@ namespace Agenty.LLMCore
         void Initialize(string url, string apiKey, string modelName);
         Task<string> GetResponse(Conversation prompt);
         IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt);
-        Task<ToolCall> GetToolCallResponse(Conversation prompt, IEnumerable<Tool> tools, bool forceToolCall = false);
+        Task<ToolCall> GetToolCallResponse(Conversation prompt, IEnumerable<Tool> tools, ToolCallMode toolCallMode = ToolCallMode.Auto);
         Task<JsonNode> GetStructuredResponse(Conversation prompt, JsonObject responseFormat);
     }
 

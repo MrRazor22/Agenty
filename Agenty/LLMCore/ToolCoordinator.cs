@@ -15,10 +15,16 @@ using System.Xml.Linq;
 
 namespace Agenty.LLMCore
 {
+    public enum ToolCallMode
+    {
+        None,     // expose tools but forbid calls (Thought stage)
+        Auto,     // allow text or tool calls (Action stage)
+        Required  // force tool call (rare, like guardrails)
+    }
     public interface IToolCoordinator
     {
-        Task<ToolCall> GetToolCall(Conversation prompt, bool forceToolCall = false, int maxRetries = 0, params Tool[] tools);
-        Task<ToolCall> GetToolCall<TTuple>(Conversation prompt, bool forceToolCall = false, int maxRetries = 0);
+        Task<ToolCall> GetToolCall(Conversation prompt, ToolCallMode toolCallMode = ToolCallMode.Auto, int maxRetries = 0, params Tool[] tools);
+        Task<ToolCall> GetToolCall<TTuple>(Conversation prompt, ToolCallMode toolCallMode = ToolCallMode.Auto, int maxRetries = 0);
         ToolCall? TryExtractInlineToolCall(string content, bool strict = false);
         Task<T?> GetStructuredResponse<T>(Conversation prompt, int maxRetries = 3);
         Task<string?> ExecuteToolCall(Conversation chat, params Tool[] tools);
@@ -86,15 +92,15 @@ namespace Agenty.LLMCore
 
         public async Task<ToolCall> GetToolCall(
            Conversation prompt,
-           bool forceToolCall = false,
+           ToolCallMode toolCallMode = ToolCallMode.Auto,
            int maxRetries = 0) => await GetToolCall(
             prompt,
-            forceToolCall,
+            toolCallMode,
             maxRetries,
             toolRegistry.RegisteredTools.ToArray());
         public async Task<ToolCall> GetToolCall<TTuple>(
             Conversation prompt,
-            bool forceToolCall = false,
+            ToolCallMode toolCallMode = ToolCallMode.Auto,
             int maxRetries = 0)
         {
             var tupleType = typeof(TTuple);
@@ -105,19 +111,19 @@ namespace Agenty.LLMCore
                  !tupleType.FullName!.StartsWith("System.ValueTuple")))
             {
                 var single = toolRegistry.GetTools(tupleType).ToArray();
-                return await GetToolCall(prompt, forceToolCall, maxRetries, single);
+                return await GetToolCall(prompt, toolCallMode, maxRetries, single);
             }
 
             // Multiple types inside tuple
             var types = tupleType.GetGenericArguments();
             var toolSubSet = toolRegistry.GetTools(types).ToArray();
 
-            return await GetToolCall(prompt, forceToolCall, maxRetries, toolSubSet);
+            return await GetToolCall(prompt, toolCallMode, maxRetries, toolSubSet);
         }
 
         public async Task<ToolCall> GetToolCall(
     Conversation prompt,
-    bool forceToolCall = false,
+    ToolCallMode toolCallMode = ToolCallMode.Auto,
     int maxRetries = 0,
     params Tool[] tools)
         {
@@ -128,7 +134,7 @@ namespace Agenty.LLMCore
 
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
-                var response = await llm.GetToolCallResponse(intPrompt, tools, forceToolCall);
+                var response = await llm.GetToolCallResponse(intPrompt, tools, toolCallMode);
 
                 try
                 {
@@ -170,7 +176,7 @@ namespace Agenty.LLMCore
                     $"Tools: {string.Join(", ", tools.Select(t => t.Name))}.");
             }
 
-            return new ToolCall("No valid tool called.");
+            return ToolCall.Empty;
         }
 
         public async Task<T?> GetStructuredResponse<T>(Conversation prompt, int maxRetries = 3)
@@ -205,6 +211,42 @@ namespace Agenty.LLMCore
             return default;
         }
 
+        public async Task<string> GetTextResponse(
+    Conversation prompt,
+    int maxRetries = 3,
+    params Tool[]? tools)
+        {
+            var intPrompt = Conversation.Clone(prompt);
+
+            // if caller gave no explicit tools → use all registered
+            if (tools == null || tools.Length == 0)
+                tools = toolRegistry.RegisteredTools.ToArray();
+
+            for (int attempt = 0; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    // this always forces ToolCallMode.None → text only
+                    var toolCall = await llm.GetToolCallResponse(intPrompt, tools, ToolCallMode.None);
+
+                    if (!string.IsNullOrWhiteSpace(toolCall.AssistantMessage))
+                        return toolCall.AssistantMessage;
+
+                    // if LLM somehow tried to sneak a tool call, ignore it and retry
+                    intPrompt.Add(Role.System,
+                        "Do not call a tool in this turn. Provide only text reasoning/answer.");
+                }
+                catch (Exception ex)
+                {
+                    if (attempt == maxRetries) throw;
+
+                    intPrompt.Add(Role.System,
+                        $"Error: {ex.Message}. Provide only plain text this turn.");
+                }
+            }
+
+            return string.Empty;
+        }
 
         public ToolCall? TryExtractInlineToolCall(string content, bool strict = false)
         {
@@ -394,7 +436,16 @@ namespace Agenty.LLMCore
             try
             {
                 var result = await Invoke(toolCall);
-                return result ?? "Tool returned no result";
+                // If it's already a string, return directly
+                if (result is string s)
+                    return s;
+
+                // For everything else, serialize to JSON
+                return JsonSerializer.Serialize(result, new JsonSerializerOptions
+                {
+                    WriteIndented = false, // compact
+                    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+                });
             }
             catch (Exception ex)
             {

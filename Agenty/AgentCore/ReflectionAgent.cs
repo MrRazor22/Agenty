@@ -31,8 +31,8 @@ namespace Agenty.AgentCore
         public async Task<string> ExecuteAsync(string goal, int maxRounds = 50)
         {
             var chat = new Conversation().Add(Role.System,
-        "You are a concise QA assistant. Answer in <=3 sentences.")
-    .Add(Role.User, goal);
+                                            "You are a concise QA assistant. Answer in <=3 sentences.")
+                                        .Add(Role.User, goal);
 
             for (int round = 0; round < maxRounds; round++)
             {
@@ -46,15 +46,15 @@ namespace Agenty.AgentCore
     new Conversation()
         .Add(Role.System, @"You are grading whether the ASSISTANT RESPONSE appropriately satisfies the USER REQUEST.
 
-Verdict rules:
-- Yes → The response either:
-  (a) fully fulfills the user request, OR
-  (b) cannot fulfill it due to lack of data/system limitation, but clearly explains why with reasonable justification (not just vague statements).
-- No => The response fails to address the request, gives incorrect/misleading information, ignores part of the request, or refuses without explanation.
+                            Verdict rules:
+                            - Yes → The response either:
+                              (a) fully fulfills the user request, OR
+                              (b) cannot fulfill it due to lack of data/system limitation, but clearly explains why with reasonable justification (not just vague statements).
+                            - No => The response fails to address the request, gives incorrect/misleading information, ignores part of the request, or refuses without explanation.
 
-Always provide an explanation of your reasoning along with the verdict.")
-        .Add(Role.User, $"USER REQUEST: {goal}\nASSISTANT RESPONSE: {response}")
-);
+                            Always provide an explanation of your reasoning along with the verdict.")
+                                    .Add(Role.User, $"USER REQUEST: {goal}\nASSISTANT RESPONSE: {response}")
+                            );
 
                 Console.WriteLine($"Score: {grade.verdict}");
                 Console.WriteLine($"explanation: {grade.explanation}");

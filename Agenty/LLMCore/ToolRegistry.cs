@@ -119,7 +119,6 @@ namespace Agenty.LLMCore
                 .Type<object>()
                 .Properties(properties)
                 .Required(required)
-                .AdditionalProperties(false)
                 .Build();
 
             return new Tool

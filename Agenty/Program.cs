@@ -18,13 +18,13 @@ namespace Agenty
     {
         public static async Task Main(string[] args)
         {
-            var agent = ReflectionAgent.Create()
+            var agent = ReActToolCallingAgent.Create()
                         .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m")
-                        .WithTools<MathTools>()
-                        .WithTools<WeatherTool>()
+                        .WithTools<SearchTools>()
                         .WithTools<GeoTools>()
+                        .WithTools<WeatherTool>()
                         .WithTools<ConversionTools>()
-                        .WithTools<SearchTools>();
+                        .WithTools<MathTools>();
 
             Console.WriteLine("🤖 Agenty Agent ready. Type 'exit' to quit.");
 

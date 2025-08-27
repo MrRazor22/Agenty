@@ -30,13 +30,15 @@ namespace Agenty.LLMCore.JsonSchema
 
         public JsonSchemaBuilder Properties(JsonObject properties)
         {
+            //if (properties != null && properties.Count > 0)
             _schema[JsonSchemaConstants.PropertiesKey] = properties;
             return this;
         }
 
         public JsonSchemaBuilder Required(JsonArray required)
         {
-            _schema[JsonSchemaConstants.RequiredKey] = required;
+            if (required != null && required.Count > 0)
+                _schema[JsonSchemaConstants.RequiredKey] = required;
             return this;
         }
 

@@ -59,13 +59,13 @@ namespace Agenty.LLMCore.Providers.OpenAI
                     yield return part.Text;
             }
         }
-        public async Task<ToolCall> GetToolCallResponse(Conversation prompt, IEnumerable<Tool> tools, bool forceToolCall = false)
+        public async Task<ToolCall> GetToolCallResponse(Conversation prompt, IEnumerable<Tool> tools, ToolCallMode toolCallMode = ToolCallMode.Auto)
         {
             EnsureInitialized();
 
             List<ChatTool> chatTools = tools.ToChatTools();
 
-            ChatCompletionOptions options = new() { ToolChoice = forceToolCall ? ChatToolChoice.CreateRequiredChoice() : ChatToolChoice.CreateAutoChoice() };
+            ChatCompletionOptions options = new() { ToolChoice = toolCallMode.ToChatToolChoice() };
 
             chatTools.ForEach(t => options.Tools.Add(t));
 
