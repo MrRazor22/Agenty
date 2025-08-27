@@ -93,7 +93,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             string? content = result?.Content?.FirstOrDefault()?.Text;
             if (!string.IsNullOrWhiteSpace(content)) return new(content);
 
-            return new("");
+            return ToolCall.Empty;
         }
 
         public async Task<JsonNode> GetStructuredResponse(Conversation prompt, JsonObject responseFormat)

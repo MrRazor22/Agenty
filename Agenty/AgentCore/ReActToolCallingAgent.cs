@@ -3,6 +3,7 @@ using Agenty.LLMCore;
 using Agenty.LLMCore.Providers.OpenAI;
 using Microsoft.Extensions.Logging;
 using System.Text.Json.Nodes;
+using ILogger = Agenty.LLMCore.ILogger;
 
 namespace Agenty.AgentCore
 {
@@ -11,6 +12,8 @@ namespace Agenty.AgentCore
         private ILLMClient _llm = null!;
         private ToolCoordinator _coord = null!;
         private readonly IToolRegistry _tools = new ToolRegistry();
+        Conversation chat = new();
+        ILogger _logger = null!;
 
         public static ReActToolCallingAgent Create() => new();
         private ReActToolCallingAgent() { }
@@ -25,115 +28,46 @@ namespace Agenty.AgentCore
 
         public ReActToolCallingAgent WithTools<T>() { _tools.RegisterAll<T>(); return this; }
         public ReActToolCallingAgent WithTools(params Delegate[] fns) { _tools.Register(fns); return this; }
-        public void Log(LogLevel level, string source, string message, ConsoleColor? colorOverride = null)
+        public ReActToolCallingAgent WithLogger(ILogger logger)
         {
-            if (level < LogLevel.Information) return;
-
-            var originalColor = Console.ForegroundColor;
-            Console.ForegroundColor = colorOverride ?? GetColor(level);
-            Console.WriteLine($"[{level}] [{source}] {message}");
-            Console.ForegroundColor = originalColor;
-        }
-
-
-        private ConsoleColor GetColor(LogLevel level)
-        {
-            return level switch
-            {
-                LogLevel.Trace => ConsoleColor.Gray,
-                LogLevel.Debug => ConsoleColor.Cyan,
-                LogLevel.Information => ConsoleColor.Green,
-                LogLevel.Warning => ConsoleColor.Yellow,
-                LogLevel.Error => ConsoleColor.Red,
-                LogLevel.Critical => ConsoleColor.Magenta,
-                _ => ConsoleColor.White,
-            };
+            _logger = logger;
+            logger.AttachTo(chat);
+            return this;
         }
         public async Task<string> ExecuteAsync(string goal, int maxRounds = 10)
         {
-            var chat = new Conversation()
-                .Add(Role.System,
-                     "You are an assistant." +
-                 "For complex tasks, always Plan and answer step by step" +
-                 "if not sure on what to respind, express that to user directly" +
-                 "Use relevant tools if needed, or respond directly." +
-                 "Provide your answers short and sweet")
+            chat.Add(Role.System,
+                "You are an assistant. " +
+                "For complex tasks, always plan step by step. " +
+                "If unsure, say so directly. " +
+                "Use tools if needed, or respond directly. " +
+                "Keep answers short and clear.")
                 .Add(Role.User, goal);
 
-            chat.OnChat += chat =>
-            {
-                Log(
-                    chat.Role is Role.Assistant or Role.User or Role.Tool ? LogLevel.Information : LogLevel.Debug,
-                    nameof(Conversation),
-                    $"{chat.Role}: '{(string.IsNullOrWhiteSpace(chat.Content) ? chat.toolCallInfo?.ToString() ?? "<empty>" : chat.Content)}'",
-                    chat.Role switch
-                    {
-                        Role.User => ConsoleColor.Cyan,
-                        Role.Assistant => ConsoleColor.Green,
-                        Role.Tool => ConsoleColor.Yellow,
-                        _ => (ConsoleColor?)null
-                    }
-                );
-            };
+            ToolCall toolCall;
+            toolCall = await _coord.GetToolCall(chat);
 
-            ToolCall toolCall = ToolCall.Empty;
-            try
-            {
-                toolCall = await _coord.GetToolCall(chat);
-            }
-            catch (Exception ex)
-            {
-                chat.Add(Role.Assistant, "Error fetching tool call.");
-            }
-
-            await ExecuteToolChain(toolCall, chat);
-
-            return chat.LastOrDefault().Content;
-
+            await RunToolLoop(toolCall, chat);
+            return chat.LastOrDefault()?.Content ?? "";
         }
-        private async Task ExecuteToolChain(ToolCall initialCall, Conversation chat)
+
+        private async Task RunToolLoop(ToolCall call, Conversation chat)
         {
-            ToolCall currentToolCall = initialCall;
-
-            while (true)
+            while (call != ToolCall.Empty)
             {
-                if (!string.IsNullOrWhiteSpace(currentToolCall.AssistantMessage))
-                {
-                    chat.Add(Role.Assistant, currentToolCall.AssistantMessage);
-                }
+                chat.Add(Role.Assistant, call.AssistantMessage);
 
-                if (string.IsNullOrWhiteSpace(currentToolCall.Name))
-                    return;
+                if (string.IsNullOrWhiteSpace(call.Name)) break;//no tool call so model returned final resposne
 
-                chat.Add(Role.Assistant, tool: currentToolCall);
+                chat.Add(Role.Assistant, tool: call);
 
-                object? result;
-                try
-                {
-                    result = await _coord.HandleToolCall(currentToolCall);
-                }
-                catch (Exception ex)
-                {
-                    chat.Add(Role.Assistant, $"Tool invocation failed - {ex}");
-                    return;
-                }
+                object? result = await _coord.HandleToolCall(call);
 
-                chat.Add(Role.Tool, result?.ToString(), currentToolCall);
+                chat.Add(Role.Tool, result?.ToString(), call);
 
-                try
-                {
-                    currentToolCall = await _coord.GetToolCall(chat);
-                }
-                catch (Exception ex)
-                {
-                    chat.Add(Role.Assistant, $"Error fetching next step - {ex}");
-                    return;
-                }
-
-                if (string.IsNullOrWhiteSpace(currentToolCall.AssistantMessage) &&
-                    string.IsNullOrWhiteSpace(currentToolCall.Name))
-                    return;
+                call = await _coord.GetToolCall(chat);
             }
         }
+
     }
 }

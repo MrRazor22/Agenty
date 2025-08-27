@@ -176,7 +176,7 @@ namespace Agenty.LLMCore
                     $"Tools: {string.Join(", ", tools.Select(t => t.Name))}.");
             }
 
-            return ToolCall.Empty;
+            return new("No valid tool call produced. Please refine your request.");
         }
 
         public async Task<T?> GetStructuredResponse<T>(Conversation prompt, int maxRetries = 3)

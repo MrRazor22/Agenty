@@ -10,15 +10,17 @@
 
         public Conversation Add(Role role, string? content = null, ToolCall? tool = null, bool isTemporary = false)
         {
+            // If both content and tool are "empty", just ignore
+            if (string.IsNullOrWhiteSpace(content) && (tool == null || string.IsNullOrWhiteSpace(tool.Name) && string.IsNullOrWhiteSpace(tool.AssistantMessage)))
+                return this;
+
             var chat = new Chat(role, content, tool, isTemporary);
-            Add(chat);
+            base.Add(chat);
             OnChat?.Invoke(chat);
 
-            // If an Assistant message is added, remove any temporary messages before it
+            // Clear temporary placeholders when assistant commits a real message
             if (role == Role.Assistant)
-            {
                 RemoveAll(c => c.IsTemporary);
-            }
 
             return this;
         }
