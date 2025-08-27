@@ -7,6 +7,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.Serialization;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 
@@ -14,6 +15,11 @@ namespace Agenty.LLMCore.JsonSchema
 {
     public static class JsonSchemaExtensions
     {
+        public static string AsString(this object? obj)
+        {
+            if (obj == null) return "<null>";
+            return obj is string s ? s : JsonSerializer.Serialize(obj);
+        }
         public static JsonObject GetSchemaFor<T>()
         {
             return GetSchemaForType(typeof(T));

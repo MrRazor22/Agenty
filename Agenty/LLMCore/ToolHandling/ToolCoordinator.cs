@@ -1,4 +1,5 @@
 ﻿using Agenty.LLMCore.JsonSchema;
+using Agenty.LLMCore.Logging;
 using OpenAI.Chat;
 using System;
 using System.Collections.Generic;
@@ -179,6 +180,16 @@ namespace Agenty.LLMCore.ToolHandling
             return new("No valid tool call produced. Please refine your request.");
         }
 
+        public async Task<T> GetStructuredResponse<T>(string systemPrompt, string userContent = "", ILogger? logger = null)
+        {
+            var gateChat = new Conversation()
+                .Add(Role.System, systemPrompt)
+                .Add(Role.User, userContent);
+
+            logger?.AttachTo(gateChat, $"Gate:{typeof(T).Name}");
+
+            return await GetStructuredResponse<T>(gateChat);
+        }
         public async Task<T?> GetStructuredResponse<T>(Conversation prompt, int maxRetries = 3)
         {
             var intPrompt = Conversation.Clone(prompt);
@@ -210,7 +221,6 @@ namespace Agenty.LLMCore.ToolHandling
 
             return default;
         }
-
         public async Task<string> GetTextResponse(
     Conversation prompt,
     int maxRetries = 3,
@@ -436,16 +446,7 @@ namespace Agenty.LLMCore.ToolHandling
             try
             {
                 var result = await Invoke(toolCall);
-                // If it's already a string, return directly
-                if (result is string s)
-                    return s;
-
-                // For everything else, serialize to JSON
-                return JsonSerializer.Serialize(result, new JsonSerializerOptions
-                {
-                    WriteIndented = false, // compact
-                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-                });
+                return result.AsString();
             }
             catch (Exception ex)
             {

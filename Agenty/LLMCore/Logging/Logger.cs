@@ -24,7 +24,7 @@ namespace Agenty.LLMCore.Logging
                 return; // Skip logging below minimum level
 
             var originalColor = Console.ForegroundColor;
-            Console.ForegroundColor = GetColor(level);
+            Console.ForegroundColor = GetColor(level, source);
             Console.WriteLine($"[{level}] [{source}] {message}");
             Console.ForegroundColor = originalColor;
         }
@@ -35,7 +35,7 @@ namespace Agenty.LLMCore.Logging
                 return; // Skip logging below minimum level
 
             var originalColor = Console.ForegroundColor;
-            Console.ForegroundColor = GetColor(level);
+            Console.ForegroundColor = GetColor(level, source);
             Console.WriteLine($"[{level}] [{source}] {message}");
             if (exception != null)
             {
@@ -50,23 +50,25 @@ namespace Agenty.LLMCore.Logging
             if (level < _minLevel) return;
 
             var originalColor = Console.ForegroundColor;
-            Console.ForegroundColor = colorOverride ?? GetColor(level);
+            Console.ForegroundColor = colorOverride ?? GetColor(level, source);
             Console.WriteLine($"[{level}] [{source}] {message}");
             Console.ForegroundColor = originalColor;
         }
 
-
-        private ConsoleColor GetColor(LogLevel level)
+        private ConsoleColor GetColor(LogLevel level, string source)
         {
+            // Hash source for stable pseudo-random
+            int hash = Math.Abs(source.GetHashCode());
+
             return level switch
             {
-                LogLevel.Trace => ConsoleColor.Gray,
-                LogLevel.Debug => ConsoleColor.Cyan,
-                LogLevel.Information => ConsoleColor.Green,
-                LogLevel.Warning => ConsoleColor.Yellow,
-                LogLevel.Error => ConsoleColor.Red,
-                LogLevel.Critical => ConsoleColor.Magenta,
-                _ => ConsoleColor.White,
+                LogLevel.Trace => (hash % 2 == 0 ? ConsoleColor.DarkGray : ConsoleColor.Gray),
+                LogLevel.Debug => (hash % 2 == 0 ? ConsoleColor.DarkCyan : ConsoleColor.Cyan),
+                LogLevel.Information => (hash % 2 == 0 ? ConsoleColor.DarkGreen : ConsoleColor.Green),
+                LogLevel.Warning => (hash % 2 == 0 ? ConsoleColor.DarkYellow : ConsoleColor.Yellow),
+                LogLevel.Error => (hash % 2 == 0 ? ConsoleColor.DarkRed : ConsoleColor.Red),
+                LogLevel.Critical => (hash % 2 == 0 ? ConsoleColor.DarkMagenta : ConsoleColor.Magenta),
+                _ => (hash % 2 == 0 ? ConsoleColor.White : ConsoleColor.Gray),
             };
         }
     }

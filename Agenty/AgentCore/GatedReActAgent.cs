@@ -1,4 +1,8 @@
-﻿
+﻿using Agenty.LLMCore;
+using Agenty.LLMCore.Providers.OpenAI;
+using Agenty.LLMCore.ToolHandling;
+using System;
+using System.Collections.Generic;
 using Agenty.LLMCore;
 using Agenty.LLMCore.Providers.OpenAI;
 using Agenty.LLMCore.ToolHandling;
@@ -8,17 +12,18 @@ using ILogger = Agenty.LLMCore.Logging.ILogger;
 
 namespace Agenty.AgentCore
 {
-    public sealed class ReActAgent : IAgent
+    public sealed class GatedReActAgent : IAgent
     {
         private ILLMClient _llm = null!;
         private ToolCoordinator _coord = null!;
         private readonly IToolRegistry _tools = new ToolRegistry();
         Conversation chat = new();
+        ILogger _logger = null!;
 
-        public static ReActAgent Create() => new();
-        private ReActAgent() { }
+        public static GatedReActAgent Create() => new();
+        private GatedReActAgent() { }
 
-        public ReActAgent WithLLM(string baseUrl, string apiKey, string model = "any_model")
+        public GatedReActAgent WithLLM(string baseUrl, string apiKey, string model)
         {
             _llm = new OpenAILLMClient();
             _llm.Initialize(baseUrl, apiKey, model);
@@ -26,9 +31,14 @@ namespace Agenty.AgentCore
             return this;
         }
 
-        public ReActAgent WithTools<T>() { _tools.RegisterAll<T>(); return this; }
-        public ReActAgent WithTools(params Delegate[] fns) { _tools.Register(fns); return this; }
-        public ReActAgent WithLogger(ILogger logger) { logger.AttachTo(chat); return this; }
+        public GatedReActAgent WithTools<T>() { _tools.RegisterAll<T>(); return this; }
+        public GatedReActAgent WithTools(params Delegate[] fns) { _tools.Register(fns); return this; }
+        public GatedReActAgent WithLogger(ILogger logger)
+        {
+            _logger = logger;
+            logger.AttachTo(chat);
+            return this;
+        }
         public async Task<string> ExecuteAsync(string goal, int maxRounds = 10)
         {
             chat.Add(Role.System,
