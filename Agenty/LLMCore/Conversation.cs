@@ -1,4 +1,6 @@
-﻿namespace Agenty.LLMCore
+﻿using Agenty.LLMCore.ToolHandling;
+
+namespace Agenty.LLMCore
 {
     public enum Role { System, Assistant, User, Tool }
 

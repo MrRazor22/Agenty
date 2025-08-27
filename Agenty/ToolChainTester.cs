@@ -1,7 +1,9 @@
 ﻿using Agenty.AgentCore;
 using Agenty.LLMCore;
 using Agenty.LLMCore.BuiltInTools;
+using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.Providers.OpenAI;
+using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.Logging;
 using OpenAI.Chat;
 using System;
@@ -10,7 +12,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using ILogger = Agenty.LLMCore.ILogger;
+using ILogger = Agenty.LLMCore.Logging.ILogger;
 
 namespace Agenty
 {
@@ -18,7 +20,7 @@ namespace Agenty
     {
         public async Task Run()
         {
-            ILogger logger = new LLMCore.ConsoleLogger();
+            ILogger logger = new ConsoleLogger();
 
             var llm = new OpenAILLMClient();
             llm.Initialize("http://127.0.0.1:1234/v1", "lmstudio", "any_model");

@@ -1,4 +1,5 @@
-﻿using OpenAI;
+﻿using Agenty.LLMCore.ToolHandling;
+using OpenAI;
 using OpenAI.Chat;
 using System;
 using System.Collections.Generic;

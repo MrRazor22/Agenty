@@ -8,7 +8,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
-namespace Agenty.LLMCore
+namespace Agenty.LLMCore.ToolHandling
 {
     public class Tool
     {

@@ -1,5 +1,6 @@
 ﻿using Agenty.LLMCore;
 using Agenty.LLMCore.Providers.OpenAI;
+using Agenty.LLMCore.ToolHandling;
 using System.Text.Json.Nodes;
 
 namespace Agenty.AgentCore

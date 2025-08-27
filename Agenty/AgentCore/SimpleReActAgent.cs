@@ -1,13 +1,14 @@
 ﻿
 using Agenty.LLMCore;
 using Agenty.LLMCore.Providers.OpenAI;
+using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.Logging;
 using System.Text.Json.Nodes;
-using ILogger = Agenty.LLMCore.ILogger;
+using ILogger = Agenty.LLMCore.Logging.ILogger;
 
 namespace Agenty.AgentCore
 {
-    public sealed class ReActToolCallingAgent : IAgent
+    public sealed class SimpleReActAgent : IAgent
     {
         private ILLMClient _llm = null!;
         private ToolCoordinator _coord = null!;
@@ -15,10 +16,10 @@ namespace Agenty.AgentCore
         Conversation chat = new();
         ILogger _logger = null!;
 
-        public static ReActToolCallingAgent Create() => new();
-        private ReActToolCallingAgent() { }
+        public static SimpleReActAgent Create() => new();
+        private SimpleReActAgent() { }
 
-        public ReActToolCallingAgent WithLLM(string baseUrl, string apiKey, string model = "any_model")
+        public SimpleReActAgent WithLLM(string baseUrl, string apiKey, string model = "any_model")
         {
             _llm = new OpenAILLMClient();
             _llm.Initialize(baseUrl, apiKey, model);
@@ -26,9 +27,9 @@ namespace Agenty.AgentCore
             return this;
         }
 
-        public ReActToolCallingAgent WithTools<T>() { _tools.RegisterAll<T>(); return this; }
-        public ReActToolCallingAgent WithTools(params Delegate[] fns) { _tools.Register(fns); return this; }
-        public ReActToolCallingAgent WithLogger(ILogger logger)
+        public SimpleReActAgent WithTools<T>() { _tools.RegisterAll<T>(); return this; }
+        public SimpleReActAgent WithTools(params Delegate[] fns) { _tools.Register(fns); return this; }
+        public SimpleReActAgent WithLogger(ILogger logger)
         {
             _logger = logger;
             logger.AttachTo(chat);

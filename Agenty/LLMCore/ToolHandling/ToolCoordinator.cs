@@ -13,7 +13,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 
-namespace Agenty.LLMCore
+namespace Agenty.LLMCore.ToolHandling
 {
     public enum ToolCallMode
     {
@@ -107,8 +107,8 @@ namespace Agenty.LLMCore
 
             // Single type (non-tuple)
             if (!tupleType.IsGenericType ||
-                (tupleType.GetGenericTypeDefinition() != typeof(ValueTuple<>) &&
-                 !tupleType.FullName!.StartsWith("System.ValueTuple")))
+                tupleType.GetGenericTypeDefinition() != typeof(ValueTuple<>) &&
+                 !tupleType.FullName!.StartsWith("System.ValueTuple"))
             {
                 var single = toolRegistry.GetTools(tupleType).ToArray();
                 return await GetToolCall(prompt, toolCallMode, maxRetries, single);
@@ -362,8 +362,8 @@ namespace Agenty.LLMCore
                     catch
                     {
                         var value = $"'{node.ToString()}'" ?? "";
-                        var parmDesc = (p?.GetCustomAttribute<DescriptionAttribute>()?.Description is string d && !string.IsNullOrWhiteSpace(d)) ? $"({d})" : "";
-                        var paramTypeDesc = (p?.ParameterType.GetCustomAttribute<DescriptionAttribute>()?.Description is string d2 && !string.IsNullOrWhiteSpace(d2)) ? $"({d2})" : "";
+                        var parmDesc = p?.GetCustomAttribute<DescriptionAttribute>()?.Description is string d && !string.IsNullOrWhiteSpace(d) ? $"({d})" : "";
+                        var paramTypeDesc = p?.ParameterType.GetCustomAttribute<DescriptionAttribute>()?.Description is string d2 && !string.IsNullOrWhiteSpace(d2) ? $"({d2})" : "";
 
                         throw new ArgumentException($"Value {value} for '{p?.Name}' {parmDesc} may be invalid for {p?.ParameterType.Name} {paramTypeDesc}");
                     }
@@ -444,7 +444,7 @@ namespace Agenty.LLMCore
                 return JsonSerializer.Serialize(result, new JsonSerializerOptions
                 {
                     WriteIndented = false, // compact
-                    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
                 });
             }
             catch (Exception ex)

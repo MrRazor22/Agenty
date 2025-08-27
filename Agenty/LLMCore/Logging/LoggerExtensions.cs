@@ -1,7 +1,7 @@
 ﻿using Agenty.LLMCore;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
-using ILogger = Agenty.LLMCore.ILogger;
+using ILogger = Agenty.LLMCore.Logging.ILogger;
 
 public static class LoggerExtensions
 {

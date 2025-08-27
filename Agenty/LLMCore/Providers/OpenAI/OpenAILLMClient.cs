@@ -1,4 +1,5 @@
 ﻿using Agenty.LLMCore.JsonSchema;
+using Agenty.LLMCore.ToolHandling;
 using HtmlAgilityPack;
 using Microsoft.VisualBasic;
 using Microsoft.VisualStudio.TestPlatform.CommunicationUtilities;

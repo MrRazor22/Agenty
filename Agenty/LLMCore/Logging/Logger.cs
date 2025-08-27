@@ -1,5 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
-namespace Agenty.LLMCore
+namespace Agenty.LLMCore.Logging
 {
     public interface ILogger
     {
