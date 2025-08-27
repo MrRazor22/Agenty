@@ -32,5 +32,16 @@
             }
             return copy;
         }
+        public Conversation Append(Conversation other, bool includeSystem = false)
+        {
+            foreach (var chat in other)
+            {
+                if (!includeSystem && chat.Role == Role.System)
+                    continue;
+
+                Add(chat.Role, chat.Content, chat.toolCallInfo, chat.IsTemporary);
+            }
+            return this;
+        }
     }
 }
