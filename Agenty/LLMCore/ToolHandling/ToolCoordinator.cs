@@ -30,7 +30,7 @@ namespace Agenty.LLMCore.ToolHandling
         Task<T?> GetStructuredResponse<T>(Conversation prompt, int maxRetries = 3);
         Task<string?> ExecuteToolCall(Conversation chat, params Tool[] tools);
         Task<T?> ExecuteToolCall<T>(Conversation chat, params Tool[] tools);
-        Task<string> HandleToolCall(ToolCall toolCall);
+        Task HandleToolCall(ToolCall toolCall, Conversation chat);
         Task<dynamic> Invoke(ToolCall tool);
         Task<T?> Invoke<T>(ToolCall tool);
     }
@@ -432,26 +432,24 @@ namespace Agenty.LLMCore.ToolHandling
             return result;
         }
 
-        public async Task<string> HandleToolCall(ToolCall toolCall)
+        public async Task HandleToolCall(ToolCall toolCall, Conversation chat)
         {
-            if (string.IsNullOrEmpty(toolCall.Name) && string.IsNullOrEmpty(toolCall.AssistantMessage))
+            if (!string.IsNullOrWhiteSpace(toolCall.AssistantMessage) && string.IsNullOrWhiteSpace(toolCall.Name))
             {
-                return "No valid tool call provided";
+                chat.Add(Role.Assistant, toolCall.AssistantMessage);
+                return;
             }
-            else if (!string.IsNullOrWhiteSpace(toolCall.AssistantMessage))
-            {
-                return toolCall.AssistantMessage;
-            }
+
+            chat.Add(Role.Assistant, tool: toolCall);
 
             try
             {
                 var result = await Invoke(toolCall);
-                return result.AsString();
+                chat.Add(Role.Tool, ((object?)result).AsString(), toolCall);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR] Tool invocation failed: {ex}");
-                return $"Tool execution error: {ex.Message}";
+                chat.Add(Role.Tool, $"Tool execution error: {ex.Message}", toolCall);
             }
         }
 

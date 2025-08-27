@@ -50,15 +50,9 @@ namespace Agenty.AgentCore
         {
             while (call != ToolCall.Empty)
             {
-                chat.Add(Role.Assistant, call.AssistantMessage);
+                await _coord.HandleToolCall(call, chat);
 
-                if (string.IsNullOrWhiteSpace(call.Name)) break;//no tool call so model returned final resposne
-
-                chat.Add(Role.Assistant, tool: call);
-
-                object? result = await _coord.HandleToolCall(call);
-
-                chat.Add(Role.Tool, result?.ToString(), call);
+                if (string.IsNullOrWhiteSpace(call.Name)) break;
 
                 call = await _coord.GetToolCall(chat);
             }
