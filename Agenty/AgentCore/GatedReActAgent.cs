@@ -65,15 +65,22 @@ namespace Agenty.AgentCore
             {
                 if (string.IsNullOrWhiteSpace(call.Name))
                 {
-                    var response = await _grader.SummarizeConversation(chat);
+                    var response = await _grader!.SummarizeConversation(chat);
 
                     var answerGrade = await _grader!.CheckAnswer(_currentGoal, response.summary);
                     if (answerGrade.verdict == Verdict.Yes) return response.summary;
 
                     chat.Add(Role.User, answerGrade.explanation);
                 }
+                else
+                {
+                    var toolChoice = await _grader!.CheckToolChoice(chat, call, _tools.RegisteredTools.ToList());
 
-                await _coord.HandleToolCall(call, chat);
+                    if (toolChoice.verdict == Verdict.No && !string.IsNullOrWhiteSpace(toolChoice.recommendedTool))
+                        chat.Add(Role.User, $"Tool '{call.Name}' seems suboptimal. Better choice: {toolChoice.recommendedTool}");
+
+                    else await _coord.HandleToolCall(call, chat);
+                }
 
                 call = await _coord.GetToolCall(chat);
             }

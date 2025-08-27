@@ -70,11 +70,11 @@ namespace Agenty.LLMCore
         }
 
         // ✅ Tool Choice Grader (Router Gate) 
-        public async Task<ToolChoiceGrade> CheckToolChoice(Conversation chat, ToolCall chosenTool, List<Tool> tools)
+        public async Task<ToolChoiceGrade> CheckToolChoice(
+     Conversation chat, ToolCall chosenTool, List<Tool> tools)
         {
             var summary = await SummarizeConversation(chat);
             var userRequest = chat.FirstOrDefault(c => c.Role == Role.User)?.Content ?? "<no user input>";
-
             var toolsDescription = tools?.ToString() ?? "<no tools registered>";
 
             return await Grade<ToolChoiceGrade>(
@@ -83,19 +83,18 @@ namespace Agenty.LLMCore
 Verdict rules:
 - Yes → Tool is the best available match for the current step.
 - No  → Tool is irrelevant, suboptimal, or misses the obvious better option.
-Always explain reasoning.
-If verdict is 'No', also output the name of the BETTER tool from the available list.
 
 Response schema:
 - verdict: Yes | No
 - explanation: reasoning
-- recommendedTool: best alternative tool name (or null if verdict=Yes)
+- recommendedTool: 
+    - If verdict = No → name of the better tool from the available list
+    - If verdict = Yes → empty string
 
 Available tools:
 " + toolsDescription,
                 $"USER REQUEST: {userRequest}\nSUMMARY OF CONTEXT: {summary.summary}\nCHOSEN TOOL: {chosenTool}"
             );
         }
-
     }
 }
