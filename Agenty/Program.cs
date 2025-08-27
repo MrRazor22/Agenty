@@ -18,7 +18,7 @@ namespace Agenty
     {
         public static async Task Main(string[] args)
         {
-            var agent = DefaultAgent.Create()
+            var agent = ReflectionAgent.Create()
                         .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m")
                         .WithTools<MathTools>()
                         .WithTools<WeatherTool>()
