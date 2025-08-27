@@ -19,6 +19,8 @@ namespace Agenty.AgentCore
         private readonly IToolRegistry _tools = new ToolRegistry();
         Conversation chat = new();
         ILogger _logger = null!;
+        Grader? _grader;
+        string _currentGoal;
 
         public static GatedReActAgent Create() => new();
         private GatedReActAgent() { }
@@ -36,36 +38,47 @@ namespace Agenty.AgentCore
         public GatedReActAgent WithLogger(ILogger logger)
         {
             _logger = logger;
-            logger.AttachTo(chat);
+            _grader = new Grader(_coord, _logger);
+            _logger.AttachTo(chat);
             return this;
         }
         public async Task<string> ExecuteAsync(string goal, int maxRounds = 10)
         {
+            _currentGoal = goal;
             chat.Add(Role.System,
                 "You are an assistant. " +
                 "For complex tasks, always plan step by step. " +
                 "If unsure, say so directly. " +
                 "Use tools if needed, or respond directly. " +
                 "Keep answers short and clear.")
-                .Add(Role.User, goal);
+                .Add(Role.User, _currentGoal);
 
             ToolCall toolCall;
             toolCall = await _coord.GetToolCall(chat);
 
-            await ExecuteToolChaining(toolCall, chat);
-            return chat.LastOrDefault()?.Content ?? "";
+            return await ExecuteToolChaining(toolCall, chat);
         }
 
-        private async Task ExecuteToolChaining(ToolCall call, Conversation chat)
+        private async Task<string> ExecuteToolChaining(ToolCall call, Conversation chat)
         {
             while (call != ToolCall.Empty)
             {
-                if (string.IsNullOrWhiteSpace(call.Name)) break;//no tool call so model returned final resposne
+                if (string.IsNullOrWhiteSpace(call.Name))
+                {
+                    var response = await _grader.SummarizeConversation(chat);
+
+                    var answerGrade = await _grader!.CheckAnswer(_currentGoal, response.summary);
+                    if (answerGrade.verdict == Verdict.Yes) return response.summary;
+
+                    chat.Add(Role.User, answerGrade.explanation);
+                }
 
                 await _coord.HandleToolCall(call, chat);
 
                 call = await _coord.GetToolCall(chat);
             }
+
+            return await _llm.GetResponse(chat);
         }
 
     }

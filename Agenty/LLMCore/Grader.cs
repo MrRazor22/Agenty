@@ -13,6 +13,8 @@ namespace Agenty.LLMCore
     public record AnswerGrade(Verdict verdict, string explanation);
     public record PlanGrade(Verdict verdict, string explanation);
     public record ToolArgsGrade(Verdict verdict, string explanation);
+    public record SummaryResult(string summary);
+    public record ToolChoiceGrade(Verdict verdict, string explanation, string? recommendedTool);
 
     class Grader
     {
@@ -24,6 +26,7 @@ namespace Agenty.LLMCore
             _coord = coord;
             _logger = logger;
         }
+
 
         // Generic structured grading helper
         private async Task<T> Grade<T>(string systemPrompt, string userPrompt)
@@ -48,22 +51,51 @@ namespace Agenty.LLMCore
                 $"USER REQUEST: {goal}\nASSISTANT RESPONSE: {response}"
                 );
 
-        public Task<PlanGrade> CheckPlan(string plan) =>
-            Grade<PlanGrade>(
-                @"You are grading the ASSISTANT PLAN for clarity and executability.
-                Verdict rules:
-                - Yes → Steps are clear, actionable, logically ordered.
-                - No  → Steps missing, vague, or illogical.
-                Always explain your reasoning.",
-                $"PLAN: {plan}");
+        // ✅ Summarizer gate
+        public Task<SummaryResult> SummarizeConversation(Conversation chat)
+        {
+            var firstUserMessage = chat.FirstOrDefault(c => c.Role == Role.User)?.Content ?? "<no user input>";
+            var history = string.Join("\n", chat
+                .Skip(1) // everything after first user
+                .Select(c => $"{c.Role}: {c.Content ?? c.toolCallInfo?.ToString() ?? "<empty>"}"));
 
-        public Task<ToolArgsGrade> CheckToolArgs(string toolName, string argsJson) =>
-            Grade<ToolArgsGrade>(
-                @"You are grading whether the TOOL ARGUMENTS are valid and make sense.
-                Verdict rules:
-                - Yes → Arguments are well-formed, valid types, realistic values.
-                - No  → Invalid types, nonsense values, or incomplete args.
-                Always explain your reasoning.",
-                $"TOOL: {toolName}\nARGS: {argsJson}");
+            return Grade<SummaryResult>(
+                @"You are summarizing the conversation to produce a single consolidated final answer 
+              that directly responds to the INITIAL USER MESSAGE.
+              - Use all relevant assistant replies and tool results. 
+              - Keep it concise and clear.
+              - Ignore irrelevant noise or logging artifacts.",
+                $"INITIAL USER MESSAGE: {firstUserMessage}\nCONVERSATION:\n{history}"
+            );
+        }
+
+        // ✅ Tool Choice Grader (Router Gate) 
+        public async Task<ToolChoiceGrade> CheckToolChoice(Conversation chat, ToolCall chosenTool, List<Tool> tools)
+        {
+            var summary = await SummarizeConversation(chat);
+            var userRequest = chat.FirstOrDefault(c => c.Role == Role.User)?.Content ?? "<no user input>";
+
+            var toolsDescription = tools?.ToString() ?? "<no tools registered>";
+
+            return await Grade<ToolChoiceGrade>(
+                @"You are grading whether the TOOL CHOICE is the most relevant for the CURRENT CONTEXT of the conversation.
+
+Verdict rules:
+- Yes → Tool is the best available match for the current step.
+- No  → Tool is irrelevant, suboptimal, or misses the obvious better option.
+Always explain reasoning.
+If verdict is 'No', also output the name of the BETTER tool from the available list.
+
+Response schema:
+- verdict: Yes | No
+- explanation: reasoning
+- recommendedTool: best alternative tool name (or null if verdict=Yes)
+
+Available tools:
+" + toolsDescription,
+                $"USER REQUEST: {userRequest}\nSUMMARY OF CONTEXT: {summary.summary}\nCHOSEN TOOL: {chosenTool}"
+            );
+        }
+
     }
 }
