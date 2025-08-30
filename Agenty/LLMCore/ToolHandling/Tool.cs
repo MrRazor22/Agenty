@@ -49,7 +49,7 @@ namespace Agenty.LLMCore.ToolHandling
         public object?[]? Parameters { get; private set; } = parameters;
 
         [JsonIgnore] // Exclude AssistantMessage if not needed
-        public string? AssistantMessage { get; set; } = message;
+        public string? Message { get; set; } = message;
 
         // Secondary constructor: message-only
         public ToolCall(string message)
@@ -67,7 +67,7 @@ namespace Agenty.LLMCore.ToolHandling
         // === Check if this is Empty ===
         public bool IsEmpty =>
             string.IsNullOrWhiteSpace(Name) &&
-            string.IsNullOrWhiteSpace(AssistantMessage);
+            string.IsNullOrWhiteSpace(Message);
 
         public override string ToString()
         {

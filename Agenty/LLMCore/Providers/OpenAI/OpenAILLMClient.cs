@@ -60,7 +60,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
                     yield return part.Text;
             }
         }
-        public async Task<ToolCall> GetToolCallResponse(Conversation prompt, IEnumerable<Tool> tools, ToolCallMode toolCallMode = ToolCallMode.Auto)
+        public async Task<LLMResponse> GetToolCallResponse(Conversation prompt, IEnumerable<Tool> tools, ToolCallMode toolCallMode = ToolCallMode.Auto)
         {
             EnsureInitialized();
 
@@ -73,37 +73,41 @@ namespace Agenty.LLMCore.Providers.OpenAI
             var response = await _chatClient!.CompleteChatAsync(prompt.ToChatMessages(), options);
             var result = response.Value;
 
-            var chatToolCall = result?.ToolCalls?.FirstOrDefault();
-            if (chatToolCall != null)
+            var toolCalls = new List<ToolCall>();
+            if (result?.ToolCalls != null && result.ToolCalls.Any())
             {
-                if (tools.Any(t => t.Name.Equals(chatToolCall.FunctionName, StringComparison.InvariantCultureIgnoreCase)))
+                foreach (var chatToolCall in result.ToolCalls)
                 {
-                    var name = chatToolCall.FunctionName;
-                    var args = chatToolCall.FunctionArguments.ToObjectFromJson<JsonObject>() ?? new JsonObject();
-                    return new
-                    (
-                        chatToolCall.Id ?? Guid.NewGuid().ToString(),
-                        name,
-                        args,
-                        null,
-                        result?.Content?.FirstOrDefault()?.Text
-                    );
+                    if (tools.Any(t => t.Name.Equals(chatToolCall.FunctionName, StringComparison.InvariantCultureIgnoreCase)))
+                    {
+                        var name = chatToolCall.FunctionName;
+                        var args = chatToolCall.FunctionArguments.ToObjectFromJson<JsonObject>() ?? new JsonObject();
+                        toolCalls.Add(new
+                        (
+                            chatToolCall.Id ?? Guid.NewGuid().ToString(),
+                            name,
+                            args,
+                            null,
+                            string.Empty
+                        ));
+                    }
                 }
             }
 
             string? content = result?.Content?.FirstOrDefault()?.Text;
-            if (!string.IsNullOrWhiteSpace(content)) return new(content);
+            string? finishReason = result?.FinishReason.ToString();
 
-            return ToolCall.Empty;
+            return new LLMResponse
+            {
+                AssistantMessage = string.IsNullOrWhiteSpace(content) ? null : content,
+                ToolCalls = toolCalls,
+                FinishReason = finishReason
+            };
         }
 
         public async Task<JsonNode> GetStructuredResponse(Conversation prompt, JsonObject responseFormat)
         {
             EnsureInitialized();
-
-            //Console.WriteLine("=========================================");
-            //Console.WriteLine(responseFormat);
-            //Console.WriteLine("=========================================");
 
             ChatCompletionOptions options = new()
             {

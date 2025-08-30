@@ -1,5 +1,5 @@
-﻿
-using Agenty.LLMCore;
+﻿using Agenty.LLMCore;
+using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.Providers.OpenAI;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.Logging;
@@ -14,6 +14,7 @@ namespace Agenty.AgentCore
         private ToolCoordinator _coord = null!;
         private readonly IToolRegistry _tools = new ToolRegistry();
         Conversation chat = new();
+        Grader? _grader;
 
         public static ReActAgent Create() => new();
         private ReActAgent() { }
@@ -28,7 +29,12 @@ namespace Agenty.AgentCore
 
         public ReActAgent WithTools<T>() { _tools.RegisterAll<T>(); return this; }
         public ReActAgent WithTools(params Delegate[] fns) { _tools.Register(fns); return this; }
-        public ReActAgent WithLogger(ILogger logger) { logger.AttachTo(chat); return this; }
+        public ReActAgent WithLogger(ILogger logger)
+        {
+            logger.AttachTo(chat);
+            _grader = new Grader(_coord, logger);
+            return this;
+        }
         public async Task<string> ExecuteAsync(string goal, int maxRounds = 10)
         {
             chat.Add(Role.System,
@@ -39,22 +45,20 @@ namespace Agenty.AgentCore
                 "Keep answers short and clear.")
                 .Add(Role.User, goal);
 
-            ToolCall toolCall;
-            toolCall = await _coord.GetToolCall(chat);
+            var response = await _coord.GetToolCalls(chat);
 
-            await ExecuteToolChaining(toolCall, chat);
-            return chat.LastOrDefault()?.Content ?? "";
+            await ExecuteToolChaining(response, chat);
+            var sum = await _grader!.SummarizeConversation(chat, goal);
+            return sum.summary;
         }
 
-        private async Task ExecuteToolChaining(ToolCall call, Conversation chat)
+        private async Task ExecuteToolChaining(LLMResponse response, Conversation chat)
         {
-            while (call != ToolCall.Empty)
+            while (response.ToolCalls.Count != 0)
             {
-                await _coord.HandleToolCall(call, chat);
+                await _coord.HandleToolCallSequential(response.ToolCalls, chat);
 
-                if (string.IsNullOrWhiteSpace(call.Name)) break;
-
-                call = await _coord.GetToolCall(chat);
+                response = await _coord.GetToolCalls(chat);
             }
         }
 

@@ -131,7 +131,6 @@ namespace Agenty.LLMCore.ToolHandling
             };
         }
 
-        public override string ToString() =>
-            string.Join(", ", RegisteredTools.Select(t => t.ToString()));
+        public override string ToString() => RegisteredTools.ToJoinedString();
     }
 }

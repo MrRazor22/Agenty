@@ -10,7 +10,7 @@ public static class LoggerExtensions
     {
         conversation.OnChat += chat =>
         {
-            var obj = chat.Content ?? (object?)chat.toolCallInfo ?? "<empty>";
+            var obj = chat.Content ?? (object?)chat.ToolCalls ?? "<empty>";
             var msg = obj is string s ? s : obj.AsString();
 
             logger.Log(

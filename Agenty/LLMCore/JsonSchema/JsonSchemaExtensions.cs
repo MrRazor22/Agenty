@@ -55,14 +55,19 @@ namespace Agenty.LLMCore.JsonSchema
                     .Build();
 
             if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>) &&
-                type.GetGenericArguments()[0] == typeof(string))
+    type.GetGenericArguments()[0] == typeof(string))
             {
                 var valueType = type.GetGenericArguments()[1];
+                var valueSchema = new JsonSchemaBuilder()
+                    .Type("string") // 🔑 force string
+                    .Build();
+
                 return new JsonSchemaBuilder()
-                    .Type<object>()
-                    .AdditionalProperties(valueType.GetSchemaForType(visited))
+                    .Type("object")
+                    .AdditionalProperties(valueSchema)
                     .Build();
             }
+
 
             if (visited.Contains(type)) return new JsonSchemaBuilder().Build();
             visited.Add(type);
