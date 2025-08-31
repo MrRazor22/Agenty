@@ -13,12 +13,12 @@ namespace Agenty.AgentCore
     public record Answer(int confidence_score, string explanation);
     public record SummaryResult(string summary);
 
-    class Grader
+    class Gate
     {
         private readonly IToolCoordinator _coord;
         private readonly ILogger _logger;
 
-        public Grader(ToolCoordinator coord, ILogger logger = null)
+        public Gate(ToolCoordinator coord, ILogger logger = null)
         {
             _coord = coord;
             _logger = logger;

@@ -15,7 +15,7 @@ namespace Agenty.AgentCore
         private ToolCoordinator _coord = null!;
         private readonly IToolRegistry _tools = new ToolRegistry();
         Conversation _globalChat;
-        Grader? _grader;
+        Gate? _grader;
         ILogger _logger;
         string _systemPrompt = "You are an assistant. " +
                 "For complex tasks, always plan step by step. " +
@@ -40,7 +40,7 @@ namespace Agenty.AgentCore
         public ReActAgent WithLogger(ILogger logger)
         {
             _logger = logger;
-            _grader = new Grader(_coord, logger);
+            _grader = new Gate(_coord, logger);
             return this;
         }
 

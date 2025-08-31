@@ -14,7 +14,7 @@ namespace Agenty.AgentCore
         private readonly IToolRegistry _tools = new ToolRegistry();
         Conversation chat = new();
         ILogger _logger = null!;
-        Grader? _grader;
+        Gate? _grader;
 
         public static ReflectionAgent Create() => new();
         private ReflectionAgent() { }
@@ -32,7 +32,7 @@ namespace Agenty.AgentCore
         public ReflectionAgent WithLogger(ILogger logger)
         {
             _logger = logger;
-            _grader = new Grader(_coord, _logger);
+            _grader = new Gate(_coord, _logger);
             _logger.AttachTo(chat);
             return this;
         }
