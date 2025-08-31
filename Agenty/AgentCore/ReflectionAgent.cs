@@ -48,7 +48,7 @@ namespace Agenty.AgentCore
                 chat.Add(Role.Assistant, response);
 
                 var answerGrade = await _grader!.CheckAnswer(goal, response);
-                if (answerGrade.verdict == Verdict.yes) return response;
+                if (answerGrade.confidence_score >= 85) return response;
 
                 chat.Add(Role.User, answerGrade.explanation);
             }

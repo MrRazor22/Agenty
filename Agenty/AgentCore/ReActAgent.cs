@@ -47,27 +47,32 @@ namespace Agenty.AgentCore
         public async Task<string> ExecuteAsync(string goal, int maxRounds = 10)
         {
             var sessionChat = new Conversation();
+            var sum = new SummaryResult("");
 
             _logger.AttachTo(sessionChat);
 
             sessionChat.Add(Role.System, _systemPrompt)
                 .Add(Role.User, goal);
 
-            while (true)
+            for (int round = 0; round < maxRounds; round++)
             {
                 var response = await _coord.GetToolCalls(sessionChat);
+
                 await ExecuteToolChaining(response, sessionChat);
 
-                var sum = await _grader!.SummarizeConversation(sessionChat, goal);
+                sum = await _grader!.SummarizeConversation(sessionChat, goal);
                 var answer = await _grader!.CheckAnswer(goal, sum.summary);
 
-                if (answer.verdict == Verdict.yes || answer.confidence_score >= 80)
+                if (answer.confidence_score >= 80)
                 {
                     _globalChat.Add(Role.User, goal)
                                 .Add(Role.Assistant, sum.summary);
                     return sum.summary;
                 }
             }
+            return await _llm.GetResponse(
+                sessionChat.Add(Role.User,
+                $"Answer the user’s request: {goal}. Use the available tool results and reasonings so far. Make the response clear and user-friendly."));
         }
 
         private async Task ExecuteToolChaining(LLMResponse response, Conversation chat)

@@ -10,7 +10,7 @@ using ILogger = Agenty.LLMCore.Logging.ILogger;
 namespace Agenty.AgentCore
 {
     public enum Verdict { yes, no }
-    public record Answer(Verdict verdict, string explanation, int confidence_score);
+    public record Answer(int confidence_score, string explanation);
     public record SummaryResult(string summary);
 
     class Grader
@@ -39,10 +39,13 @@ namespace Agenty.AgentCore
 
         // Common grading gates
         public Task<Answer> CheckAnswer(string goal, string response) =>
-            Grade<Answer>(
-                @"You are reviewer, check whether the ASSISTANT RESPONSE acceptable answer for the USER REQUEST.",
-                $"USER REQUEST: {goal}\nASSISTANT RESPONSE: {response}"
-                );
+    Grade<Answer>(
+        @"You are a strict grader. 
+Decide how well the ASSISTANT RESPONSE satisfies the USER REQUEST. 
+Always return JSON with: { confidence_score: int (0-100), explanation: string }.",
+        $"USER REQUEST: {goal}\nASSISTANT RESPONSE: {response}"
+    );
+
 
         // ✅ Summarizer gate
         public Task<SummaryResult> SummarizeConversation(Conversation chat, string userRequest)
