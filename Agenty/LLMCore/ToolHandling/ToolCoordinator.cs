@@ -351,7 +351,7 @@ namespace Agenty.LLMCore.ToolHandling
                 try
                 {
                     var result = await Invoke(call);
-                    chat.Add(Role.Tool, ((object?)result).AsString(), new List<ToolCall> { call });
+                    chat.Add(Role.Tool, ((object?)result).AsJSONString(), new List<ToolCall> { call });
                 }
                 catch (Exception ex)
                 {
@@ -383,7 +383,7 @@ namespace Agenty.LLMCore.ToolHandling
                 try
                 {
                     var result = await Invoke(call);
-                    chat.Add(Role.Tool, ((object?)result).AsString(), toolCall: call);
+                    chat.Add(Role.Tool, ((object?)result).AsJSONString(), toolCall: call);
                 }
                 catch (Exception ex)
                 {

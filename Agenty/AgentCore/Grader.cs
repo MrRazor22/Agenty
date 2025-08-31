@@ -9,8 +9,8 @@ using ILogger = Agenty.LLMCore.Logging.ILogger;
 
 namespace Agenty.AgentCore
 {
-    public enum Verdict { Yes, No }
-    public record AnswerGrade(Verdict verdict, string explanation);
+    public enum Verdict { yes, no }
+    public record Answer(Verdict verdict, string explanation, int confidence_score);
     public record SummaryResult(string summary);
 
     class Grader
@@ -33,14 +33,14 @@ namespace Agenty.AgentCore
                .Add(Role.User, userPrompt);
 
             var result = await _coord.GetStructuredResponse<T>(gateChat);
-            _logger?.Log(LogLevel.Debug, $"{typeof(T).Name}", result.AsString());
+            _logger?.Log(LogLevel.Debug, $"{typeof(T).Name}", result.AsJSONString());
             return result;
         }
 
         // Common grading gates
-        public Task<AnswerGrade> CheckAnswer(string goal, string response) =>
-            Grade<AnswerGrade>(
-                @"You are critiquing assistant, who is tasked to check whether the ASSISTANT RESPONSE appropriately satisfies the USER REQUEST.",
+        public Task<Answer> CheckAnswer(string goal, string response) =>
+            Grade<Answer>(
+                @"You are reviewer, check whether the ASSISTANT RESPONSE acceptable answer for the USER REQUEST.",
                 $"USER REQUEST: {goal}\nASSISTANT RESPONSE: {response}"
                 );
 
@@ -50,7 +50,7 @@ namespace Agenty.AgentCore
             var history = chat.ToHistoyString(includeSystem: false);
 
             return Grade<SummaryResult>(
-                @"You are summarizing the agent response to produce a single consolidated final answer 
+                @"You are summarizing the assistant response to produce a single consolidated final answer 
               that directly responds to the USER REQUEST.
               - Use all relevant facts and tool results. 
               - Make it user friendly.",

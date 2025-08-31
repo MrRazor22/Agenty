@@ -115,15 +115,47 @@ namespace Agenty.LLMCore.BuiltInTools
 
         private static string GetCondition(int code) => code switch
         {
-            0 => "Clear",
-            1 or 2 => "Partly cloudy",
+            0 => "Clear sky",
+            1 => "Mainly clear",
+            2 => "Partly cloudy",
             3 => "Overcast",
-            45 or 48 => "Fog",
-            51 or 53 or 55 => "Drizzle",
-            61 or 63 or 65 => "Rain",
-            71 or 73 or 75 => "Snow",
-            95 => "Thunderstorm",
-            _ => "Unknown"
+
+            45 or 48 => "Fog / Depositing rime fog",
+
+            51 => "Light drizzle",
+            53 => "Moderate drizzle",
+            55 => "Dense drizzle",
+
+            56 => "Light freezing drizzle",
+            57 => "Dense freezing drizzle",
+
+            61 => "Slight rain",
+            63 => "Moderate rain",
+            65 => "Heavy rain",
+
+            66 => "Light freezing rain",
+            67 => "Heavy freezing rain",
+
+            71 => "Slight snow fall",
+            73 => "Moderate snow fall",
+            75 => "Heavy snow fall",
+
+            77 => "Snow grains",
+
+            80 => "Slight rain showers",
+            81 => "Moderate rain showers",
+            82 => "Violent rain showers",
+
+            85 => "Slight snow showers",
+            86 => "Heavy snow showers",
+
+            95 => "Thunderstorm (slight or moderate)",
+            96 => "Thunderstorm with slight hail",
+            99 => "Thunderstorm with heavy hail",
+
+            _ => ""
         };
+
+
     }
 }

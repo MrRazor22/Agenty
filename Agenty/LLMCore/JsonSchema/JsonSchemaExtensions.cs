@@ -15,7 +15,7 @@ namespace Agenty.LLMCore.JsonSchema
 {
     public static class JsonSchemaExtensions
     {
-        public static string AsString(this object? obj)
+        public static string AsJSONString(this object? obj)
         {
             if (obj == null) return "<null>";
             return obj is string s ? s : JsonSerializer.Serialize(obj);

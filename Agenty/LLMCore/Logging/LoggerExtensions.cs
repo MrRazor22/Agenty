@@ -11,7 +11,7 @@ public static class LoggerExtensions
         conversation.OnChat += chat =>
         {
             var obj = chat.Content ?? (object?)chat.ToolCalls ?? "<empty>";
-            var msg = obj is string s ? s : obj.AsString();
+            var msg = obj is string s ? s : obj.AsJSONString();
 
             logger.Log(
                 chat.Role is Role.Assistant or Role.User or Role.Tool ? LogLevel.Information : LogLevel.Debug,
