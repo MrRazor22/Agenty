@@ -77,6 +77,9 @@ namespace Agenty.LLMCore.JsonSchema
 
             foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
+                if (prop.GetCustomAttribute<System.Text.Json.Serialization.JsonIgnoreAttribute>() != null)
+                    continue;
+
                 var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
                 var propSchema = propType.GetSchemaForType(visited);
 
