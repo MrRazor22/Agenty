@@ -81,7 +81,7 @@ namespace Agenty.LLMCore.ToolHandling
         );
         #endregion
 
-        public async Task<LLMResponse> GetToolCalls(Conversation prompt, ToolCallMode toolCallMode = ToolCallMode.Auto, int maxRetries = 0, params Tool[] tools)
+        public async Task<LLMResponse> GetToolCalls(Conversation prompt, ToolCallMode toolCallMode = ToolCallMode.Auto, int maxRetries = 3, params Tool[] tools)
         {
             tools = tools?.Any() == true ? tools : toolRegistry.RegisteredTools.ToArray();
             if (tools.Length == 0) throw new ArgumentException("No tools available.", nameof(tools));

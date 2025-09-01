@@ -74,25 +74,23 @@ namespace Agenty.LLMCore.Providers.OpenAI
         public static JsonObject ToOpenAiSchema(this Tool tool)
         {
             // Ensure parameters schema has "type": "object"
-            if (!tool.ParametersSchema.ContainsKey("type"))
+            if (tool.ParametersSchema != null && !tool.ParametersSchema.ContainsKey("type"))
                 tool.ParametersSchema["type"] = "object";
 
             return new JsonObject
             {
                 ["name"] = tool.Name,
                 ["description"] = tool.Description,
-                ["parameters"] = tool.ParametersSchema?.DeepClone()
+                ["parameters"] = tool.ParametersSchema?.DeepClone() ?? new JsonObject()
             };
         }
 
-        public static string ToOpenAiSchemaJson(this Tool tool, bool indented = true)
+        public static JsonArray ToOpenAiSchema(this IToolRegistry registry)
         {
-            var options = new JsonSerializerOptions
-            {
-                WriteIndented = indented
-            };
-
-            return JsonSerializer.Serialize(tool.ToOpenAiSchema(), options);
+            var schemas = new JsonArray();
+            foreach (var tool in registry.RegisteredTools)
+                schemas.Add(tool.ToOpenAiSchema());
+            return schemas;
         }
     }
 }

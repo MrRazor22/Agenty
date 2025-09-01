@@ -19,59 +19,64 @@ namespace Agenty.LLMCore.ToolHandling
         [JsonIgnore] public List<string> Tags { get; set; } = new();
         public override string ToString()
         {
-            //var props = ParametersSchema?["properties"]?.AsObject();
-            //var args = props != null
-            //    ? string.Join(", ", props.Select(p => p.Key))
-            //    : "";
+            var props = ParametersSchema?["properties"]?.AsObject();
+            var args = props != null
+                ? string.Join(", ", props.Select(p => p.Key))
+                : "";
 
-            //var argPart = args.Length > 0 ? $"({args})" : "()";
+            var argPart = args.Length > 0 ? $"({args})" : "()";
 
-            //return !string.IsNullOrWhiteSpace(Description)
-            //    ? $"{Name}{argPart} => {Description}"
-            //    : $"{Name}{argPart}";
-            return Name;
-            //return this.ToOpenAiSchemaJson();
+            return !string.IsNullOrWhiteSpace(Description)
+                ? $"{Name}{argPart} => {Description}"
+                : $"{Name}{argPart}";
+            //return Name;
         }
     }
 
-    public class ToolCall(string id, string name, JsonObject arguments, object?[]? parameters = null, string? message = null)
+    public class ToolCall
     {
+        [JsonConstructor] // 👈 tells serializer to use this
+        public ToolCall(string id, string name, JsonObject arguments)
+        {
+            Id = id;
+            Name = name;
+            Arguments = arguments;
+        }
+
+        public ToolCall(string id, string name, JsonObject arguments, object?[]? parameters = null, string? message = null)
+            : this(id, name, arguments)
+        {
+            Parameters = parameters;
+            Message = message;
+        }
+
         [JsonPropertyName("id")]
-        public string Id { get; set; } = id;
+        public string Id { get; set; }
 
         [JsonPropertyName("name")]
-        public string Name { get; private set; } = name;
+        public string Name { get; private set; }
 
         [JsonPropertyName("arguments")]
-        public JsonObject Arguments { get; private set; } = arguments;
+        public JsonObject Arguments { get; private set; }
 
         [JsonIgnore]
-        public object?[]? Parameters { get; private set; } = parameters;
+        public object?[]? Parameters { get; private set; }
 
-        [JsonIgnore] // Exclude AssistantMessage if not needed
-        public string? Message { get; set; } = message;
+        [JsonIgnore]
+        public string? Message { get; set; }
 
-        // Secondary constructor: message-only
-        public ToolCall(string message)
-            : this("", "", new JsonObject(), [], message) { }
+        // message-only ctor stays fine
+        public ToolCall(string message) : this("", "", new JsonObject()) => Message = message;
 
-        // === Empty ToolCall singleton ===
-        public static ToolCall Empty { get; } = new(
-            id: string.Empty,
-            name: string.Empty,
-            arguments: new JsonObject(),
-            parameters: null,
-            message: string.Empty
-        );
+        public static ToolCall Empty { get; } = new("", "", new JsonObject());
 
-        // === Check if this is Empty ===
         public bool IsEmpty =>
             string.IsNullOrWhiteSpace(Name) &&
             string.IsNullOrWhiteSpace(Message);
 
         public override string ToString()
         {
-            var argsStr = Arguments != null && Arguments.Count > 0
+            var argsStr = Arguments is { Count: > 0 }
                 ? string.Join(", ", Arguments.Select(kvp => $"{kvp.Key}: {kvp.Value?.ToJsonString()}"))
                 : "none";
 
