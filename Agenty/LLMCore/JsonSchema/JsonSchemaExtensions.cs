@@ -15,6 +15,13 @@ namespace Agenty.LLMCore.JsonSchema
 {
     public static class JsonSchemaExtensions
     {
+        public static string NormalizeArgs(this JsonObject args)
+        {
+            return string.Join("&",
+                args.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(kvp => $"{kvp.Key}={kvp.Value?.ToJsonString() ?? "null"}"));
+        }
+
         public static string AsJSONString(this object? obj)
         {
             if (obj == null) return "<null>";

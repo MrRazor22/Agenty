@@ -93,11 +93,11 @@ namespace Agenty.LLMCore.ToolHandling
         #endregion
 
         public async Task<LLMResponse> GetToolCalls(
-            Conversation prompt,
-            ToolCallMode toolCallMode = ToolCallMode.Auto,
-            int maxRetries = 3,
-            LLMMode mode = LLMMode.Balanced,   // 🔑 Balanced by default
-            params Tool[] tools)
+    Conversation prompt,
+    ToolCallMode toolCallMode = ToolCallMode.Auto,
+    int maxRetries = 3,
+    LLMMode mode = LLMMode.Balanced,
+    params Tool[] tools)
         {
             tools = tools?.Any() == true ? tools : toolRegistry.RegisteredTools.ToArray();
             if (tools.Length == 0) throw new ArgumentException("No tools available.", nameof(tools));
@@ -106,7 +106,6 @@ namespace Agenty.LLMCore.ToolHandling
 
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
-                // 🔑 Pass AgentMode down
                 var response = await llm.GetToolCallResponse(intPrompt, tools, toolCallMode, mode);
 
                 try
@@ -118,6 +117,25 @@ namespace Agenty.LLMCore.ToolHandling
                         {
                             if (tools.Any(t => t.Name == toolCall.Name))
                             {
+                                var argKey = toolCall.Arguments != null ? toolCall.Arguments.NormalizeArgs() : "";
+
+                                if (prompt.Any(m =>
+                                    m.Role == Role.Assistant &&
+                                    m.ToolCalls?.Any(tc => tc.Name == toolCall.Name &&
+                                                           tc.Arguments.NormalizeArgs() == argKey) == true))
+                                {
+                                    var lastResult = prompt.LastOrDefault(m =>
+                                        m.Role == Role.Tool &&
+                                        m.ToolCalls?.Any(tc => tc.Name == toolCall.Name
+                                                               && (tc.Arguments?.ToJsonString() ?? "") == argKey) == true
+                                    )?.Content ?? "result above";
+
+                                    intPrompt.Add(Role.User,
+                                        $"Tool `{toolCall.Name}` was already called with the same arguments. " +
+                                        $"The result was: {lastResult}. ");
+                                    continue;
+                                }
+
                                 valid.Add(new ToolCall(
                                     toolCall.Id ?? Guid.NewGuid().ToString(),
                                     toolCall.Name,
