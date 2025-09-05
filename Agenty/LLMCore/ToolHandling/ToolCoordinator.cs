@@ -18,9 +18,20 @@ namespace Agenty.LLMCore.ToolHandling
 {
     public interface IToolCoordinator
     {
-        Task<LLMResponse> GetToolCalls(Conversation prompt, ToolCallMode toolCallMode = ToolCallMode.Auto, int maxRetries = 0, params Tool[] tools);
+        Task<LLMResponse> GetToolCalls(
+            Conversation prompt,
+            ToolCallMode toolCallMode = ToolCallMode.Auto,
+            int maxRetries = 0,
+            AgentMode mode = AgentMode.Balanced,  // 🔑 added
+            params Tool[] tools);
+
         LLMResponse TryExtractInlineToolCall(string content, bool strict = false);
-        Task<T?> GetStructuredResponse<T>(Conversation prompt, int maxRetries = 3);
+
+        Task<T?> GetStructuredResponse<T>(
+            Conversation prompt,
+            int maxRetries = 3,
+            AgentMode mode = AgentMode.Deterministic); // 🔑 added
+
         Task HandleToolCall(List<ToolCall> toolCall, Conversation chat);
         Task<dynamic> Invoke(ToolCall tool);
     }
@@ -81,7 +92,12 @@ namespace Agenty.LLMCore.ToolHandling
         );
         #endregion
 
-        public async Task<LLMResponse> GetToolCalls(Conversation prompt, ToolCallMode toolCallMode = ToolCallMode.Auto, int maxRetries = 3, params Tool[] tools)
+        public async Task<LLMResponse> GetToolCalls(
+            Conversation prompt,
+            ToolCallMode toolCallMode = ToolCallMode.Auto,
+            int maxRetries = 3,
+            AgentMode mode = AgentMode.Balanced,   // 🔑 Balanced by default
+            params Tool[] tools)
         {
             tools = tools?.Any() == true ? tools : toolRegistry.RegisteredTools.ToArray();
             if (tools.Length == 0) throw new ArgumentException("No tools available.", nameof(tools));
@@ -90,7 +106,8 @@ namespace Agenty.LLMCore.ToolHandling
 
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
-                var response = await llm.GetToolCallResponse(intPrompt, tools, toolCallMode);
+                // 🔑 Pass AgentMode down
+                var response = await llm.GetToolCallResponse(intPrompt, tools, toolCallMode, mode);
 
                 try
                 {
@@ -125,7 +142,6 @@ namespace Agenty.LLMCore.ToolHandling
                             FinishReason = response.FinishReason
                         };
                     }
-
                 }
                 catch
                 {
@@ -143,7 +159,10 @@ namespace Agenty.LLMCore.ToolHandling
             return new LLMResponse();
         }
 
-        public async Task<T?> GetStructuredResponse<T>(Conversation prompt, int maxRetries = 3)
+        public async Task<T?> GetStructuredResponse<T>(
+            Conversation prompt,
+            int maxRetries = 3,
+            AgentMode mode = AgentMode.Deterministic) // 🔑 Deterministic by default
         {
             var intPrompt = Conversation.Clone(prompt);
 
@@ -151,7 +170,12 @@ namespace Agenty.LLMCore.ToolHandling
             {
                 try
                 {
-                    var jsonResponse = await llm.GetStructuredResponse(intPrompt, JsonSchemaExtensions.GetSchemaFor<T>());
+                    // 🔑 Pass AgentMode down
+                    var jsonResponse = await llm.GetStructuredResponse(
+                        intPrompt,
+                        JsonSchemaExtensions.GetSchemaFor<T>(),
+                        mode);
+
                     if (jsonResponse != null)
                     {
                         var jsonString = jsonResponse.ToJsonString();

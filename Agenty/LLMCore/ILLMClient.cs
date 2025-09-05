@@ -10,16 +10,26 @@ namespace Agenty.LLMCore
     public interface ILLMClient
     {
         void Initialize(string url, string apiKey, string modelName);
-        Task<string> GetResponse(Conversation prompt);
-        IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt);
-        Task<LLMResponse> GetToolCallResponse(Conversation prompt, IEnumerable<Tool> tools, ToolCallMode toolCallMode = ToolCallMode.Auto);
-        Task<JsonNode> GetStructuredResponse(Conversation prompt, JsonObject responseFormat);
+        Task<string> GetResponse(Conversation prompt, AgentMode mode = AgentMode.Balanced);
+        IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt, AgentMode mode = AgentMode.Balanced);
+        Task<LLMResponse> GetToolCallResponse(
+            Conversation prompt,
+            IEnumerable<Tool> tools,
+            ToolCallMode toolCallMode = ToolCallMode.Auto,
+            AgentMode mode = AgentMode.Deterministic);
+        Task<JsonNode> GetStructuredResponse(Conversation prompt, JsonObject responseFormat, AgentMode mode = AgentMode.Deterministic);
     }
     public enum ToolCallMode
     {
         None,     // expose tools but forbid calls (Thought stage)
         Auto,     // allow text or tool calls (Action stage)
         Required  // force tool call (rare, like guardrails)
+    }
+    public enum AgentMode
+    {
+        Deterministic,  // gates, routing, grading
+        Balanced,       // normal reasoning
+        Creative        // brainstorming / open ended
     }
     public class LLMResponse
     {

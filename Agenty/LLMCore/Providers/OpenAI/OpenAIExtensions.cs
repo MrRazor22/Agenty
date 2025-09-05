@@ -70,6 +70,28 @@ namespace Agenty.LLMCore.Providers.OpenAI
                 }
             }
         }
+        public static void ApplyAgentMode(this ChatCompletionOptions options, AgentMode mode)
+        {
+            switch (mode)
+            {
+                case AgentMode.Deterministic:
+                    options.Temperature = 0f;
+                    options.TopP = 1f;
+                    break;
+                case AgentMode.Balanced:
+                    options.Temperature = 0.5f;
+                    options.TopP = 0.9f;
+                    break;
+                case AgentMode.Creative:
+                    options.Temperature = 0.9f;
+                    options.TopP = 1f;
+                    break;
+                default:
+                    options.Temperature = 0.5f;
+                    options.TopP = 1f;
+                    break;
+            }
+        }
 
         public static JsonObject ToOpenAiSchema(this Tool tool)
         {

@@ -38,10 +38,11 @@ namespace Agenty.LLMCore.Providers.OpenAI
                 throw new InvalidOperationException("Client not initialized. Call Initialize() first.");
         }
 
-        public async Task<string> GetResponse(Conversation prompt)
+        public async Task<string> GetResponse(Conversation prompt, AgentMode mode = AgentMode.Balanced)
         {
             EnsureInitialized();
             ChatCompletionOptions options = new() { ToolChoice = ChatToolChoice.CreateNoneChoice() };
+            options.ApplyAgentMode(mode);
 
             var response = await _chatClient!.CompleteChatAsync(prompt.ToChatMessages(), options);
 
@@ -50,23 +51,34 @@ namespace Agenty.LLMCore.Providers.OpenAI
             return textContent;
         }
 
-        public async IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt)
+        public async IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt, AgentMode mode = AgentMode.Balanced)
         {
             EnsureInitialized();
+            ChatCompletionOptions options = new();
+            options.ApplyAgentMode(mode);
 
-            await foreach (var update in _chatClient!.CompleteChatStreamingAsync(prompt.ToChatMessages()))
+            await foreach (var update in _chatClient!.CompleteChatStreamingAsync(prompt.ToChatMessages(), options))
             {
                 foreach (var part in update.ContentUpdate)
                     yield return part.Text;
             }
         }
-        public async Task<LLMResponse> GetToolCallResponse(Conversation prompt, IEnumerable<Tool> tools, ToolCallMode toolCallMode = ToolCallMode.Auto)
+
+        public async Task<LLMResponse> GetToolCallResponse(
+            Conversation prompt,
+            IEnumerable<Tool> tools,
+            ToolCallMode toolCallMode = ToolCallMode.Auto,
+            AgentMode mode = AgentMode.Deterministic)
         {
             EnsureInitialized();
 
             List<ChatTool> chatTools = tools.ToChatTools();
 
-            ChatCompletionOptions options = new() { ToolChoice = toolCallMode.ToChatToolChoice() };
+            ChatCompletionOptions options = new()
+            {
+                ToolChoice = toolCallMode.ToChatToolChoice()
+            };
+            options.ApplyAgentMode(mode);
 
             chatTools.ForEach(t => options.Tools.Add(t));
 
@@ -105,7 +117,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             };
         }
 
-        public async Task<JsonNode> GetStructuredResponse(Conversation prompt, JsonObject responseFormat)
+        public async Task<JsonNode> GetStructuredResponse(Conversation prompt, JsonObject responseFormat, AgentMode mode = AgentMode.Deterministic)
         {
             EnsureInitialized();
 
@@ -116,13 +128,12 @@ namespace Agenty.LLMCore.Providers.OpenAI
                     jsonSchema: BinaryData.FromString(responseFormat.ToJsonString()),
                     jsonSchemaIsStrict: true)
             };
+            options.ApplyAgentMode(mode);
 
             ChatCompletion completion = await _chatClient!.CompleteChatAsync(prompt.ToChatMessages(), options);
 
             using JsonDocument structuredJson = JsonDocument.Parse(completion.Content[0].Text);
             return JsonNode.Parse(structuredJson.RootElement.GetRawText())!;
         }
-
     }
 }
-

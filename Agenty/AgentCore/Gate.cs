@@ -4,13 +4,20 @@ using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using ILogger = Agenty.LLMCore.Logging.ILogger;
 
 namespace Agenty.AgentCore
 {
-    public enum Verdict { yes, no }
-    public record Answer(int confidence_score, string explanation);
+    public enum Verdict
+    {
+        [JsonPropertyName("no")]
+        no,
+        [JsonPropertyName("yes")]
+        yes
+    }
+    public record Answer(Verdict confidence_score, string explanation);
     public record SummaryResult(string summary);
 
     class Gate
@@ -26,13 +33,13 @@ namespace Agenty.AgentCore
 
 
         // Generic structured grading helper
-        private async Task<T> Grade<T>(string systemPrompt, string userPrompt)
+        private async Task<T> Grade<T>(string systemPrompt, string userPrompt, AgentMode mode)
         {
             var gateChat = new Conversation()
                .Add(Role.System, systemPrompt)
                .Add(Role.User, userPrompt);
 
-            var result = await _coord.GetStructuredResponse<T>(gateChat);
+            var result = await _coord.GetStructuredResponse<T>(gateChat, mode: mode);
             _logger?.Log(LogLevel.Debug, $"{typeof(T).Name}", result.AsJSONString());
             return result;
         }
@@ -40,10 +47,9 @@ namespace Agenty.AgentCore
         // Common grading gates
         public Task<Answer> CheckAnswer(string goal, string response) =>
     Grade<Answer>(
-        @"You are a strict grader. 
-Decide how well the ASSISTANT RESPONSE satisfies the USER REQUEST. 
-Always return JSON with: { confidence_score: int (0-100), explanation: string }.",
-        $"USER REQUEST: {goal}\nASSISTANT RESPONSE: {response}"
+        @"You are a strict grader. Decide how well the RESPONSE satisfies the REQUEST.",
+        $"REQUEST: {goal}\n RESPONSE: {response}",
+        AgentMode.Deterministic
     );
 
 
@@ -53,11 +59,12 @@ Always return JSON with: { confidence_score: int (0-100), explanation: string }.
             var history = chat.ToHistoyString(includeSystem: false);
 
             return Grade<SummaryResult>(
-                @"You are summarizing the assistant response to produce a single consolidated final answer 
-              that directly responds to the USER REQUEST.
+                @"You are summarizing the response to produce a single consolidated final answer 
+              that directly responds to the REQUEST.
               - Use all relevant facts and tool results. 
               - Make it user friendly.",
-                $"USER REQUEST: {userRequest}\nASSISTANT RESPONSE:\n{history}"
+                $"REQUEST: {userRequest}\n RESPONSE:\n{history}",
+                AgentMode.Creative
             );
         }
     }

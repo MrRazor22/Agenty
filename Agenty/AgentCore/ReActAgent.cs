@@ -15,7 +15,7 @@ namespace Agenty.AgentCore
         private ToolCoordinator _coord = null!;
         private readonly IToolRegistry _tools = new ToolRegistry();
         Conversation _globalChat;
-        Gate? _grader;
+        Gate? _gate;
         ILogger _logger;
         string _systemPrompt = "You are an assistant. " +
                 "For complex tasks, always plan step by step. " +
@@ -40,7 +40,7 @@ namespace Agenty.AgentCore
         public ReActAgent WithLogger(ILogger logger)
         {
             _logger = logger;
-            _grader = new Gate(_coord, logger);
+            _gate = new Gate(_coord, logger);
             return this;
         }
 
@@ -60,10 +60,10 @@ namespace Agenty.AgentCore
 
                 await ExecuteToolChaining(response, sessionChat);
 
-                sum = await _grader!.SummarizeConversation(sessionChat, goal);
-                var answer = await _grader!.CheckAnswer(goal, sum.summary);
+                sum = await _gate!.SummarizeConversation(sessionChat, goal);
+                var answer = await _gate!.CheckAnswer(goal, sum.summary);
 
-                if (answer.confidence_score >= 80)
+                if (answer.confidence_score == Verdict.yes)
                 {
                     _globalChat.Add(Role.User, goal)
                                 .Add(Role.Assistant, sum.summary);
@@ -72,7 +72,7 @@ namespace Agenty.AgentCore
             }
             return await _llm.GetResponse(
                 sessionChat.Add(Role.User,
-                $"Answer the user’s request: {goal}. Use the available tool results and reasonings so far. Make the response clear and user-friendly."));
+                $"Answer the user’s request: {goal}. Use the available tool results and reasonings so far. Make the response clear and user-friendly."), AgentMode.Creative);
         }
 
         private async Task ExecuteToolChaining(LLMResponse response, Conversation chat)
