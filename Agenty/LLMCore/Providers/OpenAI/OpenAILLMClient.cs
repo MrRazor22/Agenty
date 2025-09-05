@@ -38,7 +38,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
                 throw new InvalidOperationException("Client not initialized. Call Initialize() first.");
         }
 
-        public async Task<string> GetResponse(Conversation prompt, AgentMode mode = AgentMode.Balanced)
+        public async Task<string> GetResponse(Conversation prompt, LLMMode mode = LLMMode.Balanced)
         {
             EnsureInitialized();
             ChatCompletionOptions options = new() { ToolChoice = ChatToolChoice.CreateNoneChoice() };
@@ -51,7 +51,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             return textContent;
         }
 
-        public async IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt, AgentMode mode = AgentMode.Balanced)
+        public async IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt, LLMMode mode = LLMMode.Balanced)
         {
             EnsureInitialized();
             ChatCompletionOptions options = new();
@@ -68,7 +68,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             Conversation prompt,
             IEnumerable<Tool> tools,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
-            AgentMode mode = AgentMode.Deterministic)
+            LLMMode mode = LLMMode.Deterministic)
         {
             EnsureInitialized();
 
@@ -117,7 +117,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             };
         }
 
-        public async Task<JsonNode> GetStructuredResponse(Conversation prompt, JsonObject responseFormat, AgentMode mode = AgentMode.Deterministic)
+        public async Task<JsonNode> GetStructuredResponse(Conversation prompt, JsonObject responseFormat, LLMMode mode = LLMMode.Deterministic)
         {
             EnsureInitialized();
 

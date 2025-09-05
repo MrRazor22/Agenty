@@ -22,7 +22,7 @@ namespace Agenty.LLMCore.ToolHandling
             Conversation prompt,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
             int maxRetries = 0,
-            AgentMode mode = AgentMode.Balanced,  // 🔑 added
+            LLMMode mode = LLMMode.Balanced,  // 🔑 added
             params Tool[] tools);
 
         LLMResponse TryExtractInlineToolCall(string content, bool strict = false);
@@ -30,7 +30,7 @@ namespace Agenty.LLMCore.ToolHandling
         Task<T?> GetStructuredResponse<T>(
             Conversation prompt,
             int maxRetries = 3,
-            AgentMode mode = AgentMode.Deterministic); // 🔑 added
+            LLMMode mode = LLMMode.Deterministic); // 🔑 added
 
         Task HandleToolCall(List<ToolCall> toolCall, Conversation chat);
         Task<dynamic> Invoke(ToolCall tool);
@@ -96,7 +96,7 @@ namespace Agenty.LLMCore.ToolHandling
             Conversation prompt,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
             int maxRetries = 3,
-            AgentMode mode = AgentMode.Balanced,   // 🔑 Balanced by default
+            LLMMode mode = LLMMode.Balanced,   // 🔑 Balanced by default
             params Tool[] tools)
         {
             tools = tools?.Any() == true ? tools : toolRegistry.RegisteredTools.ToArray();
@@ -162,7 +162,7 @@ namespace Agenty.LLMCore.ToolHandling
         public async Task<T?> GetStructuredResponse<T>(
             Conversation prompt,
             int maxRetries = 3,
-            AgentMode mode = AgentMode.Deterministic) // 🔑 Deterministic by default
+            LLMMode mode = LLMMode.Deterministic) // 🔑 Deterministic by default
         {
             var intPrompt = Conversation.Clone(prompt);
 

@@ -72,7 +72,7 @@ namespace Agenty.AgentCore
             }
             return await _llm.GetResponse(
                 sessionChat.Add(Role.User,
-                $"Answer the user’s request: {goal}. Use the available tool results and reasonings so far. Make the response clear and user-friendly."), AgentMode.Creative);
+                $"Answer the user’s request: {goal}. Use the available tool results and reasonings so far. Make the response clear and user-friendly."), LLMMode.Creative);
         }
 
         private async Task ExecuteToolChaining(LLMResponse response, Conversation chat)

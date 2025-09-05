@@ -33,7 +33,7 @@ namespace Agenty.AgentCore
 
 
         // Generic structured grading helper
-        private async Task<T> Grade<T>(string systemPrompt, string userPrompt, AgentMode mode)
+        private async Task<T> Grade<T>(string systemPrompt, string userPrompt, LLMMode mode)
         {
             var gateChat = new Conversation()
                .Add(Role.System, systemPrompt)
@@ -49,7 +49,7 @@ namespace Agenty.AgentCore
     Grade<Answer>(
         @"You are a strict grader. Decide how well the RESPONSE satisfies the REQUEST.",
         $"REQUEST: {goal}\n RESPONSE: {response}",
-        AgentMode.Deterministic
+        LLMMode.Deterministic
     );
 
 
@@ -64,7 +64,7 @@ namespace Agenty.AgentCore
               - Use all relevant facts and tool results. 
               - Make it user friendly.",
                 $"REQUEST: {userRequest}\n RESPONSE:\n{history}",
-                AgentMode.Creative
+                LLMMode.Creative
             );
         }
     }
