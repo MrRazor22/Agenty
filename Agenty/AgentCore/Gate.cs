@@ -56,7 +56,7 @@ namespace Agenty.AgentCore
         // ✅ Summarizer gate
         public Task<SummaryResult> SummarizeConversation(Conversation chat, string userRequest)
         {
-            var history = chat.ToHistoyString(includeSystem: false);
+            var history = chat.ToString(includeSystem: false);
 
             return Grade<SummaryResult>(
                 @"You are summarizing the response to produce a single consolidated final answer 

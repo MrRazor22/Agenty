@@ -1,4 +1,5 @@
-﻿using Agenty.LLMCore.ToolHandling;
+﻿using Agenty.LLMCore.JsonSchema;
+using Agenty.LLMCore.ToolHandling;
 using System.Text;
 
 namespace Agenty.LLMCore
@@ -58,7 +59,7 @@ namespace Agenty.LLMCore
             return this;
         }
 
-        public string ToHistoyString(bool includeSystem = true)
+        public string ToString(bool includeSystem = true)
         {
             var sb = new StringBuilder();
 
@@ -85,6 +86,24 @@ namespace Agenty.LLMCore
             }
 
             return sb.ToString();
+        }
+
+        public bool IsToolAlreadyCalled(ToolCall toolCall)
+        {
+            var argKey = toolCall.Arguments != null ? toolCall.Arguments.NormalizeArgs() : "";
+            return this.Any(m =>
+                              m.Role == Role.Assistant &&
+                              m.ToolCalls?.Any(tc => tc.Name == toolCall.Name &&
+                              tc.Arguments.NormalizeArgs() == argKey) == true);
+        }
+        public string GetLastToolCallResult(ToolCall toolCall)
+        {
+            var argKey = toolCall.Arguments != null ? toolCall.Arguments.NormalizeArgs() : "";
+            return this.LastOrDefault(m =>
+                                      m.Role == Role.Tool &&
+                                      m.ToolCalls?.Any(tc => tc.Name == toolCall.Name
+                                                             && (tc.Arguments?.ToJsonString() ?? "") == argKey) == true
+                                  )?.Content ?? "result above";
         }
     }
 }

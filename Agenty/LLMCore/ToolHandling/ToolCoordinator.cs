@@ -115,20 +115,11 @@ namespace Agenty.LLMCore.ToolHandling
                     {
                         foreach (var toolCall in response.ToolCalls)
                         {
-                            if (tools.Any(t => t.Name == toolCall.Name))
+                            if (toolRegistry.Contains(toolCall.Name))
                             {
-                                var argKey = toolCall.Arguments != null ? toolCall.Arguments.NormalizeArgs() : "";
-
-                                if (prompt.Any(m =>
-                                    m.Role == Role.Assistant &&
-                                    m.ToolCalls?.Any(tc => tc.Name == toolCall.Name &&
-                                                           tc.Arguments.NormalizeArgs() == argKey) == true))
+                                if (prompt.IsToolAlreadyCalled(toolCall))
                                 {
-                                    var lastResult = prompt.LastOrDefault(m =>
-                                        m.Role == Role.Tool &&
-                                        m.ToolCalls?.Any(tc => tc.Name == toolCall.Name
-                                                               && (tc.Arguments?.ToJsonString() ?? "") == argKey) == true
-                                    )?.Content ?? "result above";
+                                    string lastResult = prompt.GetLastToolCallResult(toolCall);
 
                                     intPrompt.Add(Role.User,
                                         $"Tool `{toolCall.Name}` was already called with the same arguments. " +
