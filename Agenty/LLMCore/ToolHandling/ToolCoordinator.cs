@@ -136,6 +136,13 @@ namespace Agenty.LLMCore.ToolHandling
                             }
                             else if (!string.IsNullOrWhiteSpace(response.AssistantMessage))
                             {
+                                if (prompt.IsLastAssistantMessageSame(response.AssistantMessage))
+                                {
+                                    intPrompt.Add(Role.User,
+                                        "You just gave the exact same assistant message. Don't repeat yourself — build on the previous response instead.");
+                                    continue;
+                                }
+
                                 var LLMResponse = TryExtractInlineToolCall(response.AssistantMessage);
                                 if (LLMResponse != null) return LLMResponse;
                             }

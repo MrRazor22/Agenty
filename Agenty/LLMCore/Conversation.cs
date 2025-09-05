@@ -68,25 +68,32 @@ namespace Agenty.LLMCore
                 if (!includeSystem && chat.Role == Role.System)
                     continue;
 
-                sb.Append('[').Append(chat.Role).Append("] ");
-
                 if (!string.IsNullOrWhiteSpace(chat.Content))
                 {
-                    sb.AppendLine(chat.Content.Trim());
+                    sb.Append(chat.Role).Append(": ")
+                      .AppendLine(chat.Content.Trim());
                 }
                 else if (chat.ToolCalls != null && chat.ToolCalls.Count > 0)
                 {
                     foreach (var call in chat.ToolCalls)
-                        sb.AppendLine(call.ToString()); // relies on ToolCall.ToString()
+                    {
+                        sb.Append(chat.Role);
+                        if (chat.Role == Role.Assistant)
+                            sb.Append(" (ToolCall)");
+                        if (chat.Role == Role.Tool)
+                            sb.Append(" (").Append(call.Name).Append(")");
+                        sb.Append(": ").AppendLine(call.ToString());
+                    }
                 }
                 else
                 {
-                    sb.AppendLine("<empty>");
+                    sb.Append(chat.Role).Append(": <empty>").AppendLine();
                 }
             }
 
             return sb.ToString();
         }
+
 
         public bool IsToolAlreadyCalled(ToolCall toolCall)
         {
@@ -105,5 +112,14 @@ namespace Agenty.LLMCore
                                                              && (tc.Arguments?.ToJsonString() ?? "") == argKey) == true
                                   )?.Content ?? "result above";
         }
+        public bool IsLastAssistantMessageSame(string? newMessage)
+        {
+            if (string.IsNullOrWhiteSpace(newMessage))
+                return false;
+
+            var last = this.LastOrDefault(m => m.Role == Role.Assistant && !string.IsNullOrWhiteSpace(m.Content));
+            return last != null && string.Equals(last.Content.Trim(), newMessage.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
     }
 }

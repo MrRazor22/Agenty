@@ -61,13 +61,17 @@ namespace Agenty.AgentCore
                 await ExecuteToolChaining(response, sessionChat);
 
                 sum = await _gate!.SummarizeConversation(sessionChat, goal);
-                var answer = await _gate!.CheckAnswer(goal, sum.summary);
+                var answer = await _gate!.CheckAnswer(goal, sessionChat);
 
                 if (answer.confidence_score == Verdict.yes)
                 {
                     _globalChat.Add(Role.User, goal)
                                 .Add(Role.Assistant, sum.summary);
                     return sum.summary;
+                }
+                else
+                {
+                    sessionChat.Add(Role.User, answer.explanation + " Continue.");
                 }
             }
             return await _llm.GetResponse(

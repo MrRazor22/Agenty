@@ -45,10 +45,10 @@ namespace Agenty.AgentCore
         }
 
         // Common grading gates
-        public Task<Answer> CheckAnswer(string goal, string response) =>
+        public Task<Answer> CheckAnswer(string goal, Conversation chat) =>
     Grade<Answer>(
         @"You are a strict grader. Decide how well the RESPONSE satisfies the REQUEST.",
-        $"REQUEST: {goal}\n RESPONSE: {response}",
+        $"REQUEST: {goal}\n RESPONSE: {chat.ToString()}",
         LLMMode.Deterministic
     );
 
@@ -59,11 +59,9 @@ namespace Agenty.AgentCore
             var history = chat.ToString(includeSystem: false);
 
             return Grade<SummaryResult>(
-                @"You are summarizing the response to produce a single consolidated final answer 
-              that directly responds to the REQUEST.
-              - Use all relevant facts and tool results. 
-              - Make it user friendly.",
-                $"REQUEST: {userRequest}\n RESPONSE:\n{history}",
+                @"From the conversation provided to you produce a single consolidated final answer 
+              that directly responds to the request",
+                $"REQUEST: {userRequest}\n CONVERSATION:\n{history}",
                 LLMMode.Creative
             );
         }
