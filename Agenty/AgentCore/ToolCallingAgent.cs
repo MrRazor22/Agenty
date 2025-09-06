@@ -61,11 +61,22 @@ namespace Agenty.AgentCore
                 var sum = await _gate!.SummarizeConversation(sessionChat, goal);
                 var answer = await _gate!.CheckAnswer(goal, sum.summariedAnswer);
 
-                if (answer.confidence_score != Verdict.no)
+                if (answer.confidence_score == Verdict.yes)
                 {
+                    sessionChat.Add(Role.Assistant, sum.summariedAnswer);
+                    var final = await _llm.GetResponse(sessionChat.Add(Role.User, "Give a final user friendly answer."), LLMMode.Creative);
                     _globalChat.Add(Role.User, goal)
-                                .Add(Role.Assistant, sum.summariedAnswer);
-                    return sum.summariedAnswer;
+                                   .Add(Role.Assistant, final);
+                    return final;
+                }
+                else if (answer.confidence_score == Verdict.partial)
+                {
+                    sessionChat.Add(Role.Assistant, sum.summariedAnswer);
+                    sessionChat.Add(Role.User, answer.explanation);
+                    var final = await _llm.GetResponse(sessionChat.Add(Role.User, "Give a final user friendly answer."), LLMMode.Creative);
+                    _globalChat.Add(Role.User, goal)
+                                   .Add(Role.Assistant, final);
+                    return final;
                 }
                 else
                 {

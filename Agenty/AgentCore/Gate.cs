@@ -38,26 +38,30 @@ namespace Agenty.AgentCore
             return result;
         }
 
-        // Common grading gates
         public Task<Answer> CheckAnswer(string goal, string response) =>
     Grade<Answer>(
-        @"Check whether the RESPONSE reasonably satisfies the USER REQUEST.",
+        @"You are a strict evaluator. 
+        Judge whether the RESPONSE directly and reasonably addresses the USER REQUEST. 
+        If it only partly addresses it, return 'partial'. 
+        Do not accept vague, off-topic, or padded responses as correct.",
         $"USER REQUEST: {goal}\n RESPONSE: {response}",
         LLMMode.Deterministic
     );
 
-
-        // ✅ Summarizer gate
         public Task<SummaryResult> SummarizeConversation(Conversation chat, string userRequest)
         {
             var history = chat.ToString(~ChatFilter.System);
 
             return Grade<SummaryResult>(
-                @"Answer the user's question as best as possible with the available context",
-                $"USER Question: {userRequest}\n  CONTEXT:\n{history}",
+                @"Provide a concise final answer to the USER QUESTION using only the CONTEXT. 
+Always include any relevant observations from the CONTEXT, even if they do not fully answer the question. 
+If the information is incomplete, state the limitation clearly."
+,
+                $"USER QUESTION: {userRequest}\nCONTEXT:\n{history}",
                 LLMMode.Creative
             );
         }
+
 
     }
 }
