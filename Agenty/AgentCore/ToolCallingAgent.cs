@@ -70,7 +70,7 @@ namespace Agenty.AgentCore
                 }
                 else
                 {
-                    sessionChat.Add(Role.User, answer.explanation + " Continue.", isTemporary: true);
+                    sessionChat.Add(Role.User, answer.explanation + " Use the tools and provide the correct response.", isTemporary: true);
                 }
             }
             return await _llm.GetResponse(
