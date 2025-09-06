@@ -4,6 +4,17 @@ using System.Text;
 
 namespace Agenty.LLMCore
 {
+    [Flags]
+    public enum ChatFilter
+    {
+        None = 0,
+        System = 1 << 0,
+        User = 1 << 1,
+        Assistant = 1 << 2,
+        ToolCalls = 1 << 3,     // the assistant's tool *call* (name + args)
+        ToolResults = 1 << 4,   // tool output (Tool role content)
+        All = System | User | Assistant | ToolCalls | ToolResults
+    }
     public enum Role { System, Assistant, User, Tool }
 
     public record Chat(Role Role, string? Content, List<ToolCall>? ToolCalls = null, bool IsTemporary = false);
@@ -59,30 +70,67 @@ namespace Agenty.LLMCore
             return this;
         }
 
-        public string ToString(bool includeSystem = true)
+        public string ToString(ChatFilter filter = ChatFilter.All)
         {
             var sb = new StringBuilder();
 
             foreach (var chat in this)
             {
-                if (!includeSystem && chat.Role == Role.System)
-                    continue;
+                // Role-level include check
+                if (chat.Role == Role.System && !filter.HasFlag(ChatFilter.System)) continue;
+                if (chat.Role == Role.User && !filter.HasFlag(ChatFilter.User)) continue;
+                if (chat.Role == Role.Assistant && !filter.HasFlag(ChatFilter.Assistant) && !filter.HasFlag(ChatFilter.ToolCalls)) continue;
+                if (chat.Role == Role.Tool && !filter.HasFlag(ChatFilter.ToolResults)) continue;
 
+                // If we only want tool calls/results, skip non-matching roles
+                // (Assistant may still emit tool calls, so handle below)
+                if (filter.HasFlag(ChatFilter.ToolCalls) || filter.HasFlag(ChatFilter.ToolResults))
+                {
+                    // If chat has toolcalls, and ToolCalls flag is set, print them
+                    if (chat.ToolCalls != null && chat.ToolCalls.Count > 0)
+                    {
+                        if (filter.HasFlag(ChatFilter.ToolCalls))
+                        {
+                            foreach (var call in chat.ToolCalls)
+                            {
+                                // Show assistant tool-call only if assistant included OR ToolCalls explicitly requested
+                                sb.Append("Assistant (ToolCall): ")
+                                  .AppendLine(call.ToString());
+                            }
+                        }
+                    }
+
+                    // If this is a Tool role and ToolResults requested, print content
+                    if (chat.Role == Role.Tool && filter.HasFlag(ChatFilter.ToolResults))
+                    {
+                        if (!string.IsNullOrWhiteSpace(chat.Content))
+                            sb.Append("Tool").Append(" (").Append(chat.ToolCalls?.FirstOrDefault()?.Name ?? "result").Append("): ")
+                              .AppendLine(chat.Content.Trim());
+                    }
+
+                    // Continue to next chat — when using Tool* flags we avoid duplicate printing of normal content
+                    // Unless the caller also asked for Assistant/User/System content explicitly
+                    if (!filter.HasFlag(ChatFilter.Assistant) && !filter.HasFlag(ChatFilter.User) && !filter.HasFlag(ChatFilter.System))
+                        continue;
+                }
+
+                // Normal content printing for System/User/Assistant (non-tool content)
                 if (!string.IsNullOrWhiteSpace(chat.Content))
                 {
+                    // skip tool role content if ToolResults not requested (already handled above)
+                    if (chat.Role == Role.Tool && !filter.HasFlag(ChatFilter.ToolResults)) continue;
+
                     sb.Append(chat.Role).Append(": ")
                       .AppendLine(chat.Content.Trim());
                 }
                 else if (chat.ToolCalls != null && chat.ToolCalls.Count > 0)
                 {
-                    foreach (var call in chat.ToolCalls)
+                    // If ToolCalls requested and Assistant/User/System also requested, show them inline
+                    if (filter.HasFlag(ChatFilter.ToolCalls) && (filter.HasFlag(ChatFilter.Assistant) || filter.HasFlag(ChatFilter.System) || filter.HasFlag(ChatFilter.User)))
                     {
-                        sb.Append(chat.Role);
-                        if (chat.Role == Role.Assistant)
-                            sb.Append(" (ToolCall)");
-                        if (chat.Role == Role.Tool)
-                            sb.Append(" (").Append(call.Name).Append(")");
-                        sb.Append(": ").AppendLine(call.ToString());
+                        foreach (var call in chat.ToolCalls)
+                            sb.Append(chat.Role == Role.Assistant ? "Assistant (ToolCall): " : $"{chat.Role} (ToolCall): ")
+                              .AppendLine(call.ToString());
                     }
                 }
                 else
@@ -93,7 +141,6 @@ namespace Agenty.LLMCore
 
             return sb.ToString();
         }
-
 
         public bool IsToolAlreadyCalled(ToolCall toolCall)
         {
