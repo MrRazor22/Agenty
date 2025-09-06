@@ -19,7 +19,7 @@ namespace Agenty
         public static async Task Main(string[] args)
         {
             ILogger logger = new ConsoleLogger(LogLevel.Trace);
-            var agent = ReActAgent.Create()
+            var agent = ToolCallingAgent.Create()
                         .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m")
                         .WithLogger(logger)
                         .WithTools<SearchTools>()
