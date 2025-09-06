@@ -47,7 +47,6 @@ namespace Agenty.AgentCore
         public async Task<string> ExecuteAsync(string goal, int maxRounds = 10)
         {
             var sessionChat = new Conversation();
-            var sum = new SummaryResult("");
 
             _logger.AttachTo(sessionChat);
 
@@ -60,7 +59,7 @@ namespace Agenty.AgentCore
 
                 await ExecuteToolChaining(response, sessionChat);
 
-                sum = await _gate!.SummarizeConversation(sessionChat, goal);
+                var sum = await _gate!.SummarizeConversation(sessionChat, goal);
                 var answer = await _gate!.CheckAnswer(goal, sum.summary);
 
                 if (answer.confidence_score == Verdict.yes)

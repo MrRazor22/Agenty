@@ -47,9 +47,9 @@ namespace Agenty.AgentCore
         // Common grading gates
         public Task<Answer> CheckAnswer(string goal, string response) =>
     Grade<Answer>(
-        @"Check whether your response reasonably answers the user request.",
+        @"Confirm if the response provided reasonably answers the user request.",
         $"USER REQUEST: {goal}\n RESPONSE: {response}",
-        LLMMode.Deterministic
+        LLMMode.Creative
     );
 
 
