@@ -59,34 +59,28 @@ namespace Agenty.AgentCore
                 await ExecuteToolChaining(response, sessionChat);
 
                 var sum = await _gate!.SummarizeConversation(sessionChat, goal);
-                var answer = await _gate!.CheckAnswer(goal, sum.summariedAnswer);
+                var verdict = await _gate!.CheckAnswer(goal, sum.summariedAnswer);
 
-                if (answer.confidence_score == Verdict.yes)
+                if (verdict.confidence_score is Verdict.yes or Verdict.partial)
                 {
                     sessionChat.Add(Role.Assistant, sum.summariedAnswer);
-                    var final = await _llm.GetResponse(sessionChat.Add(Role.User, "Give a final user friendly answer."), LLMMode.Creative);
+                    if (verdict.confidence_score == Verdict.partial)
+                        sessionChat.Add(Role.User, verdict.explanation);
+
+                    var final = await _llm.GetResponse(
+                        sessionChat.Add(Role.User, "Give a final user friendly answer."),
+                        LLMMode.Creative);
+
                     _globalChat.Add(Role.User, goal)
-                                   .Add(Role.Assistant, final);
+                               .Add(Role.Assistant, final);
+
                     return final;
                 }
-                else if (answer.confidence_score == Verdict.partial)
-                {
-                    sessionChat.Add(Role.Assistant, sum.summariedAnswer);
-                    sessionChat.Add(Role.User, answer.explanation);
-                    var final = await _llm.GetResponse(sessionChat.Add(Role.User, "Give a final user friendly answer."), LLMMode.Creative);
-                    _globalChat.Add(Role.User, goal)
-                                   .Add(Role.Assistant, final);
-                    return final;
-                }
-                else
-                {
-                    sessionChat.Add(
+                sessionChat.Add(
                         Role.User,
-                        answer.explanation + " If you can correct this, use the tools as needed. If not, explain clearly why the request cannot be fulfilled.",
+                        verdict.explanation + " If you can correct this, use the tools as needed. If not, explain clearly why the request cannot be fulfilled.",
                         isTemporary: true
                     );
-
-                }
             }
             return await _llm.GetResponse(
                 sessionChat.Add(Role.User,
@@ -98,7 +92,6 @@ namespace Agenty.AgentCore
             while (response.ToolCalls.Count != 0)
             {
                 await _coord.HandleToolCallSequential(response.ToolCalls, chat);
-
                 response = await _coord.GetToolCalls(chat);
             }
         }
