@@ -49,7 +49,7 @@ namespace Agenty.AgentCore
     Grade<Answer>(
         @"Confirm if the response provided reasonably answers the user request.",
         $"USER REQUEST: {goal}\n RESPONSE: {response}",
-        LLMMode.Creative
+        LLMMode.Deterministic
     );
 
 
