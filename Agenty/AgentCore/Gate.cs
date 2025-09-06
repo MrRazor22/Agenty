@@ -47,7 +47,7 @@ namespace Agenty.AgentCore
         // Common grading gates
         public Task<Answer> CheckAnswer(string goal, Conversation chat) =>
     Grade<Answer>(
-        @"You are a strict grader. Decide how well the RESPONSE satisfies the REQUEST.",
+        @"You are a fair grader. Judge whether the RESPONSE reasonably and justifiably satisfies the REQUEST.",
         $"REQUEST: {goal}\n RESPONSE: {chat.ToString()}",
         LLMMode.Deterministic
     );
@@ -56,7 +56,7 @@ namespace Agenty.AgentCore
         // ✅ Summarizer gate
         public Task<SummaryResult> SummarizeConversation(Conversation chat, string userRequest)
         {
-            var history = chat.ToString(includeSystem: false);
+            var history = chat.ToString(~ChatFilter.System);
 
             return Grade<SummaryResult>(
                 @"From the conversation provided to you produce a single consolidated final answer 

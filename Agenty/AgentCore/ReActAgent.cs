@@ -71,7 +71,7 @@ namespace Agenty.AgentCore
                 }
                 else
                 {
-                    sessionChat.Add(Role.User, answer.explanation + " Continue.");
+                    sessionChat.Add(Role.User, answer.explanation + " Continue.", isTemporary: true);
                 }
             }
             return await _llm.GetResponse(
