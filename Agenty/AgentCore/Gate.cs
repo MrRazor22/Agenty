@@ -59,8 +59,8 @@ namespace Agenty.AgentCore
             var history = chat.ToString(~ChatFilter.System);
 
             return Grade<SummaryResult>(
-                @"Summarise the conversation and answer the user request in a user friendly way.",
-                $"USER REQUEST: {userRequest}\n  CONVERSATION:\n{history}",
+                @"Answer the user request as best as possible with the available context",
+                $"USER REQUEST: {userRequest}\n  CONTEXT:\n{history}",
                 LLMMode.Creative
             );
         }
