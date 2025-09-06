@@ -7,6 +7,12 @@ using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Agenty.LLMCore
 {
+    public interface IEmbeddingClient
+    {
+        Task<float[]> GetEmbeddingAsync(string input, string? model = null);
+        Task<IReadOnlyList<float[]>> GetEmbeddingsAsync(IEnumerable<string> inputs, string? model = null);
+    }
+
     public interface ILLMClient
     {
         void Initialize(string url, string apiKey, string modelName);
