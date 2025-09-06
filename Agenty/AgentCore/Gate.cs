@@ -10,15 +10,9 @@ using ILogger = Agenty.LLMCore.Logging.ILogger;
 
 namespace Agenty.AgentCore
 {
-    public enum Verdict
-    {
-        [JsonPropertyName("no")]
-        no,
-        [JsonPropertyName("yes")]
-        yes
-    }
+    public enum Verdict { no, partial, yes }
     public record Answer(Verdict confidence_score, string explanation);
-    public record SummaryResult(string summary);
+    public record SummaryResult(string summariedAnswer);
 
     class Gate
     {
@@ -47,7 +41,7 @@ namespace Agenty.AgentCore
         // Common grading gates
         public Task<Answer> CheckAnswer(string goal, string response) =>
     Grade<Answer>(
-        @"Confirm if the response provided reasonably answers the user request.",
+        @"Check whether the RESPONSE reasonably satisfies the USER REQUEST.",
         $"USER REQUEST: {goal}\n RESPONSE: {response}",
         LLMMode.Deterministic
     );
@@ -59,8 +53,8 @@ namespace Agenty.AgentCore
             var history = chat.ToString(~ChatFilter.System);
 
             return Grade<SummaryResult>(
-                @"Answer the user request as best as possible with the available context",
-                $"USER REQUEST: {userRequest}\n  CONTEXT:\n{history}",
+                @"Answer the user's question as best as possible with the available context",
+                $"USER Question: {userRequest}\n  CONTEXT:\n{history}",
                 LLMMode.Creative
             );
         }

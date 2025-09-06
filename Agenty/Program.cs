@@ -22,11 +22,12 @@ namespace Agenty
             var agent = ToolCallingAgent.Create()
                         .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m")
                         .WithLogger(logger)
-                        .WithTools<SearchTools>()
-                        .WithTools<GeoTools>()
+                        //.WithTools<SearchTools>()
+                        //.WithTools<GeoTools>()
                         .WithTools<WeatherTool>()
-                        .WithTools<ConversionTools>()
-                        .WithTools<MathTools>();
+                        //.WithTools<ConversionTools>()
+                        //.WithTools<MathTools>()
+                        ;
 
 
             Console.WriteLine("🤖 Agenty Agent ready. Type 'exit' to quit.");

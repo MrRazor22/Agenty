@@ -19,8 +19,7 @@ namespace Agenty.AgentCore
         ILogger _logger;
         string _systemPrompt = "You are an assistant. " +
                 "For complex tasks, always plan step by step. " +
-                "If unsure, say so directly. " +
-                "Use tools if needed, or respond directly. " +
+                "Use available tools if they can provide relevant, factual data. If not, clearly state the limitation. " +
                 "Keep answers short and clear.";
 
         public static ToolCallingAgent Create() => new();
@@ -60,17 +59,22 @@ namespace Agenty.AgentCore
                 await ExecuteToolChaining(response, sessionChat);
 
                 var sum = await _gate!.SummarizeConversation(sessionChat, goal);
-                var answer = await _gate!.CheckAnswer(goal, sum.summary);
+                var answer = await _gate!.CheckAnswer(goal, sum.summariedAnswer);
 
-                if (answer.confidence_score == Verdict.yes)
+                if (answer.confidence_score != Verdict.no)
                 {
                     _globalChat.Add(Role.User, goal)
-                                .Add(Role.Assistant, sum.summary);
-                    return sum.summary;
+                                .Add(Role.Assistant, sum.summariedAnswer);
+                    return sum.summariedAnswer;
                 }
                 else
                 {
-                    sessionChat.Add(Role.User, answer.explanation + " Use the tools and provide the correct response.", isTemporary: true);
+                    sessionChat.Add(
+                        Role.User,
+                        answer.explanation + " If you can correct this, use the tools as needed. If not, explain clearly why the request cannot be fulfilled.",
+                        isTemporary: true
+                    );
+
                 }
             }
             return await _llm.GetResponse(
