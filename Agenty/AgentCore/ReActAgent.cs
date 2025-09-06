@@ -61,7 +61,7 @@ namespace Agenty.AgentCore
                 await ExecuteToolChaining(response, sessionChat);
 
                 sum = await _gate!.SummarizeConversation(sessionChat, goal);
-                var answer = await _gate!.CheckAnswer(goal, sessionChat);
+                var answer = await _gate!.CheckAnswer(goal, sum.summary);
 
                 if (answer.confidence_score == Verdict.yes)
                 {
