@@ -30,7 +30,7 @@ namespace Agenty
                 .WithRAG(
                     new OpenAIEmbeddingClient("http://127.0.0.1:1234/v1", "lmstudio", "bge-model"),
                     new InMemoryVectorStore(), // swap with Pinecone, Milvus, etc.
-                    savePath: Path.Combine(docsPath, "kb.json")
+                    savePath: Path.Combine(docsPath)
                 );
 
             await agent.Knowledge.AddDirectoryAsync(docsPath);

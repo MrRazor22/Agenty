@@ -3,6 +3,7 @@ using SharpToken;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -93,6 +94,15 @@ namespace Agenty.RAG
             }
 
             return context.Any() ? "Use the following context:\n\n" + string.Join("\n\n", context) : "";
+        }
+
+        public static string ComputeId(string text)
+        {
+            if (text is null) throw new ArgumentNullException(nameof(text));
+            using var sha = SHA256.Create();
+            var bytes = Encoding.UTF8.GetBytes(text);
+            var hash = sha.ComputeHash(bytes);
+            return Convert.ToHexString(hash); // .NET 5+ / .NET Core
         }
     }
 }

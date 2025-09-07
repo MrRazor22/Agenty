@@ -16,6 +16,7 @@ namespace Agenty.RAG
         Task<IEnumerable<(string Id, string Text, string Source, double Score)>> SearchAsync(float[] queryVector, int topK = 3);
         void Save(string path);
         bool Load(string path);
+        bool Contains(string id);
     }
 
     public sealed class InMemoryVectorStore : IVectorStore
@@ -23,14 +24,6 @@ namespace Agenty.RAG
         private readonly ConcurrentDictionary<string, Entry> _store = new();
 
         private record Entry(string Id, string Text, float[] Vector, string Source);
-
-        // === Helpers ===
-        private static string ComputeId(string text)
-        {
-            using var sha = SHA256.Create();
-            var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(text));
-            return Convert.ToHexString(hash);
-        }
 
         private static double CosineSimilarity(float[] v1, float[] v2)
         {
@@ -51,7 +44,7 @@ namespace Agenty.RAG
         public Task AddAsync(string id, string text, float[] vector, string source)
         {
             // If user passes null/empty id → use hash of text
-            id = string.IsNullOrWhiteSpace(id) ? ComputeId(text) : id;
+            id = string.IsNullOrWhiteSpace(id) ? RAGHelper.ComputeId(text) : id;
 
             _store.TryAdd(id, new Entry(id, text, vector, source));
             return Task.CompletedTask;
@@ -61,7 +54,7 @@ namespace Agenty.RAG
         {
             foreach (var (id, text, vector, source) in items)
             {
-                var key = string.IsNullOrWhiteSpace(id) ? ComputeId(text) : id;
+                var key = string.IsNullOrWhiteSpace(id) ? RAGHelper.ComputeId(text) : id;
                 _store.TryAdd(key, new Entry(key, text, vector, source));
             }
             await Task.CompletedTask;
@@ -80,7 +73,10 @@ namespace Agenty.RAG
         public void Save(string path)
         {
             var list = _store.Values.ToList();
-            var json = JsonSerializer.Serialize(list);
+            var json = JsonSerializer.Serialize(list, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
             File.WriteAllText(path, json);
         }
 
@@ -98,8 +94,6 @@ namespace Agenty.RAG
             return true;
         }
 
-        // === Extra convenience ===
-        public bool HasData() => !_store.IsEmpty;
-        public int Count => _store.Count;
+        public bool Contains(string id) => !string.IsNullOrWhiteSpace(id) && _store.ContainsKey(id);
     }
 }

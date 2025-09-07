@@ -52,7 +52,7 @@ namespace Agenty.AgentCore
                 embeddings,
                 store,
                 logger ?? _logger,
-                autoSavePath: savePath
+                autoSaveDir: savePath
             );
             return this;
         }
