@@ -1,11 +1,12 @@
-﻿using Agenty.AgentCore;
-using Agenty.LLMCore.BuiltInTools;
+﻿// File: Program.cs
+using Agenty.AgentCore;
 using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.Providers.OpenAI;
+using Agenty.RAG;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Linq;
 using System.Threading.Tasks;
-using static System.Net.WebRequestMethods;
 using ILogger = Agenty.LLMCore.Logging.ILogger;
 
 namespace Agenty
@@ -16,26 +17,28 @@ namespace Agenty
         {
             ILogger logger = new ConsoleLogger(LogLevel.Trace);
 
-            // Create RAG Agent
-            var agent = RAGAgent.Create()
-                .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen/qwen3-4b-2507")   // LM Studio LLM
-                .WithEmbeddings(new OpenAIEmbeddingClient(
+            // Create RagCoordinator first (handles ingestion + search)
+            var coord = new RagCoordinator(
+                new OpenAIEmbeddingClient(
                     "http://127.0.0.1:1234/v1",   // LM Studio URL
-                    "lmstudio",                   // dummy API key (LM Studio ignores it)
-                    "publisherme/bge/bge-base-en-v1.5-q4_k_m.gguf"            // embedding model you loaded in LM Studio
-                ))
+                    "lmstudio",                   // dummy API key
+                    "publisherme/bge/bge-base-en-v1.5-q4_k_m.gguf" // embedding model
+                ),
+                logger
+            );
+
+            // Inject into RAGAgent (handles reasoning + QA loop)
+            var agent = RAGAgent.Create(coord)
+                .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen/qwen3-4b-2507")
                 .WithLogger(logger);
 
-            // Add some knowledge base docs (later you can load from files/db)
-            //            await agent.AddDocumentsAsync(new[]
-            // {
-            //    ("WikipediaThe Free Encyclopedia Senthilv22 Wiki Loves Monuments: Photograph a monument, help Wikipedia and win! Learn more KLA Corporation Article Talk Read Edit source View history Tools From Wikipedia, the free encyclopedia KLA Corporation Formerly	KLA-Tencor Corporation (1997–2019) Company type	Public Traded as	 Nasdaq: KLAC Nasdaq-100 component S&P 500 component Industry	Semiconductors Founded	1997; 28 years ago (merger of KLA and Tencor) Headquarters	Milpitas, California, United States Key people	 Robert Calderoni (chairman) Richard P. Wallace (CEO & president) Products	Process control systems and solutions that support semiconductor, wafer, reticle and other related industries Revenue	Increase US$12.2 billion (2025) Operating income	Increase US$4.78 billion (2025) Net income	Increase US$4.06 billion (2025) Total assets	Increase US$16.1 billion (2025) Total equity	Increase US$4.69 billion (2025) Number of employees	c. 15,000 (2025) Website	kla.com Footnotes / references Financials as of June 30, 2025.[1] KLA Corporation is an American company based in Milpitas, California that makes wafer fab equipment. It supplies process control and yield management systems for the semiconductor industry and other related nanoelectronics industries. The company's products and services are intended for all phases of wafer, reticle, integrated circuit (IC) and packaging production, from research and development to final volume manufacturing.[2] History KLA Corporation was formed in 1997 as KLA-Tencor through the merger of KLA Instruments and Tencor Instruments, two companies in the semiconductor equipment and yield management systems industry.[3] The merger was intended to create a single source for chip process and diagnostics equipment.[3] KLA Instruments was founded in 1975 by Ken Levy and Bob Anderson, and focused on photomask detection to identify chip defects. KLA later broadened its product line to include wafer inspection, wafer metrology and integrated inspection and analysis software.[4] Tencor was founded in 1976 by Czechoslovak scientist and US immigrant Karel Urbanek, along with colleague John Schwabacher.[5][6] The company initially focused on making precise measurements of semiconductor film layer thickness, and in 1984, developed laser-scanning technology to detect particle and other contamination. The company also developed defect review and data analysis equipment.[4] At the time of the merger, the companies' combined annual revenue was greater than $1 billion.[3] In February 1998, KLA-Tencor acquired Freiburg, Germany-based Nanopro GmbH, a company that used advanced interferometric technology for wafer shape and thickness measurements.[7] In April, the company acquired Amray, Inc., a Bedford, Massachusetts-based provider of scanning electron microscope (SEM) systems for applications including semiconductor manufacturing.[8] In June, the company acquired San Jose, CA-based VARS, a developer of image archiving and retrieval systems.[7] In November, KLA-Tencor acquired the Quantox line of oxide monitoring products from Solon, Ohio-based measurement and instrument company Keithley Instruments.[9] In December, the company acquired the Ultrapointe subsidiary of Uniphase Corporation.[10] In December 1999, the company acquired Taiwan-based yield analysis software maker ACME Systems.[11] In February 2000, KLA-Tencor acquired Austin, Texas-based Finle Technologies, Inc., a developer of lithography modeling and analysis software.[12] In March, the company acquired Austin, Texas-based advanced process control (APC) software developer Fab Solutions, from parent ObjectSpace.[13] In 2001, the company acquired yield management and process control company Phase Metrics, Inc.[14] In 2004, KLA-Tencor acquired surface inspection system manufacturer Candela Instruments, Inc.[15] and the Wafer Inspection Systems business of Inspex, Inc.[16] In 2006, the company acquired ADE Corporation, a supplier of silicon wafer metrology and related gear.[17] In 2007, KLA-Tencor acquired lithography and plasma etch products manufacturer OnWafer Technologies,[18] temperature monitoring firm SensArray Corporation[18] and process control and metrology company Therma-Wave Corporation.[19] In 2008, the company acquired test and measurement company ICOS Vision Systems Corporation NV,[20] and the Microelectronic Inspection Equipment (MIE) business unit of Vistec Semiconductor Systems, Inc.[21] In 2010, KLA-Tencor acquired technology hardware company Ambios Technology, Inc.[21] In 2014, the company acquired computational lithography and inspection company Luminescent Technologies, Inc.[21] In 2017, the company acquired optical profiling and inspection company Zeta Technologies Co. Ltd.[21] In 2018, KLA-Tencor acquired the Nano Indenter product line from Keysight Technologies. The company also acquired Nanomechanics Inc. and MicroVision.[21] In March 2018, KLA-Tencor announced an agreement to acquire Yavne, Israel-based automated optical inspection equipment vendor Orbotech for approximately $3.4 billion.[22] Orbotech also owned Newport, Wales, UK-based SPTS Technologies Ltd, a manufacturer of etch, PVD and CVD wafer processing equipment for the MEMS, advanced packaging, LED, high-speed RF, and power management devices.[23] KLA Corporation office in Ann Arbor Charter Township, Michigan On January 10, 2019, KLA-Tencor announced that they were changing their name to KLA Corporation.[24] In February, the company announced that its acquisition of Orbotech was complete.[22] The company's name change took effect in July 2019.[25] In June, KLA announced plans to open a second US headquarters near Ann Arbor, Michigan. The facility was scheduled to open in summer 2021, with plans to host 500-600 new hires, around 50% of whom were to be engineers.[26] The facility would reportedly have a relationship with the University of Michigan and support automotive industry partnerships. In August 2019, KLA-Tencor acquired the company Qoniac GmbH, a German software company specializing on process control software for the semiconductor industry.[27] In July 2021, the company introduced new inspection products for automotive chips.[28] In November, KLA's new North American headquarters opened near Ann Arbor, Michigan.[29] The facility is 230,000 square feet, and is designed to support 1,000 employees.[29] Illegal stock options backdating In January 2008, KLA paid $65 million to settle allegations that the company and certain executives had illegally backdated stock option grants.[30] The U.S. Securities and Exchange Commission stated that  KLA dramatically overstated its reported financial results, depriving investors of accurate information about the company's compensation costs and financial performance. It is especially troubling for a public company to engage in such misconduct even after being cautioned that these practices were impermissible. [31] KLA Foundation KLA Foundation (originally KLA-Tencor Foundation) is the company's philanthropic arm, and was founded in 2000.[32] KLA Foundation supports and benefits the global communities in which KLA employees live, such as donations to the Milpitas school district, the American Red Cross, and Silicon Valley Leadership Group's COVID-19 Aid Coalition.[33] References  KLA Corporation FY 2025 Annual Report (Form 10-K) . U.S. Securities and Exchange Commission. August 8, 2024.  KLA CORP (KLAC:NASDAQ GS): Company Description - Bloomberg . bloomberg.com. Retrieved March 19, 2020.  KLA Instruments, Tencor to Merge . LA Times. January 15, 1997. Retrieved January 27, 2022.  KLA-Tencor . Silicon Valley Historical Association. Archived from the original on July 18, 2022. Retrieved March 19, 2020. Rechcigl, Miloslav Jr. (November 7, 2016).  Encyclopedia of Bohemian and Czech-American Biography, Volume 1 . Google Books. ISBN 9781524619879. Retrieved January 27, 2022.  Tencor at 20 Years . The Chip History Center. 2010. Retrieved January 27, 2022.  KLA-Tencor Weathers Storm, Builds for Future . Semiconductor Online. August 12, 1998. Retrieved November 2, 2019.  Amray was acquired by KLA-Tencor on April 7, 1998 . Mergr. Retrieved November 2, 2019.  Keithley sells Quantox line to KLA-Tencor . eeTimes. November 12, 1998. Retrieved January 27, 2022.  KLA-Tencor Buys Ultrapointe from Uniphase . Photonics Online. January 8, 1999. Retrieved January 27, 2022.  KLA-Tencor acquires yield analysis software maker . Electronics Weekly. December 1, 1999. Retrieved January 27, 2022.  KLA-Tencor to Acquire Finle for lithography modeling, analysis capabilities . eeTimes. February 1, 2000. Retrieved January 28, 2022.  KLA-Tencor acquires Fab Solutions for advanced process control . eeTimes. March 24, 2000. Retrieved January 27, 2022.  KLA-Tencor acquiring Phase Metrics to expand in data storage inspection markets . eeTimes. April 11, 2001. Retrieved January 28, 2022.  KLA-Tencor buys Candela Instruments, moves to expand storage metrology business . eeTimes. October 4, 2004. Retrieved January 28, 2022.  KLA buys wafer inspection technology from Inspex . eeTimes. October 26, 2004. Retrieved January 28, 2022.  KLA completes acquisition of ADE . eeTimes. October 12, 2006. Retrieved January 28, 2022.  OnWafer Technologies, Inc . Intellectual Property & Industry Research Alliances. Regents of the University of California / UC Berkeley. Retrieved November 2, 2019.  KLA-Tencor set to buy Therma-Wave for $75 million . eeTimes. January 8, 2007. Retrieved January 28, 2020.  KLA-Tencor to acquire Belgium's ICOS Vision Systems . Vision Systems Design. February 26, 2008. Retrieved November 2, 2019. Krejca, David (February 1, 2019).  KLA-Tencor: A New Acquisition To Add To The Company's Revenues - KLA Corporation (NASDAQ_KLAC) . Seeking Alpha. Retrieved November 2, 2019.(subscription required)  KLA completes long-awaited acquisition of Orbotech . Evaluation Engineering. February 20, 2012. Retrieved January 27, 2022.  KLA completes acquisition of SPTS' parent firm Orbotech . Semiconductor Today. February 20, 2019. Retrieved January 27, 2022.  KLA-Tencor Corporation to change name to KLA Corporation . Evaluation Engineering. January 11, 2019. Retrieved January 28, 2022.  KLA Corporation Form 8-K . U.S. Securities and Exchange Commission. July 16, 2019.  KLA to open $150M second headquarters in Ann Arbor . mLive. June 11, 2019. Retrieved January 28, 2022.  KLA Corporation Annual report pursuant to Section 13 and 15(d) . ir.kla.com. Retrieved 2024-12-10.  Look inside KLA's new $200M headquarters in Ann Arbor . dBusiness. July 6, 2021. Retrieved January 28, 2022.  KLA Debuts New Portfolio of Automotive Chip Testing Products . Click on Detroit. November 11, 2021. Retrieved January 27, 2022.  Law firm says KLA-Tencor to pay $65 mln to settle lawsuit . Reuters. 2008-01-28. Retrieved 2022-09-02.  Press Release: SEC Charges Former KLA-Tencor CEO With Fraud For Improper Stock Options Backdating; 2007-143; July 25, 2007 . www.sec.gov. Retrieved 2022-09-02.  KLA-Tencor Foundation . Guidestar. Retrieved January 27, 2022.  Corporate Champion: When Covid hit, KLA made face shields, procured equipment for Valley Medical . Silicon Valley Business Journal. November 12, 2020. Retrieved March 19, 2020. External links Official website Edit this at Wikidata Business data for KLA-Tencor: GoogleSEC filingsYahoo! vte Companies of the Nasdaq-100 index vte Major semiconductor companies Authority control databases Edit this at Wikidata	 ISNI Categories: Companies in the Nasdaq-100Companies listed on the NasdaqCompanies based in Milpitas, CaliforniaElectronics companies established in 1997Equipment semiconductor companies This page was last edited on 30 August 2025, at 00:54. Text is available under the Creative Commons Attribution-ShareAlike 4.0 License; additional terms may apply. By using this site, you agree to the Terms of Use and Privacy Policy. Wikipedia® is a registered trademark of the Wikimedia Foundation, Inc., a non-profit organization. Privacy policyAbout WikipediaDisclaimersContact WikipediaCode of ConductDevelopersStatisticsCookie statementMobile view Wikimedia Foundation Powered by MediaWiki In electronics, a wafer is a thin slice of semiconductor, such as a crystalline silicon, used for the fabrication of integrated circuits and, in photovoltaics, to manufacture solar cells."
-            //            , "Wikipedia")
-            //});
+            const string kbPath = "kb.json";
 
-            //await agent.AddDocumentFromUrlAsync(@"https://en.wikipedia.org/wiki/KLA_Corporation");
+            // Load existing KB if present
+            agent.LoadKnowledge(kbPath);
 
-            await agent.AddDocumentsFromDirectoryAsync("D:\\CodeBase\\Agenty\\Agenty\\Test\\ExampleDocumentation");
+            // Add knowledge base (docs, directory, or URLs)
+            await coord.AddDirectoryAsync("D:\\CodeBase\\Agenty\\Agenty\\Test\\ExampleDocumentation");
 
             Console.WriteLine("🤖 RAG Agent ready. Type 'exit' to quit.");
             while (true)
@@ -50,7 +53,6 @@ namespace Agenty
 
                 try
                 {
-                    // Full RAG execution (structured result)
                     var result = await agent.ExecuteAsync(input);
 
                     Console.WriteLine("==============================================================");
@@ -75,8 +77,10 @@ namespace Agenty
                 }
             }
 
+            // Save KB on exit
+            agent.SaveKnowledge(kbPath);
+            Console.WriteLine("💾 Knowledge base saved.");
             Console.WriteLine("👋 Exiting Agenty.");
-
         }
     }
 }
