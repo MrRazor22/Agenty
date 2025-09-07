@@ -42,12 +42,17 @@ namespace Agenty.AgentCore
             return this;
         }
 
-        public RAGAgent WithRAG(IEmbeddingClient embeddings, IVectorStore store, ILogger? logger = null)
+        public RAGAgent WithRAG(
+    IEmbeddingClient embeddings,
+    IVectorStore store,
+    string? savePath = null,
+    ILogger? logger = null)
         {
             _coord = new RagCoordinator(
                 embeddings,
                 store,
-                logger ?? _logger
+                logger ?? _logger,
+                autoSavePath: savePath
             );
             return this;
         }
@@ -60,9 +65,9 @@ namespace Agenty.AgentCore
             CancellationToken ct = default)
         {
             // Step 1: Retrieve
-            var retrieved = (await _coord.SearchAsync(question, topK)).ToList();
+            var retrieved = (await _coord.Search(question, topK)).ToList();
             if (!retrieved.Any())
-                retrieved = (await _coord.SearchAsync(question, topK * 2)).ToList();
+                retrieved = (await _coord.Search(question, topK * 2)).ToList();
 
             // Step 2: Build context
             var contextChunks = retrieved.Select(r => $"[{r.source}] {r.chunk}");

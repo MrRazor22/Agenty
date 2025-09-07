@@ -20,11 +20,7 @@ namespace Agenty.RAG
         Task AddUrlsAsync(IEnumerable<string> urls);
 
         // Search
-        Task<IEnumerable<(string chunk, double score, string source)>> SearchAsync(string query, int topK = 3);
-
-        // Persistence
-        void SaveKnowledgeBase(string path);
-        bool LoadKnowledgeBase(string path);
+        Task<IEnumerable<(string chunk, double score, string source)>> Search(string query, int topK = 3);
     }
 
     public sealed class RagCoordinator : IRagCoordinator
@@ -36,6 +32,7 @@ namespace Agenty.RAG
         private readonly int _chunkSize;
         private readonly int _chunkOverlap;
         private readonly string _tokenizerModel;
+        private readonly string? _autoSavePath;
 
         public RagCoordinator(
             IEmbeddingClient embeddings,
@@ -43,7 +40,8 @@ namespace Agenty.RAG
             ILogger? logger = null,
             int chunkSize = 200,
             int chunkOverlap = 50,
-            string tokenizerModel = "gpt-3.5-turbo")
+            string tokenizerModel = "gpt-3.5-turbo",
+            string? autoSavePath = null)
         {
             _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
             _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -51,6 +49,14 @@ namespace Agenty.RAG
             _chunkSize = chunkSize;
             _chunkOverlap = chunkOverlap;
             _tokenizerModel = tokenizerModel;
+            _autoSavePath = autoSavePath;
+
+            // Auto-load if file exists
+            if (!string.IsNullOrWhiteSpace(_autoSavePath) && File.Exists(_autoSavePath))
+            {
+                if (_store.Load(_autoSavePath))
+                    _logger?.Log($"[RAG] Loaded knowledge base from {_autoSavePath}");
+            }
         }
 
         // === Ingest ===
@@ -77,7 +83,7 @@ namespace Agenty.RAG
                 for (int j = 0; j < batch.Count; j++)
                 {
                     items.Add((
-                        Id: null!, // store will hash text if null
+                        Id: null!, // store can hash text if null
                         Text: batch[j].chunk,
                         Vector: Normalize(vectors[j]),
                         Source: batch[j].Source
@@ -86,6 +92,8 @@ namespace Agenty.RAG
 
                 await _store.AddBatchAsync(items);
             }
+
+            AutoSave();
         }
 
         public Task AddDocumentAsync(string doc, string source = "unknown") =>
@@ -119,20 +127,23 @@ namespace Agenty.RAG
         }
 
         // === Search ===
-        public async Task<IEnumerable<(string chunk, double score, string source)>> SearchAsync(string query, int topK = 3)
+        public async Task<IEnumerable<(string chunk, double score, string source)>> Search(string query, int topK = 3)
         {
             var qVec = Normalize(await _embeddings.GetEmbeddingAsync(query));
             var results = await _store.SearchAsync(qVec, topK);
-
             return results.Select(r => (r.Text, r.Score, r.Source));
         }
 
-        // === Persistence ===
-        public void SaveKnowledgeBase(string path) => _store.Save(path);
-        public bool LoadKnowledgeBase(string path) => _store.Load(path);
-
-
         // === Helpers ===
+        private void AutoSave()
+        {
+            if (!string.IsNullOrWhiteSpace(_autoSavePath))
+            {
+                _store.Save(_autoSavePath);
+                _logger?.Log($"[RAG] Auto-saved knowledge base to {_autoSavePath}");
+            }
+        }
+
         private static float[] Normalize(float[] v)
         {
             var norm = Math.Sqrt(v.Sum(x => x * x));

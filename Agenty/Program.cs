@@ -21,8 +21,6 @@ namespace Agenty
  );
 
             var docsPath = Path.Combine(solutionRoot, "Agenty", "Test", "ExampleDocumentation");
-            var kbPath = Path.Combine(docsPath, "kb.json");
-
 
             ILogger logger = new ConsoleLogger(LogLevel.Trace);
 
@@ -31,21 +29,11 @@ namespace Agenty
                 .WithLogger(logger)
                 .WithRAG(
                     new OpenAIEmbeddingClient("http://127.0.0.1:1234/v1", "lmstudio", "bge-model"),
-                    new InMemoryVectorStore() // swap with Pinecone, Milvus, etc.
+                    new InMemoryVectorStore(), // swap with Pinecone, Milvus, etc.
+                    savePath: Path.Combine(docsPath, "kb.json")
                 );
 
-            // Load existing KB if it exists
-            if (File.Exists(kbPath))
-            {
-                agent.Knowledge.LoadKnowledgeBase(kbPath);
-                logger.Log($"[Startup] Loaded knowledge base from {kbPath}");
-            }
-            else
-            {
-                // Otherwise ingest fresh docs
-                await agent.Knowledge.AddDirectoryAsync(docsPath);
-                logger.Log("[Startup] Added documents into new knowledge base");
-            }
+            await agent.Knowledge.AddDirectoryAsync(docsPath);
 
             Console.WriteLine("🤖 RAG Agent ready. Type 'exit' to quit.");
             while (true)
@@ -84,9 +72,6 @@ namespace Agenty
                 }
             }
 
-            // Save KB on exit
-            agent.Knowledge.SaveKnowledgeBase(kbPath);
-            logger.Log($"[Shutdown] Knowledge base saved to {kbPath}");
             Console.WriteLine("👋 Exiting Agenty.");
         }
     }
