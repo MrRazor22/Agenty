@@ -13,24 +13,20 @@ namespace Agenty.AgentCore
 {
     public sealed class RAGAgent
     {
-        private readonly IRagCoordinator _coord;
+        private RagCoordinator _coord = null!;
         private ILLMClient _llm = null!;
         private ILogger _logger = null!;
         private Gate? _grader;
         private readonly Conversation _chat = new();
-        private readonly Conversation _globalChat = new(); // ✅ for final history
+        private readonly Conversation _globalChat = new();
 
         private int _maxContextTokens = 1500;
         private string _tokenizerModel = "gpt-3.5-turbo";
 
-        public static RAGAgent Create(IRagCoordinator coordinator) =>
-            new RAGAgent(coordinator);
+        public static RAGAgent Create() => new RAGAgent();
+        private RAGAgent() { }
 
-        private RAGAgent(IRagCoordinator coordinator)
-        {
-            _coord = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
-        }
-
+        // === Configuration ===
         public RAGAgent WithLLM(string baseUrl, string apiKey, string model = "any_model")
         {
             _llm = new OpenAILLMClient();
@@ -46,14 +42,17 @@ namespace Agenty.AgentCore
             return this;
         }
 
-        public RAGAgent WithContextBudget(int tokens, string model = "gpt-3.5-turbo")
+        public RAGAgent WithRAG(IEmbeddingClient embeddings, IVectorStore store, ILogger? logger = null)
         {
-            _maxContextTokens = tokens;
-            _tokenizerModel = model;
+            _coord = new RagCoordinator(
+                embeddings,
+                store,
+                logger ?? _logger
+            );
             return this;
         }
-        public void SaveKnowledge(string path) => _coord.SaveKnowledgeBase(path);
-        public void LoadKnowledge(string path) => _coord.LoadKnowledgeBase(path);
+
+        public IRagCoordinator Knowledge => _coord;
         public async Task<RAGResult> ExecuteAsync(
             string question,
             int topK = 3,

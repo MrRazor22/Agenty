@@ -62,21 +62,6 @@ namespace Agenty.RAG
                        .Where(p => !string.IsNullOrWhiteSpace(p));
         }
 
-        public static double CosineSimilarity(IReadOnlyList<float> v1, IReadOnlyList<float> v2)
-        {
-            if (v1.Count != v2.Count) throw new ArgumentException("Vectors must have same length");
-
-            double dot = 0, norm1 = 0, norm2 = 0;
-            for (int i = 0; i < v1.Count; i++)
-            {
-                dot += v1[i] * v2[i];
-                norm1 += v1[i] * v1[i];
-                norm2 += v2[i] * v2[i];
-            }
-
-            return (norm1 == 0 || norm2 == 0) ? 0 : dot / (Math.Sqrt(norm1) * Math.Sqrt(norm2));
-        }
-
         public static IEnumerable<string> Chunk(string text, int maxTokens, int overlap, string model)
         {
             var encoder = GptEncoding.GetEncodingForModel(model);

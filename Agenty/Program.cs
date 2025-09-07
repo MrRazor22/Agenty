@@ -5,6 +5,7 @@ using Agenty.LLMCore.Providers.OpenAI;
 using Agenty.RAG;
 using Microsoft.Extensions.Logging;
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using ILogger = Agenty.LLMCore.Logging.ILogger;
@@ -15,30 +16,36 @@ namespace Agenty
     {
         public static async Task Main(string[] args)
         {
+            var solutionRoot = Path.GetFullPath(
+     Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..")
+ );
+
+            var docsPath = Path.Combine(solutionRoot, "Agenty", "Test", "ExampleDocumentation");
+            var kbPath = Path.Combine(docsPath, "kb.json");
+
+
             ILogger logger = new ConsoleLogger(LogLevel.Trace);
 
-            // Create RagCoordinator first (handles ingestion + search)
-            var coord = new RagCoordinator(
-                new OpenAIEmbeddingClient(
-                    "http://127.0.0.1:1234/v1",   // LM Studio URL
-                    "lmstudio",                   // dummy API key
-                    "publisherme/bge/bge-base-en-v1.5-q4_k_m.gguf" // embedding model
-                ),
-                logger
-            );
-
-            // Inject into RAGAgent (handles reasoning + QA loop)
-            var agent = RAGAgent.Create(coord)
+            var agent = RAGAgent.Create()
                 .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen/qwen3-4b-2507")
-                .WithLogger(logger);
+                .WithLogger(logger)
+                .WithRAG(
+                    new OpenAIEmbeddingClient("http://127.0.0.1:1234/v1", "lmstudio", "bge-model"),
+                    new InMemoryVectorStore() // swap with Pinecone, Milvus, etc.
+                );
 
-            const string kbPath = "kb.json";
-
-            // Load existing KB if present
-            agent.LoadKnowledge(kbPath);
-
-            // Add knowledge base (docs, directory, or URLs)
-            await coord.AddDirectoryAsync("D:\\CodeBase\\Agenty\\Agenty\\Test\\ExampleDocumentation");
+            // Load existing KB if it exists
+            if (File.Exists(kbPath))
+            {
+                agent.Knowledge.LoadKnowledgeBase(kbPath);
+                logger.Log($"[Startup] Loaded knowledge base from {kbPath}");
+            }
+            else
+            {
+                // Otherwise ingest fresh docs
+                await agent.Knowledge.AddDirectoryAsync(docsPath);
+                logger.Log("[Startup] Added documents into new knowledge base");
+            }
 
             Console.WriteLine("🤖 RAG Agent ready. Type 'exit' to quit.");
             while (true)
@@ -78,8 +85,8 @@ namespace Agenty
             }
 
             // Save KB on exit
-            agent.SaveKnowledge(kbPath);
-            Console.WriteLine("💾 Knowledge base saved.");
+            agent.Knowledge.SaveKnowledgeBase(kbPath);
+            logger.Log($"[Shutdown] Knowledge base saved to {kbPath}");
             Console.WriteLine("👋 Exiting Agenty.");
         }
     }
