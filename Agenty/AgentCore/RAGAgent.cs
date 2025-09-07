@@ -2,11 +2,13 @@
 using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.Providers.OpenAI;
 using Agenty.LLMCore.ToolHandling;
+using HtmlAgilityPack;
 using SharpToken;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -95,30 +97,59 @@ namespace Agenty.AgentCore
         }
 
         // Convenience wrapper for single doc
+        // Single doc (kept same)
         public Task<RAGAgent> AddDocumentAsync(string doc, string source = "unknown", CancellationToken ct = default) =>
             AddDocumentsAsync(new[] { (doc, source) }, ct);
-        // Convenience wrapper for file
-        public Task<RAGAgent> AddDocumentFromFileAsync(string path, string? source = null, CancellationToken ct = default) =>
-            AddDocumentAsync(File.ReadAllText(path), source ?? Path.GetFileName(path), ct);
-        // Convenience wrapper for URL
+
+        // File → stream read
+        public async Task<RAGAgent> AddDocumentFromFileAsync(string path, string? source = null, CancellationToken ct = default)
+        {
+            using var reader = new StreamReader(path);
+            string content = await reader.ReadToEndAsync();
+            return await AddDocumentAsync(content, source ?? Path.GetFileName(path), ct);
+        }
+
+        // Multiple files → stream each
+        public async Task<RAGAgent> AddDocumentsFromFilesAsync(IEnumerable<string> paths, CancellationToken ct = default)
+        {
+            var docs = new List<(string, string)>();
+            foreach (var path in paths)
+            {
+                using var reader = new StreamReader(path);
+                string content = await reader.ReadToEndAsync();
+                docs.Add((content, Path.GetFileName(path)));
+            }
+            return await AddDocumentsAsync(docs, ct);
+        }
+
         public async Task<RAGAgent> AddDocumentFromUrlAsync(string url, CancellationToken ct = default)
         {
             using var httpClient = new HttpClient();
-            var content = await httpClient.GetStringAsync(url, ct);
-            return await AddDocumentAsync(content, url, ct);
+            httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; RAGAgent/1.0)");
+
+            var html = await httpClient.GetStringAsync(url, ct);
+            var cleanText = RAGHelper.ExtractPlainTextFromHtml(html);
+
+            return await AddDocumentAsync(cleanText, url, ct);
         }
-        // Convenience wrapper for multiple files
-        public Task<RAGAgent> AddDocumentsFromFilesAsync(IEnumerable<string> paths, CancellationToken ct = default) =>
-            AddDocumentsAsync(paths.Select(p => (File.ReadAllText(p), Path.GetFileName(p))), ct);
-        // Convenience wrapper for multiple URLs
+
+
         public async Task<RAGAgent> AddDocumentsFromUrlsAsync(IEnumerable<string> urls, CancellationToken ct = default)
         {
             using var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; RAGAgent/1.0)");
+
             var tasks = urls.Select(async url =>
             {
-                var content = await httpClient.GetStringAsync(url, ct);
+                using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+                response.EnsureSuccessStatusCode();
+
+                using var stream = await response.Content.ReadAsStreamAsync(ct);
+                using var reader = new StreamReader(stream);
+                string content = await reader.ReadToEndAsync();
                 return (content, url);
             });
+
             var results = await Task.WhenAll(tasks);
             return await AddDocumentsAsync(results, ct);
         }
@@ -143,16 +174,32 @@ namespace Agenty.AgentCore
         }
 
         // === RAG execution ===
+        // === RAG execution ===
         public record RAGResult(string Answer, List<(string Source, double Score)> Sources);
 
-        public async Task<RAGResult> ExecuteAsync(string goal, int maxRounds = 5, int topK = 3, CancellationToken ct = default)
+        // === RAG execution with retry + fallback ===
+        public async Task<RAGResult> ExecuteAsync(
+            string goal, int maxRounds = 5, int topK = 3, CancellationToken ct = default)
         {
+            // Step 1: First retrieval
             var retrieved = await SearchAsync(goal, topK, ct);
+
+            // Step 2: If too few or too weak results, retry with expanded search
+            if (!retrieved.Any() || retrieved.Max(r => r.score) < _similarityThreshold + 0.1)
+            {
+                retrieved = await SearchAsync(goal, topK * 2, ct);
+            }
+
+            // Step 3: Build context
             var contextChunks = retrieved.Select(r => $"[{r.source}] {r.chunk}").ToList();
+            string context = contextChunks.Any()
+                ? RAGHelper.AssembleContext(contextChunks, _maxTokensContext, _tokenizerModel)
+                : "No strong context found in knowledge base. If possible, answer from your own knowledge but make it clear.";
 
-            string context = RAGHelper.AssembleContext(contextChunks, _maxTokensContext, _tokenizerModel);
-
-            chat.Add(Role.System, "You are a concise QA assistant. Use retrieved context if provided. Answer in <=3 sentences. Always mention the source(s) when possible.")
+            // Step 4: LLM QA loop
+            chat.Add(Role.System, "You are a concise QA assistant. Use retrieved context if provided. " +
+                                  "Answer in <=3 sentences. Always mention source(s) when possible. " +
+                                  "If context is empty or insufficient, answer from your own knowledge and state that explicitly.")
                 .Add(Role.User, context + "\n\nQuestion: " + goal);
 
             string finalAnswer = "";
@@ -166,20 +213,23 @@ namespace Agenty.AgentCore
                 if (grade.confidence_score == Verdict.yes)
                     break;
 
+                // If KB was weak, don’t loop forever — fallback faster
+                if (!retrieved.Any()) break;
+
                 chat.Add(Role.User, grade.explanation);
             }
 
-            // If max rounds reached → last answer
+            // Step 5: Final fallback
             if (string.IsNullOrEmpty(finalAnswer))
             {
                 chat.Add(Role.User, "Max rounds reached. Return the best final answer now as plain text with sources.");
                 finalAnswer = await _llm.GetResponse(chat);
             }
 
-            // Return structured result
             var sources = retrieved.Select(r => (r.source, r.score)).ToList();
             return new RAGResult(finalAnswer, sources);
         }
+
 
         // === Persistence ===
         public void SaveKnowledgeBase(string path)
@@ -223,6 +273,51 @@ namespace Agenty.AgentCore
     // === RAG Helpers ===
     public static class RAGHelper
     {
+        public static string ExtractPlainTextFromHtml(string html)
+        {
+            var doc = new HtmlDocument();
+            doc.LoadHtml(html);
+
+            // Remove unwanted nodes
+            var remove = doc.DocumentNode
+                .SelectNodes("//script|//style|//nav|//footer|//form|//noscript|//aside")
+                ?? Enumerable.Empty<HtmlNode>();
+            foreach (var node in remove.ToList())
+                node.Remove();
+
+            var sb = new StringBuilder();
+
+            // ✅ Include infobox key-value pairs
+            var infobox = doc.DocumentNode.SelectSingleNode("//table[contains(@class,'infobox')]");
+            if (infobox != null)
+            {
+                foreach (var row in infobox.SelectNodes(".//tr") ?? Enumerable.Empty<HtmlNode>())
+                {
+                    var header = row.SelectSingleNode("./th")?.InnerText?.Trim();
+                    var value = row.SelectSingleNode("./td")?.InnerText?.Trim();
+                    if (!string.IsNullOrEmpty(header) && !string.IsNullOrEmpty(value))
+                        sb.AppendLine($"{CleanText(header)}: {CleanText(value)}");
+                }
+            }
+
+            // Keep paragraph, heading, list text
+            var mainNodes = doc.DocumentNode
+                .SelectNodes("//p|//h1|//h2|//h3|//li")
+                ?? Enumerable.Empty<HtmlNode>();
+
+            foreach (var node in mainNodes)
+            {
+                var text = CleanText(node.InnerText);
+                if (!string.IsNullOrWhiteSpace(text))
+                    sb.AppendLine(text);
+            }
+
+            return sb.ToString().Trim();
+        }
+
+        private static string CleanText(string text) =>
+            text.Replace("\n", " ").Replace("\r", " ").Replace("\t", " ").Trim();
+
         public static IEnumerable<string> SplitByParagraphs(string text)
         {
             return text.Split(new[] { "\n\n", "\r\n\r\n" }, StringSplitOptions.RemoveEmptyEntries)
