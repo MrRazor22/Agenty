@@ -55,50 +55,87 @@ namespace Agenty.AgentCore
         public record KBEntry(string Id, string Source, string Text, float[] Vector, DateTime Added);
 
         // === Add docs ===
-        public async Task<RAGAgent> AddDocumentsAsync(IEnumerable<string> docs, string source = "unknown", CancellationToken ct = default)
+        // === Add docs ===
+        public async Task<RAGAgent> AddDocumentsAsync(IEnumerable<(string Doc, string Source)> docs, CancellationToken ct = default)
         {
             EnsureEmbeddings();
 
-            // split docs semantically first
-            var sections = docs.SelectMany(RAGHelper.SplitByParagraphs).ToList();
+            // Split docs into semantic sections (paragraphs), then into chunks
+            var chunksWithSource = docs
+                .SelectMany(d => RAGHelper.SplitByParagraphs(d.Doc)
+                    .SelectMany(s => RAGHelper.Chunk(s, _chunkSize, _chunkOverlap, _tokenizerModel)
+                    .Select(chunk => (chunk, d.Source))))
+                .Distinct()
+                .ToList();
 
-            // then tokenize into overlapping chunks
-            var chunks = sections.SelectMany(s => RAGHelper.Chunk(s, _chunkSize, _chunkOverlap, _tokenizerModel))
-                                 .Distinct()
-                                 .ToList();
-
-            if (chunks.Count == 0) return this;
+            if (chunksWithSource.Count == 0) return this;
 
             const int batchSize = 16;
-            for (int i = 0; i < chunks.Count; i += batchSize)
+            for (int i = 0; i < chunksWithSource.Count; i += batchSize)
             {
-                var batch = chunks.Skip(i).Take(batchSize).ToList();
+                var batch = chunksWithSource.Skip(i).Take(batchSize).ToList();
+                var texts = batch.Select(x => x.chunk).ToList();
+
                 float[][] vectors = await Retry(async () =>
-                    (await _embeddings.GetEmbeddingsAsync(batch)).ToArray(), ct);
+                    (await _embeddings.GetEmbeddingsAsync(texts)).ToArray(), ct);
 
                 for (int j = 0; j < batch.Count; j++)
                 {
                     var vec = Normalize(vectors[j]);
-                    _knowledgeBase.Add(new KBEntry(Guid.NewGuid().ToString(), source, batch[j], vec, DateTime.UtcNow));
+                    _knowledgeBase.Add(new KBEntry(
+                        Guid.NewGuid().ToString(),
+                        batch[j].Source,
+                        batch[j].chunk,
+                        vec,
+                        DateTime.UtcNow
+                    ));
                 }
             }
             return this;
         }
 
+        // Convenience wrapper for single doc
         public Task<RAGAgent> AddDocumentAsync(string doc, string source = "unknown", CancellationToken ct = default) =>
-            AddDocumentsAsync(new[] { doc }, source, ct);
+            AddDocumentsAsync(new[] { (doc, source) }, ct);
+        // Convenience wrapper for file
+        public Task<RAGAgent> AddDocumentFromFileAsync(string path, string? source = null, CancellationToken ct = default) =>
+            AddDocumentAsync(File.ReadAllText(path), source ?? Path.GetFileName(path), ct);
+        // Convenience wrapper for URL
+        public async Task<RAGAgent> AddDocumentFromUrlAsync(string url, CancellationToken ct = default)
+        {
+            using var httpClient = new HttpClient();
+            var content = await httpClient.GetStringAsync(url, ct);
+            return await AddDocumentAsync(content, url, ct);
+        }
+        // Convenience wrapper for multiple files
+        public Task<RAGAgent> AddDocumentsFromFilesAsync(IEnumerable<string> paths, CancellationToken ct = default) =>
+            AddDocumentsAsync(paths.Select(p => (File.ReadAllText(p), Path.GetFileName(p))), ct);
+        // Convenience wrapper for multiple URLs
+        public async Task<RAGAgent> AddDocumentsFromUrlsAsync(IEnumerable<string> urls, CancellationToken ct = default)
+        {
+            using var httpClient = new HttpClient();
+            var tasks = urls.Select(async url =>
+            {
+                var content = await httpClient.GetStringAsync(url, ct);
+                return (content, url);
+            });
+            var results = await Task.WhenAll(tasks);
+            return await AddDocumentsAsync(results, ct);
+        }
+
 
         // === Search ===
-        public async Task<IEnumerable<(string chunk, double score)>> SearchAsync(string query, int topK = 3, CancellationToken ct = default)
+        public async Task<IEnumerable<(string chunk, double score, string source)>> SearchAsync(
+            string query, int topK = 3, CancellationToken ct = default)
         {
             EnsureEmbeddings();
             if (!_knowledgeBase.Any())
-                return Enumerable.Empty<(string, double)>();
+                return Enumerable.Empty<(string, double, string)>();
 
             var qVec = Normalize(await _embeddings.GetEmbeddingAsync(query));
 
             return _knowledgeBase
-                .Select(k => (k.Text, score: RAGHelper.CosineSimilarity(qVec, k.Vector)))
+                .Select(k => (k.Text, score: RAGHelper.CosineSimilarity(qVec, k.Vector), k.Source))
                 .Where(x => x.score >= _similarityThreshold)
                 .OrderByDescending(x => x.score)
                 .Take(topK)
@@ -106,32 +143,42 @@ namespace Agenty.AgentCore
         }
 
         // === RAG execution ===
-        public async Task<string> ExecuteAsync(string goal, int maxRounds = 5, int topK = 3, CancellationToken ct = default)
+        public record RAGResult(string Answer, List<(string Source, double Score)> Sources);
+
+        public async Task<RAGResult> ExecuteAsync(string goal, int maxRounds = 5, int topK = 3, CancellationToken ct = default)
         {
             var retrieved = await SearchAsync(goal, topK, ct);
-            var contextChunks = retrieved.Select(r => r.chunk).ToList();
+            var contextChunks = retrieved.Select(r => $"[{r.source}] {r.chunk}").ToList();
 
             string context = RAGHelper.AssembleContext(contextChunks, _maxTokensContext, _tokenizerModel);
 
-            chat.Add(Role.System, "You are a concise QA assistant. Use retrieved context if provided. Answer in <=3 sentences.")
+            chat.Add(Role.System, "You are a concise QA assistant. Use retrieved context if provided. Answer in <=3 sentences. Always mention the source(s) when possible.")
                 .Add(Role.User, context + "\n\nQuestion: " + goal);
 
+            string finalAnswer = "";
             for (int round = 0; round < maxRounds; round++)
             {
                 var response = await _llm.GetResponse(chat);
                 chat.Add(Role.Assistant, response);
+                finalAnswer = response;
 
                 var grade = await _grader!.CheckAnswer(goal, chat.ToString(~ChatFilter.System));
                 if (grade.confidence_score == Verdict.yes)
-                    return await _llm.GetResponse(
-                        chat.Add(Role.User, response),
-                        LLMMode.Creative);
+                    break;
 
                 chat.Add(Role.User, grade.explanation);
             }
 
-            chat.Add(Role.User, "Max rounds reached. Return the best final answer now as plain text.");
-            return await _llm.GetResponse(chat);
+            // If max rounds reached → last answer
+            if (string.IsNullOrEmpty(finalAnswer))
+            {
+                chat.Add(Role.User, "Max rounds reached. Return the best final answer now as plain text with sources.");
+                finalAnswer = await _llm.GetResponse(chat);
+            }
+
+            // Return structured result
+            var sources = retrieved.Select(r => (r.source, r.score)).ToList();
+            return new RAGResult(finalAnswer, sources);
         }
 
         // === Persistence ===
