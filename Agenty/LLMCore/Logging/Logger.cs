@@ -3,6 +3,7 @@ namespace Agenty.LLMCore.Logging
 {
     public interface ILogger
     {
+        void Log(string message);
         void Log(LogLevel level, string source, string message);
         void Log(LogLevel level, string source, string message, Exception exception);
         void Log(LogLevel level, string source, string message, ConsoleColor? colorOverride = null);
@@ -11,11 +12,17 @@ namespace Agenty.LLMCore.Logging
     public class ConsoleLogger : ILogger
     {
         private readonly LogLevel _minLevel;
+        private readonly string _defaultSource = "Default";
+        private readonly LogLevel _defaultLevel = LogLevel.Information;
 
         // Constructor to set minimum log level (default to Information)
         public ConsoleLogger(LogLevel minLevel = LogLevel.Information)
         {
             _minLevel = minLevel;
+        }
+        public void Log(string message)
+        {
+            Log(_defaultLevel, _defaultSource, message);
         }
 
         public void Log(LogLevel level, string source, string message)

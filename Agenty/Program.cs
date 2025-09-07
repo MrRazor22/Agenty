@@ -33,7 +33,9 @@ namespace Agenty
             //            , "Wikipedia")
             //});
 
-            await agent.AddDocumentFromUrlAsync(@"https://en.wikipedia.org/wiki/KLA_Corporation");
+            //await agent.AddDocumentFromUrlAsync(@"https://en.wikipedia.org/wiki/KLA_Corporation");
+
+            await agent.AddDocumentsFromDirectoryAsync("D:\\CodeBase\\Agenty\\Agenty\\Test\\ExampleDocumentation");
 
             Console.WriteLine("🤖 RAG Agent ready. Type 'exit' to quit.");
             while (true)

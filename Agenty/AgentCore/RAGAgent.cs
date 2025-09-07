@@ -153,6 +153,38 @@ namespace Agenty.AgentCore
             var results = await Task.WhenAll(tasks);
             return await AddDocumentsAsync(results, ct);
         }
+        // Add every file in a directory (recursively, if wanted)
+        public async Task<RAGAgent> AddDocumentsFromDirectoryAsync(
+            string directoryPath,
+            string searchPattern = "*.*", // e.g. "*.cs", "*.txt"
+            bool recursive = true,
+            CancellationToken ct = default)
+        {
+            if (!Directory.Exists(directoryPath))
+                throw new DirectoryNotFoundException($"Directory not found: {directoryPath}");
+
+            var option = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+            var files = Directory.EnumerateFiles(directoryPath, searchPattern, option);
+
+            var docs = new List<(string, string)>();
+            foreach (var file in files)
+            {
+                try
+                {
+                    using var reader = new StreamReader(file);
+                    string content = await reader.ReadToEndAsync();
+                    docs.Add((content, Path.GetRelativePath(directoryPath, file)));
+                    // relative path as source, not just filename
+                }
+                catch (Exception ex)
+                {
+                    // Log but skip unreadable files
+                    _logger?.Log($"[Warning] Could not read file {file}: {ex.Message}");
+                }
+            }
+
+            return await AddDocumentsAsync(docs, ct);
+        }
 
 
         // === Search ===
