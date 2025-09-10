@@ -38,8 +38,8 @@ namespace Agenty.RAG
             IEmbeddingClient embeddings,
             IVectorStore store,
             ILogger? logger = null,
-            int chunkSize = 200,
-            int chunkOverlap = 50,
+            int chunkSize = 1000,
+            int chunkOverlap = 200,
             string tokenizerModel = "gpt-3.5-turbo",
             string? autoSaveDir = null)
         {

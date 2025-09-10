@@ -37,11 +37,11 @@ namespace Agenty.LLMCore
         Balanced,       // normal reasoning
         Creative        // brainstorming / open ended
     }
-    public class LLMResponse
+    public class LLMResponse(string? assistantMessage)
     {
-        public string? AssistantMessage { get; set; }      // plain text reply, if any
-        public List<ToolCall> ToolCalls { get; set; } = new(); // zero or more tool calls
-        public string? FinishReason { get; set; }          // why the model stopped (stop, tool_call, length...)
+        public string? AssistantMessage { get; set; } = assistantMessage;
+        public List<ToolCall> ToolCalls { get; set; } = new();
+        public string? FinishReason { get; set; }
     }
 
 }

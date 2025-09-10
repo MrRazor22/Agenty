@@ -172,7 +172,7 @@ namespace Agenty.LLMCore.ToolHandling
                     $"Tools: {string.Join(", ", tools.Select(t => t.Name))}.");
             }
 
-            return new LLMResponse();
+            return new LLMResponse("no tool call produced");
         }
 
         public async Task<T?> GetStructuredResponse<T>(
@@ -433,7 +433,6 @@ namespace Agenty.LLMCore.ToolHandling
         }
 
 
-        // Non-generic: automatically returns string for complex objects
         public async Task<dynamic> Invoke(ToolCall tool)
         {
             if (tool == null) throw new ArgumentNullException(nameof(tool));
@@ -469,7 +468,7 @@ namespace Agenty.LLMCore.ToolHandling
             if (result is string || result.GetType().IsPrimitive)
                 return result;
 
-            return result.ToString();
+            return result;
         }
 
     }

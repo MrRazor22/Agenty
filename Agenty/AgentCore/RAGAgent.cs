@@ -20,7 +20,7 @@ namespace Agenty.AgentCore
         private readonly Conversation _chat = new();
         private readonly Conversation _globalChat = new();
 
-        private int _maxContextTokens = 1500;
+        private int _maxContextTokens = 10000;
         private string _tokenizerModel = "gpt-3.5-turbo";
 
         public static RAGAgent Create() => new RAGAgent();
@@ -61,8 +61,7 @@ namespace Agenty.AgentCore
         public async Task<RAGResult> ExecuteAsync(
             string question,
             int topK = 3,
-            int maxRounds = 5,
-            CancellationToken ct = default)
+            int maxRounds = 5)
         {
             // Step 1: Retrieve
             var retrieved = (await _coord.Search(question, topK)).ToList();
@@ -82,8 +81,6 @@ namespace Agenty.AgentCore
             string finalAnswer = "";
             for (int round = 0; round < maxRounds; round++)
             {
-                ct.ThrowIfCancellationRequested();
-
                 var response = await _llm.GetResponse(sessionChat);
                 sessionChat.Add(Role.Assistant, response);
 
