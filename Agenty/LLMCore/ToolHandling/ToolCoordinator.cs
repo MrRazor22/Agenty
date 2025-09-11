@@ -1,39 +1,16 @@
 ﻿using Agenty.LLMCore.JsonSchema;
-using Agenty.LLMCore.Logging;
-using OpenAI.Chat;
-using System;
-using System.Collections.Generic;
 using System.ComponentModel;
-using System.Linq;
 using System.Reflection;
-using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using System.Xml.Linq;
 
 namespace Agenty.LLMCore.ToolHandling
 {
     public interface IToolCoordinator
     {
-        Task<LLMResponse> GetToolCalls(
-            Conversation prompt,
-            ToolCallMode toolCallMode = ToolCallMode.Auto,
-            int maxRetries = 0,
-            LLMMode mode = LLMMode.Balanced,  // 🔑 added
-            params Tool[] tools);
-
-        LLMResponse TryExtractInlineToolCall(string content, bool strict = false);
-
-        Task<T?> GetStructuredResponse<T>(
-            Conversation prompt,
-            int maxRetries = 3,
-            LLMMode mode = LLMMode.Deterministic); // 🔑 added
-
-        Task HandleToolCall(List<ToolCall> toolCall, Conversation chat);
-        Task<dynamic> Invoke(ToolCall tool);
+        Task<LLMResponse> GetToolCalls(Conversation prompt, ToolCallMode toolCallMode = ToolCallMode.Auto, int maxRetries = 0, LLMMode mode = LLMMode.Balanced, params Tool[] tools);
+        Task<T?> GetStructuredResponse<T>(Conversation prompt, int maxRetries = 3, LLMMode mode = LLMMode.Deterministic);
+        Task<dynamic?> Invoke(ToolCall tool);
     }
     internal class ToolCoordinator(ILLMClient llm, IToolRegistry toolRegistry) : IToolCoordinator
     {
@@ -92,12 +69,7 @@ namespace Agenty.LLMCore.ToolHandling
         );
         #endregion
 
-        public async Task<LLMResponse> GetToolCalls(
-    Conversation prompt,
-    ToolCallMode toolCallMode = ToolCallMode.Auto,
-    int maxRetries = 3,
-    LLMMode mode = LLMMode.Balanced,
-    params Tool[] tools)
+        public async Task<LLMResponse> GetToolCalls(Conversation prompt, ToolCallMode toolCallMode = ToolCallMode.Auto, int maxRetries = 3, LLMMode mode = LLMMode.Balanced, params Tool[] tools)
         {
             tools = tools?.Any() == true ? tools : toolRegistry.RegisteredTools.ToArray();
             if (tools.Length == 0) throw new ArgumentException("No tools available.", nameof(tools));
@@ -175,10 +147,7 @@ namespace Agenty.LLMCore.ToolHandling
             return new LLMResponse("no tool call produced");
         }
 
-        public async Task<T?> GetStructuredResponse<T>(
-            Conversation prompt,
-            int maxRetries = 3,
-            LLMMode mode = LLMMode.Deterministic) // 🔑 Deterministic by default
+        public async Task<T?> GetStructuredResponse<T>(Conversation prompt, int maxRetries = 3, LLMMode mode = LLMMode.Deterministic)
         {
             var intPrompt = Conversation.Clone(prompt);
 
@@ -186,7 +155,6 @@ namespace Agenty.LLMCore.ToolHandling
             {
                 try
                 {
-                    // 🔑 Pass AgentMode down
                     var jsonResponse = await llm.GetStructuredResponse(
                         intPrompt,
                         JsonSchemaExtensions.GetSchemaFor<T>(),
@@ -215,7 +183,8 @@ namespace Agenty.LLMCore.ToolHandling
             return default;
         }
 
-        public LLMResponse TryExtractInlineToolCall(string content, bool strict = false)
+        #region helpers
+        private LLMResponse TryExtractInlineToolCall(string content, bool strict = false)
         {
             var matches = ToolTagPattern.Matches(content).Cast<Match>()
                 .Concat(LooseToolJsonPattern.Matches(content).Cast<Match>())
@@ -317,7 +286,6 @@ namespace Agenty.LLMCore.ToolHandling
             return response;
 
         }
-
         private object?[] ParseToolParams(string toolName, JsonObject arguments)
         {
             var tool = toolRegistry.Get(toolName);
@@ -366,74 +334,9 @@ namespace Agenty.LLMCore.ToolHandling
 
             return paramValues;
         }
+        #endregion 
 
-
-        public async Task HandleToolCall(List<ToolCall> toolCalls, Conversation chat)
-        {
-            if (toolCalls == null || toolCalls.Count == 0)
-                return;
-
-            // Special case: if this was really just a "message" with no name (assistant text instead of a tool call)
-            if (toolCalls.Count == 1 &&
-                string.IsNullOrWhiteSpace(toolCalls[0].Name) &&
-                !string.IsNullOrWhiteSpace(toolCalls[0].Message))
-            {
-                chat.Add(Role.Assistant, toolCalls[0].Message);
-                return;
-            }
-
-            // Add one assistant message containing ALL tool calls
-            chat.Add(Role.Assistant, toolCalls: toolCalls);
-
-            // Execute tools in parallel
-            var tasks = toolCalls.Select(async call =>
-            {
-                try
-                {
-                    var result = await Invoke(call);
-                    chat.Add(Role.Tool, ((object?)result).AsJSONString(), new List<ToolCall> { call });
-                }
-                catch (Exception ex)
-                {
-                    chat.Add(Role.Tool, $"Tool execution error: {ex.Message}", new List<ToolCall> { call });
-                }
-            });
-
-            await Task.WhenAll(tasks);
-        }
-
-        public async Task HandleToolCallSequential(List<ToolCall> toolCalls, Conversation chat)
-        {
-            if (toolCalls == null || toolCalls.Count == 0)
-                return;
-
-            foreach (var call in toolCalls)
-            {
-                // Case: plain assistant text instead of tool call
-                if (string.IsNullOrWhiteSpace(call.Name) && !string.IsNullOrWhiteSpace(call.Message))
-                {
-                    chat.Add(Role.Assistant, call.Message);
-                    continue;
-                }
-
-                // Add assistant message with *this one tool call*
-                chat.Add(Role.Assistant, null, toolCall: call);
-
-                // Execute synchronously and add tool result
-                try
-                {
-                    var result = await Invoke(call);
-                    chat.Add(Role.Tool, ((object?)result).AsJSONString(), toolCall: call);
-                }
-                catch (Exception ex)
-                {
-                    chat.Add(Role.Tool, $"Tool execution error: {ex.Message}", toolCall: call);
-                }
-            }
-        }
-
-
-        public async Task<dynamic> Invoke(ToolCall tool)
+        public async Task<dynamic?> Invoke(ToolCall tool)
         {
             if (tool == null) throw new ArgumentNullException(nameof(tool));
             var paramValues = tool.Parameters;
@@ -456,17 +359,7 @@ namespace Agenty.LLMCore.ToolHandling
                     result = resultProperty.GetValue(task);
                 }
             }
-            else
-            {
-                // Sync return
-                result = func.DynamicInvoke(paramValues);
-            }
-
-            if (result == null) return null;
-
-            // Return primitives as-is, strings as-is, else ToString() for complex objects
-            if (result is string || result.GetType().IsPrimitive)
-                return result;
+            else result = func.DynamicInvoke(paramValues);
 
             return result;
         }

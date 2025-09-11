@@ -1,4 +1,5 @@
 ﻿using Agenty.LLMCore;
+using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.Providers.OpenAI;
 using Agenty.LLMCore.ToolHandling;
@@ -91,8 +92,33 @@ namespace Agenty.AgentCore
         {
             while (response.ToolCalls.Count != 0)
             {
-                await _coord.HandleToolCallSequential(response.ToolCalls, chat);
+                await HandleToolCallSequential(response.ToolCalls, chat);
                 response = await _coord.GetToolCalls(chat);
+            }
+        }
+        public async Task HandleToolCallSequential(List<ToolCall> toolCalls, Conversation chat)
+        {
+            if (toolCalls == null || toolCalls.Count == 0) return;
+
+            foreach (var call in toolCalls)
+            {
+                if (string.IsNullOrWhiteSpace(call.Name) && !string.IsNullOrWhiteSpace(call.Message))
+                {
+                    chat.Add(Role.Assistant, call.Message);
+                    continue;
+                }
+
+                chat.Add(Role.Assistant, null, toolCall: call);
+
+                try
+                {
+                    var result = await _coord.Invoke(call);
+                    chat.Add(Role.Tool, ((object?)result).AsJSONString(), toolCall: call);
+                }
+                catch (Exception ex)
+                {
+                    chat.Add(Role.Tool, $"Tool execution error: {ex.Message}", toolCall: call);
+                }
             }
         }
 

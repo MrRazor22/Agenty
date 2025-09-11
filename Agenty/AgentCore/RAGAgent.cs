@@ -21,7 +21,6 @@ namespace Agenty.AgentCore
         private readonly Conversation _globalChat = new();
 
         private int _maxContextTokens = 10000;
-        private string _tokenizerModel = "gpt-3.5-turbo";
 
         public static RAGAgent Create() => new RAGAgent();
         private RAGAgent() { }
@@ -59,24 +58,18 @@ namespace Agenty.AgentCore
 
         public IRagCoordinator Knowledge => _coord;
         public async Task<RAGResult> ExecuteAsync(
-            string question,
-            int topK = 3,
-            int maxRounds = 5)
+     string question,
+     int topK = 3,
+     int maxRounds = 5)
         {
-            // Step 1: Retrieve
-            var retrieved = (await _coord.Search(question, topK)).ToList();
-            if (!retrieved.Any())
-                retrieved = (await _coord.Search(question, topK * 2)).ToList();
-
-            // Step 2: Build context
-            var contextChunks = retrieved.Select(r => $"[{r.source}] {r.chunk}");
-            string context = RAGHelper.AssembleContext(contextChunks, _maxContextTokens, _tokenizerModel);
+            // Step 1: Retrieve + context (now one call)
+            var ragContext = await _coord.GetContext(question, topK, _maxContextTokens);
 
             var sessionChat = new Conversation();
             _logger.AttachTo(sessionChat);
             sessionChat.Add(Role.System, "You are a concise QA assistant. Use retrieved context if provided. " +
                                          "Answer in <=3 sentences. Always mention source(s).")
-                       .Add(Role.User, context + "\n\nQuestion: " + question);
+                       .Add(Role.User, ragContext.Context + "\n\nQuestion: " + question);
 
             string finalAnswer = "";
             for (int round = 0; round < maxRounds; round++)
@@ -99,9 +92,7 @@ namespace Agenty.AgentCore
                     if (verdict.confidence_score == Verdict.partial)
                         sessionChat.Add(Role.User, verdict.explanation);
 
-                    finalAnswer = await _llm.GetResponse(
-                        sessionChat.Add(Role.User, "Give a final user friendly answer."),
-                        LLMMode.Creative);
+                    sessionChat.Add(Role.User, "Rewrite your answer clearly and naturally for the user, in plain language.");
 
                     _globalChat.Add(Role.User, question)
                                .Add(Role.Assistant, finalAnswer);
@@ -109,20 +100,23 @@ namespace Agenty.AgentCore
                     break;
                 }
 
-                if (!retrieved.Any()) break; // fallback if KB weak
+                if (!ragContext.Chunks.Any()) break; // fallback if KB weak
                 sessionChat.Add(Role.User, verdict.explanation);
             }
 
             // Step 4: Fallback if still empty
             if (string.IsNullOrEmpty(finalAnswer))
             {
-                sessionChat.Add(Role.User, "Max rounds reached. Return the best final answer now as plain text with sources.");
+                sessionChat.Add(Role.User, "Return your best final answer clearly and naturally for the user, in plain language.");
                 finalAnswer = await _llm.GetResponse(sessionChat);
                 _globalChat.Add(Role.User, question)
                            .Add(Role.Assistant, finalAnswer);
             }
 
-            var sources = retrieved.Select(r => (r.source, r.score)).ToList();
+            var sources = ragContext.Chunks
+                .Select(r => (r.Source, r.Score))
+                .ToList();
+
             return new RAGResult(finalAnswer, sources);
         }
 

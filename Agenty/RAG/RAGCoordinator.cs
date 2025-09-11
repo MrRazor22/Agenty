@@ -10,6 +10,9 @@ using System.Threading.Tasks;
 
 namespace Agenty.RAG
 {
+    public record RetrievedChunk(string Id, string Text, double Score, string Source);
+    public record RagContext(string Context, IReadOnlyList<RetrievedChunk> Chunks);
+
     public interface IRagCoordinator
     {
         // Ingest
@@ -20,7 +23,8 @@ namespace Agenty.RAG
         Task AddUrlsAsync(IEnumerable<string> urls, int maxConcurrency = 6);
 
         // Search
-        Task<IEnumerable<(string chunk, double score, string source)>> Search(string query, int topK = 3);
+        Task<IReadOnlyList<RetrievedChunk>> Search(string query, int topK = 3);
+        Task<RagContext> GetContext(string query, int topK = 3, int maxTokens = 2000);
     }
 
     public sealed class RagCoordinator : IRagCoordinator
@@ -75,14 +79,12 @@ namespace Agenty.RAG
         // === Ingest ===
         public async Task AddDocumentsAsync(IEnumerable<(string Doc, string Source)> docs)
         {
-
-            // 1) Chunk docs and compute stable IDs first
             var allChunks = docs
                 .Where(d => !ShouldSkipSource(d.Source))
                 .SelectMany(d => RAGHelper.SplitByParagraphs(d.Doc)
                     .SelectMany(s => RAGHelper.Chunk(s, _chunkSize, _chunkOverlap, _tokenizerModel)
                     .Select(chunk => (Id: RAGHelper.ComputeId(chunk), Text: chunk, Source: d.Source))))
-                .DistinctBy(x => x.Id) // no duplicate IDs within this batch
+                .DistinctBy(x => x.Id)
                 .ToList();
 
             if (allChunks.Count == 0)
@@ -91,7 +93,6 @@ namespace Agenty.RAG
                 return;
             }
 
-            // 2) Skip already stored chunks
             var newChunks = allChunks.Where(c => !_store.Contains(c.Id)).ToList();
             if (newChunks.Count == 0)
             {
@@ -101,7 +102,6 @@ namespace Agenty.RAG
 
             _logger?.Log($"[RAG] {allChunks.Count} total chunks, {newChunks.Count} new -> embedding only new chunks.");
 
-            // 3) Embed only new chunks
             const int batchSize = 16;
             for (int i = 0; i < newChunks.Count; i += batchSize)
             {
@@ -119,7 +119,6 @@ namespace Agenty.RAG
                 await _store.AddBatchAsync(items);
             }
 
-            // 4) Save after adding
             AutoSave();
             _logger?.Log("[RAG] Ingestion complete.");
         }
@@ -130,7 +129,6 @@ namespace Agenty.RAG
         public async Task AddFilesAsync(IEnumerable<string> paths)
         {
             var docs = new List<(string Doc, string Source)>();
-
             foreach (var p in paths)
             {
                 try
@@ -148,7 +146,6 @@ namespace Agenty.RAG
                 await AddDocumentsAsync(docs);
         }
 
-
         public async Task AddDirectoryAsync(string directoryPath, string searchPattern = "*.*", bool recursive = true)
         {
             if (!Directory.Exists(directoryPath))
@@ -158,7 +155,6 @@ namespace Agenty.RAG
             }
 
             var option = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-
             var files = Directory.EnumerateFiles(directoryPath, searchPattern, option);
             await AddFilesAsync(files);
         }
@@ -192,9 +188,8 @@ namespace Agenty.RAG
                         return;
                     }
 
-                    // Avoid loading ridiculously large pages: optional guard
                     if (resp.Content.Headers.ContentLength.HasValue &&
-                        resp.Content.Headers.ContentLength.Value > 5_000_000) // 5MB guard
+                        resp.Content.Headers.ContentLength.Value > 5_000_000)
                     {
                         _logger?.Log($"[RAG] Skipping large page {url} ({resp.Content.Headers.ContentLength} bytes)");
                         return;
@@ -218,12 +213,30 @@ namespace Agenty.RAG
                 await AddDocumentsAsync(docs);
         }
 
-        // === Search ===
-        public async Task<IEnumerable<(string chunk, double score, string source)>> Search(string query, int topK = 3)
+        public async Task<IReadOnlyList<RetrievedChunk>> Search(string query, int topK = 3)
         {
             var qVec = Normalize(await _embeddings.GetEmbeddingAsync(query));
             var results = await _store.SearchAsync(qVec, topK);
-            return results.Select(r => (r.Text, r.Score, r.Source));
+
+            return results.Select(r => new RetrievedChunk(
+                Id: r.Id,
+                Text: r.Text,
+                Score: r.Score,
+                Source: r.Source
+            )).ToList();
+        }
+
+        public async Task<RagContext> GetContext(string query, int topK = 3, int maxTokens = 2000)
+        {
+            var retrieved = (await Search(query, topK)).ToList();
+
+            if (!retrieved.Any())
+                retrieved = (await Search(query, topK * 2)).ToList();
+
+            var contextChunks = retrieved.Select(r => $"[{r.Source}] {r.Text}");
+            string context = RAGHelper.AssembleContext(contextChunks, maxTokens, _tokenizerModel);
+
+            return new RagContext(context, retrieved);
         }
 
         // === Helpers ===
