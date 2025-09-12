@@ -2,6 +2,20 @@
 
 namespace Agenty.LLMCore.JsonSchema
 {
+    public static class JsonSchemaConstants
+    { // Key constants
+        public const string TypeKey = "type";
+        public const string PropertiesKey = "properties";
+        public const string RequiredKey = "required";
+        public const string DescriptionKey = "description";
+        public const string EnumKey = "enum";
+        public const string FormatKey = "format";
+        public const string MinLengthKey = "minLength";
+        public const string MaxLengthKey = "maxLength";
+        public const string PatternKey = "pattern";
+        public const string AdditionalPropertiesKey = "additionalProperties";
+        public const string ItemsKey = "items";
+    }
     public class JsonSchemaBuilder
     {
         private readonly JsonObject _schema;

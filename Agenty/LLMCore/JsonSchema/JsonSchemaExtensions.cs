@@ -1,44 +1,14 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
+﻿using System.Collections;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using System.Linq;
 using System.Reflection;
-using System.Runtime.Serialization;
-using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Threading.Tasks;
 
 namespace Agenty.LLMCore.JsonSchema
 {
     public static class JsonSchemaExtensions
     {
-        public static string NormalizeArgs(this JsonObject args) =>
-        Canonicalize(args).ToJsonString(new JsonSerializerOptions { WriteIndented = false });
-
-        private static JsonNode Canonicalize(JsonNode? node) =>
-            node switch
-            {
-                JsonObject obj => new JsonObject(
-                    obj.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase)
-                       .Select(kvp => new KeyValuePair<string, JsonNode?>(kvp.Key, Canonicalize(kvp.Value)))
-                ),
-                JsonArray arr => new JsonArray(arr.Select(Canonicalize).ToArray()),
-                _ => node!
-            };
-
-        public static string AsJSONString(this object? obj)
-        {
-            if (obj == null) return "<null>";
-            return obj is string s ? s : JsonSerializer.Serialize(obj);
-        }
-        public static JsonObject GetSchemaFor<T>()
-        {
-            return GetSchemaForType(typeof(T));
-        }
-
+        public static JsonObject GetSchemaFor<T>() => GetSchemaForType(typeof(T));
         public static JsonObject GetSchemaForType(this Type type, HashSet<Type>? visited = null)
         {
             visited ??= new HashSet<Type>();
@@ -68,18 +38,9 @@ namespace Agenty.LLMCore.JsonSchema
                     .Items(type.GetGenericArguments()[0].GetSchemaForType(visited))
                     .Build();
 
-            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>) &&
-    type.GetGenericArguments()[0] == typeof(string))
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>) && type.GetGenericArguments()[0] == typeof(string))
             {
-                var valueType = type.GetGenericArguments()[1];
-                var valueSchema = new JsonSchemaBuilder()
-                    .Type("string") // 🔑 force string
-                    .Build();
-
-                return new JsonSchemaBuilder()
-                    .Type("object")
-                    .AdditionalProperties(valueSchema)
-                    .Build();
+                return GetDictionarySchema(type.GetGenericArguments()[1], visited);
             }
 
 
@@ -126,6 +87,14 @@ namespace Agenty.LLMCore.JsonSchema
                 .Properties(props)
                 .Required(required)
                 //.AdditionalProperties(false)
+                .Build();
+        }
+        private static JsonObject GetDictionarySchema(Type valueType, HashSet<Type> visited)
+        {
+            var valueSchema = valueType.GetSchemaForType(visited);
+            return new JsonSchemaBuilder()
+                .Type("object")
+                .AdditionalProperties(valueSchema)
                 .Build();
         }
 

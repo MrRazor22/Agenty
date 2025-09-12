@@ -1,7 +1,9 @@
 ﻿using Agenty.LLMCore.JsonSchema;
 using System.ComponentModel;
 using System.Reflection;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace Agenty.LLMCore.ToolHandling
@@ -68,7 +70,11 @@ namespace Agenty.LLMCore.ToolHandling
             RegexOptions.Compiled | RegexOptions.IgnorePatternWhitespace | RegexOptions.IgnoreCase
         );
         #endregion
-
+        private static readonly JsonSerializerOptions _jsonOptions = new()
+        {
+            Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
+            PropertyNameCaseInsensitive = true
+        };
         public async Task<LLMResponse> GetToolCalls(Conversation prompt, ToolCallMode toolCallMode = ToolCallMode.Auto, int maxRetries = 3, LLMMode mode = LLMMode.Balanced, params Tool[] tools)
         {
             tools = tools?.Any() == true ? tools : toolRegistry.RegisteredTools.ToArray();
@@ -163,7 +169,7 @@ namespace Agenty.LLMCore.ToolHandling
                     if (jsonResponse != null)
                     {
                         var jsonString = jsonResponse.ToJsonString();
-                        var result = JsonHelper.DeserializeJson<T>(jsonString);
+                        var result = JsonSerializer.Deserialize<T>(jsonString, _jsonOptions);
                         if (result != null) return result;
                     }
                 }
@@ -318,7 +324,7 @@ namespace Agenty.LLMCore.ToolHandling
                 {
                     try
                     {
-                        paramValues[i] = JsonHelper.DeserializeJson(node.ToJsonString(), p.ParameterType);
+                        paramValues[i] = JsonSerializer.Deserialize(node.ToJsonString(), p.ParameterType, _jsonOptions);
                     }
                     catch
                     {
