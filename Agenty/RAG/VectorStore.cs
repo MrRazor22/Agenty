@@ -1,29 +1,49 @@
-﻿using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
+﻿using System.Collections.Concurrent;
 using System.Text.Json;
-using System.Threading.Tasks;
+using Agenty.LLMCore.Logging;
 
 namespace Agenty.RAG
 {
+    public record VectorRecord(
+        string Id,
+        string Text,
+        float[] Vector,
+        string Source
+    );
+
+    public record SearchResult(
+        string Id,
+        string Text,
+        string Source,
+        double Score
+    );
+
     public interface IVectorStore
     {
-        Task AddAsync(string id, string text, float[] vector, string source);
-        Task AddBatchAsync(IEnumerable<(string Id, string Text, float[] Vector, string Source)> items);
-        Task<IEnumerable<(string Id, string Text, string Source, double Score)>> SearchAsync(float[] queryVector, int topK = 3);
-        void Save(string path);
-        bool Load(string path);
+        Task AddAsync(VectorRecord item);
+        Task AddBatchAsync(IEnumerable<VectorRecord> items);
+        Task<IReadOnlyList<SearchResult>> SearchAsync(float[] queryVector, int topK = 3);
         bool Contains(string id);
     }
 
     public sealed class InMemoryVectorStore : IVectorStore
     {
-        private readonly ConcurrentDictionary<string, Entry> _store = new();
+        private readonly ConcurrentDictionary<string, VectorRecord> _store = new();
+        private readonly string _persistPath;
+        private readonly ILogger? _logger;
 
-        private record Entry(string Id, string Text, float[] Vector, string Source);
+        public InMemoryVectorStore(string? persistDir = null, ILogger? logger = null)
+        {
+            _logger = logger;
+
+            // Default to AppData/Agenty/kb.json if no dir given
+            var baseDir = persistDir ??
+                          Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agenty");
+            Directory.CreateDirectory(baseDir);
+            _persistPath = Path.Combine(baseDir, "kb.json");
+
+            Load();
+        }
 
         private static double CosineSimilarity(float[] v1, float[] v2)
         {
@@ -40,60 +60,78 @@ namespace Agenty.RAG
             return (norm1 == 0 || norm2 == 0) ? 0 : dot / (Math.Sqrt(norm1) * Math.Sqrt(norm2));
         }
 
-        // === Public API ===
-        public Task AddAsync(string id, string text, float[] vector, string source)
+        public Task AddAsync(VectorRecord item)
         {
-            // If user passes null/empty id → use hash of text
-            id = string.IsNullOrWhiteSpace(id) ? RAGHelper.ComputeId(text) : id;
-
-            _store.TryAdd(id, new Entry(id, text, vector, source));
+            var id = string.IsNullOrWhiteSpace(item.Id) ? RAGHelper.ComputeId(item.Text) : item.Id;
+            _store.TryAdd(id, item with { Id = id });
+            Save();
             return Task.CompletedTask;
         }
 
-        public async Task AddBatchAsync(IEnumerable<(string Id, string Text, float[] Vector, string Source)> items)
+        public async Task AddBatchAsync(IEnumerable<VectorRecord> items)
         {
-            foreach (var (id, text, vector, source) in items)
+            foreach (var item in items)
             {
-                var key = string.IsNullOrWhiteSpace(id) ? RAGHelper.ComputeId(text) : id;
-                _store.TryAdd(key, new Entry(key, text, vector, source));
+                var id = string.IsNullOrWhiteSpace(item.Id) ? RAGHelper.ComputeId(item.Text) : item.Id;
+                _store.TryAdd(id, item with { Id = id });
             }
+            Save();
             await Task.CompletedTask;
         }
 
-        public Task<IEnumerable<(string Id, string Text, string Source, double Score)>> SearchAsync(float[] queryVector, int topK = 3)
+        public Task<IReadOnlyList<SearchResult>> SearchAsync(float[] queryVector, int topK = 3)
         {
             var results = _store.Values
-                .Select(e => (e.Id, e.Text, e.Source, Score: CosineSimilarity(queryVector, e.Vector)))
+                .Select(e => new SearchResult(
+                    e.Id,
+                    e.Text,
+                    e.Source,
+                    CosineSimilarity(queryVector, e.Vector)))
                 .OrderByDescending(r => r.Score)
-                .Take(topK);
+                .Take(topK)
+                .ToList();
 
-            return Task.FromResult(results);
+            return Task.FromResult<IReadOnlyList<SearchResult>>(results);
         }
 
-        public void Save(string path)
+        public bool Contains(string id) =>
+            !string.IsNullOrWhiteSpace(id) && _store.ContainsKey(id);
+
+        // === Persistence internal ===
+        private void Save()
         {
-            var list = _store.Values.ToList();
-            var json = JsonSerializer.Serialize(list, new JsonSerializerOptions
+            try
             {
-                WriteIndented = true
-            });
-            File.WriteAllText(path, json);
+                var list = _store.Values.ToList();
+                var json = JsonSerializer.Serialize(list, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(_persistPath, json);
+                _logger?.Log($"[RAG] Saved {_store.Count} records to {_persistPath}");
+            }
+            catch (Exception ex)
+            {
+                _logger?.Log($"[RAG] Failed to save store: {ex.Message}");
+            }
         }
 
-        public bool Load(string path)
+        private void Load()
         {
-            if (!File.Exists(path)) return false;
+            if (!File.Exists(_persistPath)) return;
 
-            var json = File.ReadAllText(path);
-            var list = JsonSerializer.Deserialize<List<Entry>>(json);
-            if (list == null) return false;
+            try
+            {
+                var json = File.ReadAllText(_persistPath);
+                var list = JsonSerializer.Deserialize<List<VectorRecord>>(json);
+                if (list == null) return;
 
-            foreach (var e in list)
-                _store.TryAdd(e.Id, e);
+                foreach (var e in list)
+                    _store.TryAdd(e.Id, e);
 
-            return true;
+                _logger?.Log($"[RAG] Loaded {_store.Count} records from {_persistPath}");
+            }
+            catch (Exception ex)
+            {
+                _logger?.Log($"[RAG] Failed to load store: {ex.Message}");
+            }
         }
-
-        public bool Contains(string id) => !string.IsNullOrWhiteSpace(id) && _store.ContainsKey(id);
     }
 }

@@ -6,14 +6,13 @@ using Agenty.LLMCore.ToolHandling;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Agenty.AgentCore
 {
     public sealed class RAGAgent
     {
-        private RagCoordinator _coord = null!;
+        private IRagCoordinator _coord = null!;
         private ILLMClient _llm = null!;
         private ILogger _logger = null!;
         private Gate? _grader;
@@ -41,37 +40,36 @@ namespace Agenty.AgentCore
             return this;
         }
 
-        public RAGAgent WithRAG(
-    IEmbeddingClient embeddings,
-    IVectorStore store,
-    string? savePath = null,
-    ILogger? logger = null)
+        public RAGAgent WithRAG(IEmbeddingClient embeddings, IVectorStore store, ITokenizer tokenizer, ILogger? logger = null)
         {
             _coord = new RagCoordinator(
                 embeddings,
                 store,
-                logger ?? _logger,
-                autoSaveDir: savePath
+                tokenizer,
+                logger ?? _logger
             );
             return this;
         }
 
         public IRagCoordinator Knowledge => _coord;
-        public async Task<RAGResult> ExecuteAsync(
-     string question,
-     int topK = 3,
-     int maxRounds = 5)
-        {
-            // Step 1: Retrieve + context (now one call)
-            var ragContext = await _coord.GetContext(question, topK, _maxContextTokens);
 
+        // === Main Loop ===
+        public async Task<RAGResult> ExecuteAsync(string question, int topK = 3, int maxRounds = 5)
+        {
+            // Step 1: Retrieve context
+            var results = await _coord.Search(question, topK);
+
+            var context = string.Join("\n\n", results.Select(r => $"[{r.Source}] {r.Text}"));
             var sessionChat = new Conversation();
             _logger.AttachTo(sessionChat);
+
             sessionChat.Add(Role.System, "You are a concise QA assistant. Use retrieved context if provided. " +
                                          "Answer in <=3 sentences. Always mention source(s).")
-                       .Add(Role.User, ragContext.Context + "\n\nQuestion: " + question);
+                       .Add(Role.User, context + "\n\nQuestion: " + question);
 
             string finalAnswer = "";
+
+            // Step 2: Iterative refinement
             for (int round = 0; round < maxRounds; round++)
             {
                 var response = await _llm.GetResponse(sessionChat);
@@ -87,7 +85,7 @@ namespace Agenty.AgentCore
 
                 if (verdict.confidence_score is Verdict.yes or Verdict.partial)
                 {
-                    sessionChat.Add(Role.Assistant, response);
+                    finalAnswer = response;
 
                     if (verdict.confidence_score == Verdict.partial)
                         sessionChat.Add(Role.User, verdict.explanation);
@@ -96,24 +94,24 @@ namespace Agenty.AgentCore
 
                     _globalChat.Add(Role.User, question)
                                .Add(Role.Assistant, finalAnswer);
-
                     break;
                 }
 
-                if (!ragContext.Chunks.Any()) break; // fallback if KB weak
+                if (!results.Any()) break; // fallback if KB weak
                 sessionChat.Add(Role.User, verdict.explanation);
             }
 
-            // Step 4: Fallback if still empty
+            // Step 3: Fallback if no final
             if (string.IsNullOrEmpty(finalAnswer))
             {
                 sessionChat.Add(Role.User, "Return your best final answer clearly and naturally for the user, in plain language.");
                 finalAnswer = await _llm.GetResponse(sessionChat);
+
                 _globalChat.Add(Role.User, question)
                            .Add(Role.Assistant, finalAnswer);
             }
 
-            var sources = ragContext.Chunks
+            var sources = results
                 .Select(r => (r.Source, r.Score))
                 .ToList();
 

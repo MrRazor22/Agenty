@@ -20,15 +20,18 @@ namespace Agenty.Test
             ILogger logger = new ConsoleLogger(LogLevel.Trace);
 
             var agent = RAGAgent.Create()
-                .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen/qwen3-4b-2507")
+                .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m")
                 .WithLogger(logger)
                 .WithRAG(
                     new OpenAIEmbeddingClient("http://127.0.0.1:1234/v1", "lmstudio", "bge-model"),
-                    new InMemoryVectorStore(),
-                    savePath: Path.Combine(docsPath)
+                    new InMemoryVectorStore(logger: logger),
+                    new SharpTokenTokenizer("gpt-3.5-turbo"),
+                    logger
                 );
 
-            await agent.Knowledge.AddDirectoryAsync(docsPath);
+            // ✅ Use RAGHelper to load files, then add docs
+            var docs = await RAG.IO.DocumentLoader.LoadDirectoryAsync(docsPath);
+            await agent.Knowledge.AddDocumentsAsync(docs);
 
             Console.WriteLine("🤖 RAG Agent ready. Type 'exit' to quit.");
             while (true)

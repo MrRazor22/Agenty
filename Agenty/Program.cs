@@ -10,8 +10,8 @@ namespace Agenty
     {
         public static async Task Main(string[] args)
         {
-            //await RAGRunner.RunAsync();
-            await ToolCallingRunner.RunAsync();
+            await RAGRunner.RunAsync();
+            //await ToolCallingRunner.RunAsync();
         }
     }
 }
