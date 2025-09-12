@@ -1,17 +1,9 @@
-﻿using Agenty.LLMCore.JsonSchema;
-using Agenty.LLMCore.ToolHandling;
-using HtmlAgilityPack;
-using Microsoft.VisualBasic;
-using Microsoft.VisualStudio.TestPlatform.CommunicationUtilities;
+﻿using Agenty.LLMCore.ToolHandling;
 using OpenAI;
 using OpenAI.Chat;
-using System;
 using System.ClientModel;
-using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
-using System.Xml.Linq;
 
 namespace Agenty.LLMCore.Providers.OpenAI
 {
