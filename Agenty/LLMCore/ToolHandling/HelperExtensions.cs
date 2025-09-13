@@ -1,12 +1,11 @@
-﻿using Agenty.LLMCore.ToolHandling;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace Agenty.LLMCore
+namespace Agenty.LLMCore.ToolHandling
 {
     internal static class HelperExtensions
     {

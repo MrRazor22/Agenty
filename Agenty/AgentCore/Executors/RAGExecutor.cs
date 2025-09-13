@@ -7,7 +7,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore
+namespace Agenty.AgentCore.Executors
 {
     /// <summary>
     /// Executor that runs RAG: searches knowledge base first,

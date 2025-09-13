@@ -7,7 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore
+namespace Agenty.AgentCore.Executors
 {
     /// <summary>
     /// Executor that lets the LLM drive Q&A using RAGTools via tool-calling.

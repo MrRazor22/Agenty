@@ -1,6 +1,6 @@
 ﻿using SharpToken;
 
-namespace Agenty.AgentCore
+namespace Agenty.AgentCore.TokenHandling
 {
     public interface ITokenizer
     {

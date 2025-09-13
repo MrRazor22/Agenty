@@ -1,5 +1,5 @@
 ﻿// File: RAGHelper.cs
-using Agenty.AgentCore;
+using Agenty.AgentCore.TokenHandling;
 using HtmlAgilityPack;
 using SharpToken;
 using System;

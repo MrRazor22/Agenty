@@ -6,7 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore
+namespace Agenty.AgentCore.Executors
 {
     public sealed class ToolCallingExecutor : IExecutor
     {

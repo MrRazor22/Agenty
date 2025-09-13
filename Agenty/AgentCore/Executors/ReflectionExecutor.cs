@@ -4,7 +4,7 @@ using Agenty.LLMCore.ToolHandling;
 using System;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore
+namespace Agenty.AgentCore.Executors
 {
     /// <summary>
     /// Executor that makes the LLM reflect on its answers,
