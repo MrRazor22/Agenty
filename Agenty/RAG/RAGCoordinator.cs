@@ -10,16 +10,23 @@ using System.Threading.Tasks;
 
 namespace Agenty.RAG
 {
+    public enum SearchScope
+    {
+        Both,           // Search both persistent and ephemeral (default)
+        KnowledgeBase,  // Search only persistent store
+        Session         // Search only ephemeral/session docs
+    }
+
     public interface IRagCoordinator
     {
-        Task AddDocumentAsync(string doc, string source = "unknown");
-        Task AddDocumentsAsync(IEnumerable<(string Doc, string Source)> docs);
-        Task<IReadOnlyList<SearchResult>> Search(string query, int topK = 3);
+        Task AddDocumentAsync(string doc, string source = "unknown", bool persist = true);
+        Task AddDocumentsAsync(IEnumerable<(string Doc, string Source)> docs, bool persist = true);
+        Task<IReadOnlyList<SearchResult>> Search(string query, int topK = 3, SearchScope scope = SearchScope.Both);
     }
 
     /// <summary>
     /// Orchestrates document ingestion (chunk → embed → store) and search.
-    /// Persistence is owned by the VectorStore, not by this class.
+    /// Supports both persistent (knowledge base) and ephemeral (session-only) documents.
     /// </summary>
     public sealed class RagCoordinator : IRagCoordinator
     {
@@ -30,6 +37,7 @@ namespace Agenty.RAG
 
         private readonly int _chunkSize;
         private readonly int _chunkOverlap;
+        private readonly List<VectorRecord> _ephemeral = new();
 
         public RagCoordinator(
             IEmbeddingClient embeddings,
@@ -56,10 +64,10 @@ namespace Agenty.RAG
             return false;
         }
 
-        public async Task AddDocumentAsync(string doc, string source = "unknown") =>
-            await AddDocumentsAsync(new[] { (doc, source) });
+        public async Task AddDocumentAsync(string doc, string source = "unknown", bool persist = true) =>
+            await AddDocumentsAsync(new[] { (doc, source) }, persist);
 
-        public async Task AddDocumentsAsync(IEnumerable<(string Doc, string Source)> docs)
+        public async Task AddDocumentsAsync(IEnumerable<(string Doc, string Source)> docs, bool persist = true)
         {
             var allChunks = docs
                 .Where(d => !ShouldSkipSource(d.Source))
@@ -80,11 +88,30 @@ namespace Agenty.RAG
                 return;
             }
 
-            var newChunks = allChunks.Where(c => !_store.Contains(c.Id)).ToList();
-            if (newChunks.Count == 0)
+            List<VectorRecord> newChunks;
+            if (persist)
             {
-                _logger?.Log("[RAG] No new chunks to add (all already present).");
-                return;
+                // For persistent docs, check against store to avoid duplicates
+                newChunks = allChunks.Where(c => !_store.Contains(c.Id)).ToList();
+                if (newChunks.Count == 0)
+                {
+                    _logger?.Log("[RAG] No new chunks to add (all already present in persistent store).");
+                    return;
+                }
+            }
+            else
+            {
+                // For ephemeral docs, check against ephemeral list to avoid duplicates
+                lock (_ephemeral)
+                {
+                    var existingIds = _ephemeral.Select(x => x.Id).ToHashSet();
+                    newChunks = allChunks.Where(c => !existingIds.Contains(c.Id)).ToList();
+                }
+                if (newChunks.Count == 0)
+                {
+                    _logger?.Log("[RAG] No new chunks to add (all already present in ephemeral store).");
+                    return;
+                }
             }
 
             _logger?.Log($"[RAG] {allChunks.Count} total chunks, {newChunks.Count} new → embedding only new chunks.");
@@ -96,24 +123,72 @@ namespace Agenty.RAG
                 var texts = batch.Select(x => x.Text).ToList();
 
                 var vectors = (await _embeddings.GetEmbeddingsAsync(texts)).ToArray();
-                var items = batch.Select((x, j) => x with { Vector = Normalize(vectors[j]) });
+                var items = batch.Select((x, j) => x with { Vector = RAGHelper.Normalize(vectors[j]) });
 
-                await _store.AddBatchAsync(items);
+                if (persist)
+                {
+                    await _store.AddBatchAsync(items);
+                }
+                else
+                {
+                    lock (_ephemeral)
+                    {
+                        _ephemeral.AddRange(items);
+                    }
+                }
             }
 
-            _logger?.Log("[RAG] Ingestion complete.");
+            var storeType = persist ? "persistent" : "ephemeral";
+            _logger?.Log($"[RAG] Ingestion complete ({newChunks.Count} chunks added to {storeType} store).");
         }
 
-        public async Task<IReadOnlyList<SearchResult>> Search(string query, int topK = 3)
+        public async Task<IReadOnlyList<SearchResult>> Search(string query, int topK = 3, SearchScope scope = SearchScope.Both)
         {
-            var qVec = Normalize(await _embeddings.GetEmbeddingAsync(query));
-            return await _store.SearchAsync(qVec, topK);
+            var qVec = RAGHelper.Normalize(await _embeddings.GetEmbeddingAsync(query));
+
+            return scope switch
+            {
+                SearchScope.KnowledgeBase => await _store.SearchAsync(qVec, topK),
+                SearchScope.Session => SearchEphemeral(qVec, topK),
+                SearchScope.Both => await SearchBoth(qVec, topK),
+                _ => throw new ArgumentOutOfRangeException(nameof(scope))
+            };
         }
 
-        private static float[] Normalize(float[] v)
+        private IReadOnlyList<SearchResult> SearchEphemeral(float[] queryVector, int topK)
         {
-            var norm = Math.Sqrt(v.Sum(x => x * x));
-            return norm == 0 ? v : v.Select(x => (float)(x / norm)).ToArray();
+            lock (_ephemeral)
+            {
+                if (_ephemeral.Count == 0)
+                    return Array.Empty<SearchResult>();
+
+                var results = _ephemeral
+                    .Select(record => new SearchResult(
+                        record.Id,
+                        record.Text,
+                        record.Source,
+                        RAGHelper.CosineSimilarity(queryVector, record.Vector)))
+                    .OrderByDescending(r => r.Score)
+                    .Take(topK)
+                    .ToList();
+
+                return results.AsReadOnly();
+            }
+        }
+
+        private async Task<IReadOnlyList<SearchResult>> SearchBoth(float[] queryVector, int topK)
+        {
+            // Get results from both stores
+            var persistentResults = await _store.SearchAsync(queryVector, topK * 2); // Get more to ensure good ranking
+            var ephemeralResults = SearchEphemeral(queryVector, topK * 2);
+
+            // Merge and re-rank
+            var allResults = persistentResults.Concat(ephemeralResults)
+                .OrderByDescending(r => r.Score)
+                .Take(topK)
+                .ToList();
+
+            return allResults.AsReadOnly();
         }
     }
 }

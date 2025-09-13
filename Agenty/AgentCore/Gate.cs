@@ -53,7 +53,7 @@ namespace Agenty.AgentCore
             var history = chat.ToString(~ChatFilter.System);
 
             return Grade<SummaryResult>(
-                @"Provide a concise final answer to the USER QUESTION using only the CONTEXT. 
+                @"Provide a concise direct final answer only addressing the current USER QUESTION using only the CONTEXT. 
 Always include any relevant observations from the CONTEXT, even if they do not fully answer the question. 
 If the information is incomplete, state the limitation clearly."
 ,

@@ -14,9 +14,7 @@ namespace Agenty.Test
             var solutionRoot = Path.GetFullPath(
                 Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..")
             );
-
             var docsPath = Path.Combine(solutionRoot, "Agenty", "Test", "ExampleDocumentation");
-
             ILogger logger = new ConsoleLogger(LogLevel.Trace);
 
             var agent = RAGAgent.Create()
@@ -29,48 +27,42 @@ namespace Agenty.Test
                     logger
                 );
 
-            // ✅ Use RAGHelper to load files, then add docs
+            // Load knowledge base documents
             var docs = await RAG.IO.DocumentLoader.LoadDirectoryAsync(docsPath);
             await agent.Knowledge.AddDocumentsAsync(docs);
 
             Console.WriteLine("🤖 RAG Agent ready. Type 'exit' to quit.");
+            Console.WriteLine("💡 The agent will search knowledge base first, then fallback to web if needed.");
+            Console.WriteLine();
+
             while (true)
             {
-                Console.Write("\nYou: ");
+                Console.Write("You: ");
                 string? input = Console.ReadLine();
+
                 if (string.IsNullOrWhiteSpace(input) ||
                     input.Equals("exit", StringComparison.OrdinalIgnoreCase))
                     break;
 
-                Console.WriteLine("Agent thinking...");
+                Console.WriteLine("\n" + new string('=', 60));
 
                 try
                 {
-                    var result = await agent.ExecuteAsync(input);
+                    var answer = await agent.ExecuteAsync(input);
 
-                    Console.WriteLine("==============================================================");
-                    Console.WriteLine($"Agent: {result.Answer}");
-                    Console.WriteLine("--------------------------------------------------------------");
-
-                    if (result.Sources.Any())
-                    {
-                        Console.WriteLine("Sources:");
-                        foreach (var (src, score) in result.Sources)
-                            Console.WriteLine($" - {src} ({score:F3})");
-                    }
-                    else
-                    {
-                        Console.WriteLine("Sources: [none]");
-                    }
-                    Console.WriteLine("==============================================================");
+                    Console.WriteLine("\n🤖 Agent Response:");
+                    Console.WriteLine(new string('-', 40));
+                    Console.WriteLine(answer);
+                    Console.WriteLine(new string('=', 60));
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error: {ex.Message}");
+                    Console.WriteLine($"\n❌ Error: {ex.Message}");
+                    Console.WriteLine(new string('=', 60));
                 }
             }
 
-            Console.WriteLine("👋 Exiting Agenty.");
+            Console.WriteLine("\n👋 Exiting Agenty.");
         }
     }
 }

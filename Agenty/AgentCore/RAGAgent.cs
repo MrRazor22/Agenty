@@ -1,12 +1,15 @@
-﻿using Agenty.RAG;
-using Agenty.LLMCore;
+﻿using Agenty.LLMCore;
 using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.Providers.OpenAI;
 using Agenty.LLMCore.ToolHandling;
+using Agenty.RAG;
+using Agenty.RAG.IO;
 using System;
 using System.Collections.Generic;
+using System.IO.Pipelines;
 using System.Linq;
 using System.Threading.Tasks;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Agenty.AgentCore
 {
@@ -15,7 +18,7 @@ namespace Agenty.AgentCore
         private IRagCoordinator _coord = null!;
         private ILLMClient _llm = null!;
         private ILogger _logger = null!;
-        private Gate? _grader;
+        private Gate? _gate;
         private readonly Conversation _chat = new();
         private readonly Conversation _globalChat = new();
 
@@ -36,7 +39,7 @@ namespace Agenty.AgentCore
         {
             _logger = logger;
             _logger.AttachTo(_chat);
-            _grader = new Gate(new ToolCoordinator(_llm, new ToolRegistry()), _logger);
+            _gate = new Gate(new ToolCoordinator(_llm, new ToolRegistry()), _logger);
             return this;
         }
 
@@ -54,70 +57,86 @@ namespace Agenty.AgentCore
         public IRagCoordinator Knowledge => _coord;
 
         // === Main Loop ===
-        public async Task<RAGResult> ExecuteAsync(string question, int topK = 3, int maxRounds = 5)
+        public async Task<string> ExecuteAsync(string goal, int topK = 3, int maxRounds = 5, double minScore = 0.6)
         {
-            // Step 1: Retrieve context
-            var results = await _coord.Search(question, topK);
+            // 1. Search KB
+            var kbResults = await _coord.Search(goal, topK, SearchScope.KnowledgeBase);
+            var results = kbResults;
 
-            var context = string.Join("\n\n", results.Select(r => $"[{r.Source}] {r.Text}"));
+            // 2. If KB weak → fallback to web
+            if (!kbResults.Any() || kbResults.Max(r => r.Score) < minScore)
+            {
+                var webDocs = await WebSearchLoader.SearchAsync(goal, topK);
+                if (webDocs.Any())
+                {
+                    await _coord.AddDocumentsAsync(webDocs.Select(d => (d.Doc, d.Source)), persist: false);
+                    var webResults = await _coord.Search(goal, topK, SearchScope.Session);
+
+                    results = kbResults.Concat(webResults)
+                                       .OrderByDescending(r => r.Score)
+                                       .Take(topK)
+                                       .ToList();
+                }
+            }
+
+            // 3. Build context
+            var context = results.Any()
+                ? string.Join("\n\n", results.Select(r => $"[{r.Source}] {r.Text}"))
+                : "";
+
             var sessionChat = new Conversation();
             _logger.AttachTo(sessionChat);
+            sessionChat.Add(Role.System, "You are a friendly assistant. Use retrieved context if provided.")
+                        .Add(Role.System, "Context:\n" + context)
+                        .Append(_globalChat)
+                        .Add(Role.User, goal);
 
-            sessionChat.Add(Role.System, "You are a concise QA assistant. Use retrieved context if provided. " +
-                                         "Answer in <=3 sentences. Always mention source(s).")
-                       .Add(Role.User, context + "\n\nQuestion: " + question);
-
-            string finalAnswer = "";
-
-            // Step 2: Iterative refinement
+            // 4. Generate + refine answer
+            string answer = "";
             for (int round = 0; round < maxRounds; round++)
             {
-                var response = await _llm.GetResponse(sessionChat);
-                sessionChat.Add(Role.Assistant, response);
+                var resp = await _llm.GetResponse(sessionChat);
+                sessionChat.Add(Role.Assistant, resp);
 
-                if (_grader == null)
-                {
-                    finalAnswer = response;
-                    break;
-                }
+                if (_gate == null) { answer = resp; break; }
 
-                var verdict = await _grader.CheckAnswer(question, sessionChat.ToString(~ChatFilter.System));
+                var sum = await _gate!.SummarizeConversation(sessionChat, goal);
+                var verdict = await _gate!.CheckAnswer(goal, sum.summariedAnswer);
 
                 if (verdict.confidence_score is Verdict.yes or Verdict.partial)
                 {
-                    finalAnswer = response;
-
+                    sessionChat.Add(Role.Assistant, sum.summariedAnswer);
                     if (verdict.confidence_score == Verdict.partial)
                         sessionChat.Add(Role.User, verdict.explanation);
 
-                    sessionChat.Add(Role.User, "Rewrite your answer clearly and naturally for the user, in plain language.");
+                    var final = await _llm.GetResponse(
+                        sessionChat.Add(Role.User, "Give a final user friendly answer."),
+                        LLMMode.Creative);
 
-                    _globalChat.Add(Role.User, question)
-                               .Add(Role.Assistant, finalAnswer);
+                    _globalChat.Add(Role.User, goal)
+                               .Add(Role.Assistant, final);
+
+                    answer = final;
                     break;
                 }
 
-                if (!results.Any()) break; // fallback if KB weak
-                sessionChat.Add(Role.User, verdict.explanation);
+                if (round < maxRounds - 1)
+                    sessionChat.Add(Role.User, verdict.explanation);
             }
 
-            // Step 3: Fallback if no final
-            if (string.IsNullOrEmpty(finalAnswer))
+            // 5. Fallback if no good answer
+            if (string.IsNullOrEmpty(answer))
             {
-                sessionChat.Add(Role.User, "Return your best final answer clearly and naturally for the user, in plain language.");
-                finalAnswer = await _llm.GetResponse(sessionChat);
-
-                _globalChat.Add(Role.User, question)
-                           .Add(Role.Assistant, finalAnswer);
+                sessionChat.Add(Role.User, "Give your best final answer clearly in plain language.");
+                answer = await _llm.GetResponse(sessionChat);
             }
 
-            var sources = results
-                .Select(r => (r.Source, r.Score))
-                .ToList();
-
-            return new RAGResult(finalAnswer, sources);
+            _globalChat.Add(Role.User, goal).Add(Role.Assistant, answer);
+            return answer;
         }
 
-        public record RAGResult(string Answer, List<(string Source, double Score)> Sources);
+
+
+
     }
 }
