@@ -19,7 +19,7 @@ namespace Agenty.AgentCore
         private readonly IToolCoordinator _coord;
         private readonly ILogger _logger;
 
-        public Gate(ToolCoordinator coord, ILogger logger = null)
+        public Gate(IToolCoordinator coord, ILogger logger = null)
         {
             _coord = coord;
             _logger = logger;

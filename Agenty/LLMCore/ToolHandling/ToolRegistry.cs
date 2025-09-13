@@ -19,6 +19,7 @@ namespace Agenty.LLMCore.ToolHandling
         void Register(params Delegate[] funcs);
         void Register(Delegate func, params string[] tags);
         void RegisterAll<T>(params string[] tags);
+        void RegisterAll<T>(T? instance = default, params string[] tags);
         Tool? Get(Delegate func);
         Tool? Get(string toolName);
         IEnumerable<Tool> GetTools(params Type[] toolTypes);
@@ -62,6 +63,38 @@ namespace Agenty.LLMCore.ToolHandling
                             .ToArray()), method);
 
                     Register(del, tags);
+                }
+                catch
+                {
+                    // Skip overloads or mismatches
+                }
+            }
+        }
+        public void RegisterAll<T>(T? instance = default, params string[] tags)
+        {
+            var methods = typeof(T).GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance);
+
+            foreach (var method in methods)
+            {
+                try
+                {
+                    // If instance is null, only allow static methods
+                    if (!method.IsStatic && instance == null)
+                        continue;
+
+                    if (method.DeclaringType == typeof(object))
+                        continue;
+
+                    var paramTypes = method.GetParameters()
+                        .Select(p => p.ParameterType)
+                        .Concat(new[] { method.ReturnType })
+                        .ToArray();
+
+                    var del = Delegate.CreateDelegate(Expression.GetDelegateType(paramTypes),
+                                                      instance, method, throwOnBindFailure: false);
+
+                    if (del != null)
+                        Register(del, tags);
                 }
                 catch
                 {

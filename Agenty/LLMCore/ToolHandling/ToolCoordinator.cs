@@ -10,6 +10,7 @@ namespace Agenty.LLMCore.ToolHandling
 {
     public interface IToolCoordinator
     {
+        IToolRegistry Registry { get; }
         Task<LLMResponse> GetToolCalls(Conversation prompt, ToolCallMode toolCallMode = ToolCallMode.Auto, int maxRetries = 0, LLMMode mode = LLMMode.Balanced, params Tool[] tools);
         Task<T?> GetStructuredResponse<T>(Conversation prompt, int maxRetries = 3, LLMMode mode = LLMMode.Deterministic);
         Task<dynamic?> Invoke(ToolCall tool);
@@ -75,6 +76,7 @@ namespace Agenty.LLMCore.ToolHandling
             Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
             PropertyNameCaseInsensitive = true
         };
+        public IToolRegistry Registry { get; } = toolRegistry;
         public async Task<LLMResponse> GetToolCalls(Conversation prompt, ToolCallMode toolCallMode = ToolCallMode.Auto, int maxRetries = 3, LLMMode mode = LLMMode.Balanced, params Tool[] tools)
         {
             tools = tools?.Any() == true ? tools : toolRegistry.RegisteredTools.ToArray();

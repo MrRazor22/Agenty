@@ -10,21 +10,21 @@ namespace Agenty.LLMCore.BuiltInTools
 {
     public class RAGTools
     {
-        private static IRagCoordinator? _coord;
-        private static int _defaultTopK = 3;
-        private static SearchScope _defaultScope = SearchScope.Both;
-        private static double _minScore = 0.6;
+        private IRagCoordinator? _coord;
+        private int _defaultTopK = 3;
+        private SearchScope _defaultScope = SearchScope.Both;
+        private double _minScore = 0.6;
 
-        public static void Initialize(IRagCoordinator coord, int topK = 3, SearchScope scope = SearchScope.Both, double minScore = 0.6)
+        public RAGTools(IRagCoordinator coord, int topK = 3, SearchScope scope = SearchScope.Both, double minScore = 0.6)
         {
-            _coord = coord ?? throw new ArgumentNullException(nameof(coord));
+            _coord = coord;
             _defaultTopK = topK;
             _defaultScope = scope;
             _minScore = minScore;
         }
 
         [Description("Search knowledge base for relevant context.")]
-        public static async Task<IReadOnlyList<SearchResult>> SearchKnowledgeBase(
+        public async Task<IReadOnlyList<SearchResult>> SearchKnowledgeBase(
             [Description("Query to search for.")] string query)
         {
             if (_coord == null)
@@ -35,7 +35,7 @@ namespace Agenty.LLMCore.BuiltInTools
         }
 
         [Description("Search Wikipedia for relevant information.")]
-        public static async Task<IReadOnlyList<SearchResult>> SearchWeb(
+        public async Task<IReadOnlyList<SearchResult>> SearchWeb(
             [Description("Query to search online.")] string query)
         {
             if (_coord == null)
@@ -49,7 +49,7 @@ namespace Agenty.LLMCore.BuiltInTools
         }
 
         [Description("Search within a custom text block.")]
-        public static async Task<IReadOnlyList<SearchResult>> SearchInText(
+        public async Task<IReadOnlyList<SearchResult>> SearchInText(
             [Description("Query to search for.")] string query,
             [Description("The text content to analyze.")] string text)
         {

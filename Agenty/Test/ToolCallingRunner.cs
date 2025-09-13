@@ -12,16 +12,15 @@ namespace Agenty.Test
         {
             ILogger logger = new ConsoleLogger(LogLevel.Trace);
 
-            var agent = ToolCallingAgent.Create()
+            var agent = Agent.Create()
                 .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m")
                 .WithLogger(logger)
-                // Uncomment whichever tools you want enabled:
                 .WithTools<SearchTools>()
                 .WithTools<GeoTools>()
                 .WithTools<WeatherTool>()
                 .WithTools<ConversionTools>()
                 .WithTools<MathTools>()
-                ;
+                .WithExecutor<ToolCallingExecutor>(); // plug in strategy
 
             Console.WriteLine("🤖 Agenty ToolCalling Agent ready. Type 'exit' to quit.");
 
@@ -44,7 +43,7 @@ namespace Agenty.Test
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error: {ex.Message}");
+                    Console.WriteLine($"❌ Error: {ex.Message}");
                 }
             }
 

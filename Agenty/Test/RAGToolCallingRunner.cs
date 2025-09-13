@@ -1,4 +1,5 @@
 ﻿using Agenty.AgentCore;
+using Agenty.LLMCore.BuiltInTools;
 using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.Providers.OpenAI;
 using Agenty.RAG;
@@ -23,18 +24,18 @@ namespace Agenty.Test
             var store = new InMemoryVectorStore(logger: logger);
             var tokenizer = new SharpTokenTokenizer("gpt-3.5-turbo");
 
-            // Build RAG coordinator
-            var coord = new RagCoordinator(embeddings, store, tokenizer, logger);
-
-            // Load docs into KB
-            var docs = await RAG.IO.DocumentLoader.LoadDirectoryAsync(docsPath);
-            await coord.AddDocumentsAsync(docs);
-
-            // Build RAG tool-calling agent
-            var agent = RAGToolCallingAgent.Create()
+            // Build agent with RAG tools + executor
+            var agent = Agent.Create()
                 .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m")
                 .WithLogger(logger)
-                .WithRAGTools(coord);
+                .WithRAG(embeddings, store, tokenizer);
+
+            // Load docs into KB through context
+            var docs = await RAG.IO.DocumentLoader.LoadDirectoryAsync(docsPath);
+            await agent.Context.RAG!.AddDocumentsAsync(docs);
+
+            agent.WithTools(new RAGTools(agent.Context.RAG!))
+                .WithExecutor<RAGToolCallingExecutor>();
 
             Console.WriteLine("🤖 RAG Tool-Calling Agent ready. Type 'exit' to quit.");
             Console.WriteLine("💡 The LLM can decide to call KB search, web search, or ad-hoc text search.");

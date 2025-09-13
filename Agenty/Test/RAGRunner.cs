@@ -17,22 +17,22 @@ namespace Agenty.Test
             var docsPath = Path.Combine(solutionRoot, "Agenty", "Test", "ExampleDocumentation");
             ILogger logger = new ConsoleLogger(LogLevel.Trace);
 
-            var agent = RAGAgent.Create()
+            var agent = Agent.Create()
                 .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m")
                 .WithLogger(logger)
                 .WithRAG(
                     new OpenAIEmbeddingClient("http://127.0.0.1:1234/v1", "lmstudio", "bge-model"),
                     new InMemoryVectorStore(logger: logger),
-                    new SharpTokenTokenizer("gpt-3.5-turbo"),
-                    logger
-                );
+                    new SharpTokenTokenizer("gpt-3.5-turbo")
+                )
+                .WithExecutor<RAGExecutor>();
 
-            // Load knowledge base documents
+            // Load knowledge base docs
             var docs = await RAG.IO.DocumentLoader.LoadDirectoryAsync(docsPath);
-            await agent.Knowledge.AddDocumentsAsync(docs);
+            await agent.Context.RAG!.AddDocumentsAsync(docs);
 
             Console.WriteLine("🤖 RAG Agent ready. Type 'exit' to quit.");
-            Console.WriteLine("💡 The agent will search knowledge base first, then fallback to web if needed.");
+            Console.WriteLine("💡 Searches KB first, then falls back to web if needed.");
             Console.WriteLine();
 
             while (true)
