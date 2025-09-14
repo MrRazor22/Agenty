@@ -8,13 +8,14 @@ using System.Threading.Tasks;
 
 namespace Agenty.AgentCore.Executors
 {
-    public sealed class ToolCallingExecutor : IExecutor
+    public sealed class PlanningExecutor : IExecutor
     {
         private const string _systemPrompt =
-            "You are an assistant. " +
-            "For complex tasks, plan step by step. " +
-            "Use tools if they provide factual data. " +
-            "Keep answers short and clear.";
+            "You are an AI agent. " +
+            "First, reason and create a short plan of steps. " +
+            "Then execute step by step, using tools if needed. " +
+            "After each step, reflect if the goal is satisfied. " +
+            "Keep answers short, user-friendly.";
 
         public async Task<string> ExecuteAsync(IAgentContext context, string goal)
         {
@@ -26,46 +27,45 @@ namespace Agenty.AgentCore.Executors
 
             var chat = new Conversation().Append(context.Conversation);
             context.Logger?.AttachTo(chat);
-
             chat.Add(Role.System, _systemPrompt);
+            chat.Add(Role.User, $"Goal: {goal}");
 
-            IAnswerEvaluator evaluator = context.Logger != null ? new AnswerEvaluator(coord, context.Logger) : null;
-
-            const int maxRounds = 50;
+            const int maxRounds = 30;
 
             for (int round = 0; round < maxRounds; round++)
             {
-                var response = await coord.GetToolCalls(chat);
-                await ExecuteToolChaining(coord, response, chat);
+                // Step 1: Ask model to propose or refine a plan
+                var planResp = await llm.GetResponse(
+                    chat.Add(Role.User, "Make or update your plan. Keep it numbered."),
+                    LLMMode.Planning);
 
-                if (evaluator == null)
-                    return await llm.GetResponse(chat);
+                chat.Add(Role.Assistant, planResp);
 
-                var sum = await evaluator.Summarize(chat, goal);
-                var verdict = await evaluator.EvaluateAnswer(goal, sum.summariedAnswer);
+                // Step 2: Ask model for the next action
+                var actionResp = await coord.GetToolCalls(
+                    chat.Add(Role.User, "Execute next step in your plan. Use tools if needed."));
 
-                if (verdict.confidence_score is Verdict.yes or Verdict.partial)
+                // Step 3: Execute tool chaining
+                await ExecuteToolChaining(coord, actionResp, chat);
+
+                // Step 4: Check if satisfied
+                var verdict = await llm.GetResponse(
+                    chat.Add(Role.User, $"Is the goal '{goal}' completed? Answer yes/no and explain."),
+                    LLMMode.Deterministic);
+
+                if (verdict.Contains("yes", StringComparison.OrdinalIgnoreCase))
                 {
-                    chat.Add(Role.Assistant, sum.summariedAnswer);
-                    if (verdict.confidence_score == Verdict.partial)
-                        chat.Add(Role.User, verdict.explanation);
-
                     var final = await llm.GetResponse(
-                        chat.Add(Role.User, "Give a final user friendly answer."),
+                        chat.Add(Role.User, "Now give a final short answer for the user."),
                         LLMMode.Creative);
 
-                    context.Conversation?.Add(Role.User, goal).Add(Role.Assistant, final);
                     return final;
                 }
-
-                chat.Add(Role.User,
-                    verdict.explanation + " If possible, correct this using the tools.",
-                    isTemporary: true);
             }
 
+            // Fallback
             return await llm.GetResponse(
-                chat.Add(Role.User,
-                $"Answer clearly: {goal}. Use tool results and reasoning so far."),
+                chat.Add(Role.User, $"Time exceeded. Still answer: {goal}"),
                 LLMMode.Creative);
         }
 
@@ -82,14 +82,7 @@ namespace Agenty.AgentCore.Executors
         {
             foreach (var call in toolCalls)
             {
-                if (string.IsNullOrWhiteSpace(call.Name) && !string.IsNullOrWhiteSpace(call.Message))
-                {
-                    chat.Add(Role.Assistant, call.Message);
-                    continue;
-                }
-
                 chat.Add(Role.Assistant, null, toolCall: call);
-
                 try
                 {
                     var result = await coord.Invoke(call);
@@ -97,7 +90,7 @@ namespace Agenty.AgentCore.Executors
                 }
                 catch (Exception ex)
                 {
-                    chat.Add(Role.Tool, $"Tool execution error: {ex.Message}", toolCall: call);
+                    chat.Add(Role.Tool, $"Tool error: {ex.Message}", toolCall: call);
                 }
             }
         }

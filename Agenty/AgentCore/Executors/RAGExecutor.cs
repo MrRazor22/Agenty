@@ -49,12 +49,12 @@ namespace Agenty.AgentCore.Executors
 
             var sessionChat = new Conversation();
             context.Logger.AttachTo(sessionChat);
-            sessionChat.Append(context.GlobalChat)
+            sessionChat.Append(context.Conversation)
                         .Add(Role.System, "You are a friendly assistant. Use retrieved context if provided.")
                         .Add(Role.System, "Context:\n" + contextText);
 
             // 4. Generate + refine answer
-            var gate = new Gate(new ToolCoordinator(context.LLM, context.Tools.Registry), context.Logger);
+            var answerEvaluator = new AnswerEvaluator(new ToolCoordinator(context.LLM, context.Tools.Registry), context.Logger);
             string answer = "";
 
             const int maxRounds = 5;
@@ -63,8 +63,8 @@ namespace Agenty.AgentCore.Executors
                 var resp = await context.LLM.GetResponse(sessionChat);
                 sessionChat.Add(Role.Assistant, resp);
 
-                var sum = await gate.SummarizeConversation(sessionChat, goal);
-                var verdict = await gate.CheckAnswer(goal, sum.summariedAnswer);
+                var sum = await answerEvaluator.Summarize(sessionChat, goal);
+                var verdict = await answerEvaluator.EvaluateAnswer(goal, sum.summariedAnswer);
 
                 if (verdict.confidence_score is Verdict.yes or Verdict.partial)
                 {
@@ -76,9 +76,6 @@ namespace Agenty.AgentCore.Executors
                     var final = await context.LLM.GetResponse(
                         sessionChat.Add(Role.User, "Give a final user friendly answer."),
                         LLMMode.Creative);
-
-                    context.GlobalChat.Add(Role.User, goal)
-                                      .Add(Role.Assistant, final);
 
                     answer = final;
                     break;
@@ -95,7 +92,6 @@ namespace Agenty.AgentCore.Executors
                 answer = await context.LLM.GetResponse(sessionChat);
             }
 
-            context.GlobalChat.Add(Role.User, goal).Add(Role.Assistant, answer);
             return answer;
         }
     }

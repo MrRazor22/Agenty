@@ -33,7 +33,7 @@ namespace Agenty.RAG
         private readonly IEmbeddingClient _embeddings;
         private readonly IVectorStore _store;
         private readonly ITokenizer _tokenizer;
-        private readonly ILogger? _logger;
+        private readonly IDefaultLogger? _logger;
 
         private readonly int _chunkSize;
         private readonly int _chunkOverlap;
@@ -43,7 +43,7 @@ namespace Agenty.RAG
             IEmbeddingClient embeddings,
             IVectorStore store,
             ITokenizer tokenizer,
-            ILogger? logger = null,
+            IDefaultLogger? logger = null,
             int chunkSize = 1000,
             int chunkOverlap = 200)
         {

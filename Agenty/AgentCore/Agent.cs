@@ -3,6 +3,7 @@ using Agenty.LLMCore;
 using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.ToolHandling;
 using Agenty.RAG;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Threading.Tasks;
 
@@ -24,8 +25,8 @@ namespace Agenty.AgentCore
         ILLMClient LLM { get; }
         IToolCoordinator Tools { get; }
         IRagCoordinator? RAG { get; }
-        ILogger Logger { get; }
-        Conversation GlobalChat { get; }
+        IDefaultLogger Logger { get; }
+        Conversation Conversation { get; }
         string? SystemPrompt { get; }
         string? Backstory { get; }
         ITokenizer? Tokenizer { get; }
@@ -37,8 +38,8 @@ namespace Agenty.AgentCore
         public ILLMClient LLM { get; set; } = null!;
         public IToolCoordinator Tools { get; set; } = null!;
         public IRagCoordinator? RAG { get; set; }
-        public ILogger Logger { get; set; } = new ConsoleLogger(Microsoft.Extensions.Logging.LogLevel.Information);
-        public Conversation GlobalChat { get; } = new();
+        public IDefaultLogger Logger { get; set; } = new ConsoleLogger(Microsoft.Extensions.Logging.LogLevel.Information);
+        public Conversation Conversation { get; } = new();
         public string? SystemPrompt { get; set; }
         public string? Backstory { get; set; }
         public ITokenizer? Tokenizer { get; set; }
@@ -74,7 +75,7 @@ namespace Agenty.AgentCore
             return this;
         }
 
-        public Agent WithLogger(ILogger logger) { _ctx.Logger = logger; return this; }
+        public Agent WithLogger(IDefaultLogger logger) { _ctx.Logger = logger; return this; }
 
         public Agent WithTools<T>() { _ctx.Tools.Registry.RegisterAll<T>(); return this; }
         public Agent WithTools(params Delegate[] fns) { _ctx.Tools.Registry.Register(fns); return this; }
@@ -107,14 +108,14 @@ namespace Agenty.AgentCore
         public Agent WithSystemPrompt(string prompt)
         {
             _ctx.SystemPrompt = prompt;
-            _ctx.GlobalChat.Add(Role.System, prompt);
+            _ctx.Conversation.Add(Role.System, prompt);
             return this;
         }
 
         public Agent WithBackstory(string backstory)
         {
             _ctx.Backstory = backstory;
-            _ctx.GlobalChat.Add(Role.System, $"Backstory: {backstory}");
+            _ctx.Conversation.Add(Role.System, $"Backstory: {backstory}");
             return this;
         }
 
@@ -131,13 +132,17 @@ namespace Agenty.AgentCore
                 throw new InvalidOperationException("Executor not set. Call WithExecutor().");
 
             // Trim before executing
-            _tokenManager.Trim(_ctx.GlobalChat, _ctx.MaxContextTokens);
+            _tokenManager.Trim(_ctx.Conversation, _ctx.MaxContextTokens);
 
-            _ctx.GlobalChat.Add(Role.User, goal);
+            _ctx.Conversation.Add(Role.User, goal);
 
             var answer = await _executor.ExecuteAsync(_ctx, goal);
 
-            _ctx.GlobalChat.Add(Role.Assistant, answer);
+            _ctx.Conversation.Add(Role.Assistant, answer);
+
+            var report = _tokenManager?.Report(_ctx.Conversation, _ctx.MaxContextTokens);
+            if (report != null)
+                _ctx.Logger?.Log(LogLevel.Debug, "OverallTokenReport", report.ToString());
 
             return answer;
         }

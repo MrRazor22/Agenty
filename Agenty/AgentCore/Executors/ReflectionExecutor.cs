@@ -14,12 +14,12 @@ namespace Agenty.AgentCore.Executors
     {
         public async Task<string> ExecuteAsync(IAgentContext context, string goal)
         {
-            var chat = new Conversation().Append(context.GlobalChat);
+            var chat = new Conversation().Append(context.Conversation);
             context.Logger.AttachTo(chat);
 
             chat.Add(Role.System, "You are a concise QA assistant. Answer in <=3 sentences.");
 
-            var grader = new Gate(context.Tools, context.Logger);
+            var answerEvaluator = new AnswerEvaluator(context.Tools, context.Logger);
 
             const int maxRounds = 10; // hard safety cap
 
@@ -28,7 +28,7 @@ namespace Agenty.AgentCore.Executors
                 var response = await context.LLM.GetResponse(chat);
                 chat.Add(Role.Assistant, response);
 
-                var grade = await grader.CheckAnswer(goal, chat.ToString(~ChatFilter.System));
+                var grade = await answerEvaluator.EvaluateAnswer(goal, chat.ToString(~ChatFilter.System));
                 if (grade.confidence_score == Verdict.yes)
                 {
                     return response;

@@ -24,9 +24,9 @@ namespace Agenty.AgentCore.Executors
         public async Task<string> ExecuteAsync(IAgentContext context, string goal)
         {
             var coord = context.Tools;
-            var gate = new Gate(coord, context.Logger);
+            var answerEvaluator = new AnswerEvaluator(coord, context.Logger);
 
-            var sessionChat = new Conversation().Append(context.GlobalChat);
+            var sessionChat = new Conversation().Append(context.Conversation);
             context.Logger.AttachTo(sessionChat);
 
             sessionChat.Add(Role.System, SystemPrompt);
@@ -39,8 +39,8 @@ namespace Agenty.AgentCore.Executors
                 var response = await coord.GetToolCalls(sessionChat);
                 await ExecuteToolChaining(coord, response, sessionChat);
 
-                var sum = await gate.SummarizeConversation(sessionChat, goal);
-                var verdict = await gate.CheckAnswer(goal, sum.summariedAnswer);
+                var sum = await answerEvaluator.Summarize(sessionChat, goal);
+                var verdict = await answerEvaluator.EvaluateAnswer(goal, sum.summariedAnswer);
 
                 if (verdict.confidence_score is Verdict.yes or Verdict.partial)
                 {
@@ -52,9 +52,6 @@ namespace Agenty.AgentCore.Executors
                     var final = await context.LLM.GetResponse(
                         sessionChat.Add(Role.User, "Give a final user friendly answer with sources if possible."),
                         LLMMode.Creative);
-
-                    context.GlobalChat.Add(Role.User, goal)
-                                      .Add(Role.Assistant, final);
 
                     answer = final;
                     break;

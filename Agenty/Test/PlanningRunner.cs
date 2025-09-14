@@ -3,11 +3,16 @@ using Agenty.AgentCore.Executors;
 using Agenty.LLMCore.BuiltInTools;
 using Agenty.LLMCore.Logging;
 using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 using IDefaultLogger = Agenty.LLMCore.Logging.IDefaultLogger;
 
 namespace Agenty.Test
 {
-    public static class ToolCallingRunner
+    internal class PlanningRunner
     {
         public static async Task RunAsync()
         {
@@ -21,7 +26,7 @@ namespace Agenty.Test
                 .WithTools<WeatherTool>()
                 .WithTools<ConversionTools>()
                 .WithTools<MathTools>()
-                .WithExecutor<ToolCallingExecutor>(); // plug in strategy
+                .WithExecutor<PlanningExecutor>(); // plug in strategy
 
             Console.WriteLine("🤖 Agenty ToolCalling Agent ready. Type 'exit' to quit.");
 

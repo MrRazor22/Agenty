@@ -34,6 +34,7 @@ namespace Agenty.LLMCore
     public enum LLMMode
     {
         Deterministic,  // gates, routing, grading
+        Planning,       // structured step-by-step planning
         Balanced,       // normal reasoning
         Creative        // brainstorming / open ended
     }

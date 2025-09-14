@@ -2,7 +2,7 @@
 using System.Reflection.Emit;
 namespace Agenty.LLMCore.Logging
 {
-    public interface ILogger
+    public interface IDefaultLogger
     {
         void Log(string message);
         void Log(string source, string message);
@@ -11,7 +11,7 @@ namespace Agenty.LLMCore.Logging
         void Log(LogLevel level, string source, string message, ConsoleColor? colorOverride = null);
     }
 
-    public class ConsoleLogger : ILogger
+    public class ConsoleLogger : IDefaultLogger
     {
         private readonly LogLevel _minLevel;
         private readonly string _defaultSource = "Default";

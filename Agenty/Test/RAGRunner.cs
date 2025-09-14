@@ -4,7 +4,7 @@ using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.Providers.OpenAI;
 using Agenty.RAG;
 using Microsoft.Extensions.Logging;
-using ILogger = Agenty.LLMCore.Logging.ILogger;
+using IDefaultLogger = Agenty.LLMCore.Logging.IDefaultLogger;
 
 namespace Agenty.Test
 {
@@ -16,16 +16,12 @@ namespace Agenty.Test
                 Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..")
             );
             var docsPath = Path.Combine(solutionRoot, "Agenty", "Test", "ExampleDocumentation");
-            ILogger logger = new ConsoleLogger(LogLevel.Trace);
+            IDefaultLogger logger = new ConsoleLogger(LogLevel.Trace);
 
             var agent = Agent.Create()
                 .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m")
                 .WithLogger(logger)
-                .WithRAG(
-                    new OpenAIEmbeddingClient("http://127.0.0.1:1234/v1", "lmstudio", "bge-model"),
-                    new InMemoryVectorStore(logger: logger),
-                    new SharpTokenTokenizer("gpt-3.5-turbo")
-                )
+                .WithInMemoryRAG("http://127.0.0.1:1234/v1", "lmstudio", "bge-model")
                 .WithExecutor<RAGExecutor>();
 
             // Load knowledge base docs

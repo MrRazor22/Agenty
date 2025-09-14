@@ -78,6 +78,10 @@ namespace Agenty.LLMCore.Providers.OpenAI
                     options.Temperature = 0f;
                     options.TopP = 1f;
                     break;
+                case LLMMode.Planning:
+                    options.Temperature = 0.3f;
+                    options.TopP = 1f;
+                    break;
                 case LLMMode.Balanced:
                     options.Temperature = 0.5f;
                     options.TopP = 0.9f;

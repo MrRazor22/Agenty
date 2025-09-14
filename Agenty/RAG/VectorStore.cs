@@ -30,9 +30,9 @@ namespace Agenty.RAG
     {
         private readonly ConcurrentDictionary<string, VectorRecord> _store = new();
         private readonly string _persistPath;
-        private readonly ILogger? _logger;
+        private readonly IDefaultLogger? _logger;
 
-        public InMemoryVectorStore(string? persistDir = null, ILogger? logger = null)
+        public InMemoryVectorStore(string? persistDir = null, IDefaultLogger? logger = null)
         {
             _logger = logger;
 

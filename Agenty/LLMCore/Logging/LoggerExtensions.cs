@@ -2,11 +2,11 @@
 using Agenty.LLMCore.JsonSchema;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
-using ILogger = Agenty.LLMCore.Logging.ILogger;
+using IDefaultLogger = Agenty.LLMCore.Logging.IDefaultLogger;
 
 public static class LoggerExtensions
 {
-    public static void AttachTo(this ILogger logger, Conversation conversation, string source = "Conversation")
+    public static void AttachTo(this IDefaultLogger logger, Conversation conversation, string source = "Conversation")
     {
         conversation.OnChat += chat =>
         {

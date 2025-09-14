@@ -1,11 +1,12 @@
 ﻿using Agenty.AgentCore;
 using Agenty.AgentCore.Executors;
+using Agenty.AgentCore.TokenHandling;
 using Agenty.LLMCore.BuiltInTools;
 using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.Providers.OpenAI;
 using Agenty.RAG;
 using Microsoft.Extensions.Logging;
-using ILogger = Agenty.LLMCore.Logging.ILogger;
+using IDefaultLogger = Agenty.LLMCore.Logging.IDefaultLogger;
 
 namespace Agenty.Test
 {
@@ -18,7 +19,7 @@ namespace Agenty.Test
             );
             var docsPath = Path.Combine(solutionRoot, "Agenty", "Test", "ExampleDocumentation");
 
-            ILogger logger = new ConsoleLogger(LogLevel.Trace);
+            IDefaultLogger logger = new ConsoleLogger(LogLevel.Trace);
 
             // Set up embeddings + vector store
             var embeddings = new OpenAIEmbeddingClient("http://127.0.0.1:1234/v1", "lmstudio", "bge-model");
