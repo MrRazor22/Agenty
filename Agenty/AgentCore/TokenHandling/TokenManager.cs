@@ -1,6 +1,6 @@
 ﻿using Agenty.LLMCore;
 using System.Text;
-
+using static System.Net.Mime.MediaTypeNames;
 
 namespace Agenty.AgentCore.TokenHandling
 {
@@ -8,7 +8,11 @@ namespace Agenty.AgentCore.TokenHandling
     {
         void Trim(Conversation convo, int maxTokens);
         TokenUsageReport Report(Conversation convo, int maxTokens);
+        int CountTokens(string text);
+
+        ITokenizer Tokenizer { get; }
     }
+
     public record TokenUsageReport(
         int TotalTokens,
         int MaxTokens,
@@ -36,7 +40,6 @@ namespace Agenty.AgentCore.TokenHandling
         }
     }
 
-
     /// <summary>
     /// Default policy:
     /// - Keep all System + Backstory (never trimmed)
@@ -45,19 +48,19 @@ namespace Agenty.AgentCore.TokenHandling
     /// </summary> 
     public sealed class DefaultTokenManager : ITokenManager
     {
-        private readonly ITokenizer _tokenizer;
+        public ITokenizer Tokenizer { get; }
         private int _lastDropped = 0;
 
         public DefaultTokenManager(ITokenizer tokenizer)
         {
-            _tokenizer = tokenizer ?? throw new ArgumentNullException(nameof(tokenizer));
+            Tokenizer = tokenizer ?? throw new ArgumentNullException(nameof(tokenizer));
         }
 
         public void Trim(Conversation convo, int maxTokens)
         {
-            _lastDropped = 0; // reset
-            int count() => _tokenizer.CountTokens(convo.ToString(ChatFilter.All));
-            if (count() <= maxTokens) return;
+            _lastDropped = 0;
+            int count = CountTokens(convo.ToString(ChatFilter.All));
+            if (count <= maxTokens) return;
 
             // Keep System messages
             var system = convo.Where(c => c.Role == Role.System).ToList();
@@ -66,11 +69,11 @@ namespace Agenty.AgentCore.TokenHandling
             int before = convo.Count;
             convo.RemoveAll(c => c.Role == Role.Tool);
             _lastDropped += before - convo.Count;
-            if (count() <= maxTokens) return;
+            if (count <= maxTokens) return;
 
             // Sliding window on User + Assistant
             var core = convo.Where(c => c.Role == Role.User || c.Role == Role.Assistant).ToList();
-            while (count() > maxTokens && core.Count > 1)
+            while (count > maxTokens && core.Count > 1)
             {
                 var oldest = core.First();
                 convo.Remove(oldest);
@@ -88,7 +91,7 @@ namespace Agenty.AgentCore.TokenHandling
 
         public TokenUsageReport Report(Conversation convo, int maxTokens)
         {
-            int totalTokens = _tokenizer.CountTokens(convo.ToString(ChatFilter.All));
+            int totalTokens = CountTokens(convo.ToString(ChatFilter.All));
             var roleCounts = convo
                 .GroupBy(c => c.Role)
                 .ToDictionary(g => g.Key, g => g.Count());
@@ -99,12 +102,12 @@ namespace Agenty.AgentCore.TokenHandling
                 TotalTokens: totalTokens,
                 MaxTokens: maxTokens,
                 RoleCounts: roleCounts,
-                TempCount: convo.Count(c => c.IsTemporary), // probably always 0 now
+                TempCount: convo.Count(c => c.IsTemporary),
                 DroppedCount: _lastDropped,
                 WasTrimmed: wasTrimmed
             );
         }
+
+        public int CountTokens(string text) => Tokenizer.Encode(text).Count;
     }
-
-
 }

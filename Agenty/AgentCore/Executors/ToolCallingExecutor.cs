@@ -54,7 +54,6 @@ namespace Agenty.AgentCore.Executors
                         chat.Add(Role.User, "Give a final user friendly answer."),
                         LLMMode.Creative);
 
-                    context.Conversation?.Add(Role.User, goal).Add(Role.Assistant, final);
                     return final;
                 }
 

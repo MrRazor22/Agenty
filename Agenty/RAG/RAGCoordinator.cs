@@ -32,7 +32,7 @@ namespace Agenty.RAG
     {
         private readonly IEmbeddingClient _embeddings;
         private readonly IVectorStore _store;
-        private readonly ITokenizer _tokenizer;
+        private readonly ITokenManager _tokenManager;
         private readonly IDefaultLogger? _logger;
 
         private readonly int _chunkSize;
@@ -42,14 +42,14 @@ namespace Agenty.RAG
         public RagCoordinator(
             IEmbeddingClient embeddings,
             IVectorStore store,
-            ITokenizer tokenizer,
+            ITokenManager tokenManager,
             IDefaultLogger? logger = null,
             int chunkSize = 1000,
             int chunkOverlap = 200)
         {
             _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
             _store = store ?? throw new ArgumentNullException(nameof(store));
-            _tokenizer = tokenizer ?? throw new ArgumentNullException(nameof(tokenizer));
+            _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
             _logger = logger;
             _chunkSize = chunkSize;
             _chunkOverlap = chunkOverlap;
@@ -73,7 +73,7 @@ namespace Agenty.RAG
                 .Where(d => !ShouldSkipSource(d.Source))
                 .SelectMany(d =>
                     RAGHelper.SplitByParagraphs(d.Doc)
-                        .SelectMany(s => RAGHelper.Chunk(s, _chunkSize, _chunkOverlap, _tokenizer)
+                        .SelectMany(s => RAGHelper.Chunk(s, _chunkSize, _chunkOverlap, _tokenManager.Tokenizer)
                             .Select(chunk => new VectorRecord(
                                 Id: RAGHelper.ComputeId(chunk),
                                 Text: chunk,

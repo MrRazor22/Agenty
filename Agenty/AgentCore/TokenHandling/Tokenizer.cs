@@ -4,7 +4,6 @@ namespace Agenty.AgentCore.TokenHandling
 {
     public interface ITokenizer
     {
-        int CountTokens(string text);
         IReadOnlyList<int> Encode(string text);
         string Decode(IEnumerable<int> tokens);
     }
@@ -17,9 +16,6 @@ namespace Agenty.AgentCore.TokenHandling
         {
             _encoder = GptEncoding.GetEncodingForModel(model);
         }
-
-        public int CountTokens(string text) =>
-            _encoder.Encode(text).Count;
 
         public IReadOnlyList<int> Encode(string text) =>
             _encoder.Encode(text);

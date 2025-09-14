@@ -29,7 +29,7 @@ namespace Agenty.AgentCore
         Conversation Conversation { get; }
         string? SystemPrompt { get; }
         string? Backstory { get; }
-        ITokenizer? Tokenizer { get; }
+        ITokenManager TokenManager { get; }   // << unified entrypoint
         int MaxContextTokens { get; }
     }
 
@@ -38,11 +38,11 @@ namespace Agenty.AgentCore
         public ILLMClient LLM { get; set; } = null!;
         public IToolCoordinator Tools { get; set; } = null!;
         public IRagCoordinator? RAG { get; set; }
-        public IDefaultLogger Logger { get; set; } = new ConsoleLogger(Microsoft.Extensions.Logging.LogLevel.Information);
+        public IDefaultLogger Logger { get; set; } = new ConsoleLogger(LogLevel.Information);
         public Conversation Conversation { get; } = new();
         public string? SystemPrompt { get; set; }
         public string? Backstory { get; set; }
-        public ITokenizer? Tokenizer { get; set; }
+        public ITokenManager TokenManager { get; set; } = null!;
         public int MaxContextTokens { get; set; } = 4000;
     }
 
@@ -50,15 +50,13 @@ namespace Agenty.AgentCore
     {
         private readonly AgentContext _ctx = new();
         private IExecutor? _executor;
-        private ITokenManager _tokenManager;
 
         public IAgentContext Context => _ctx;
 
         private Agent()
         {
-            _tokenManager = new DefaultTokenManager(
-                _ctx.Tokenizer ?? new SharpTokenTokenizer("gpt-3.5-turbo")
-            );
+            var tokenizer = new SharpTokenTokenizer("gpt-3.5-turbo");
+            _ctx.TokenManager = new DefaultTokenManager(tokenizer);
         }
 
         public static Agent Create() => new();
@@ -83,14 +81,13 @@ namespace Agenty.AgentCore
 
         public Agent WithTokenizer(ITokenizer tokenizer)
         {
-            _ctx.Tokenizer = tokenizer;
-            _tokenManager = new DefaultTokenManager(tokenizer);
+            _ctx.TokenManager = new DefaultTokenManager(tokenizer);
             return this;
         }
 
         public Agent WithRAG(IEmbeddingClient embeddings, IVectorStore store, ITokenizer? tokenizer = null)
         {
-            var tok = tokenizer ?? _ctx.Tokenizer ?? new SharpTokenTokenizer("gpt-3.5-turbo");
+            var tok = _ctx.TokenManager ?? new DefaultTokenManager(new SharpTokenTokenizer("gpt-3.5-turbo"));
             _ctx.RAG = new RagCoordinator(embeddings, store, tok, _ctx.Logger);
             return this;
         }
@@ -99,7 +96,7 @@ namespace Agenty.AgentCore
         {
             var embeddings = new LLMCore.Providers.OpenAI.OpenAIEmbeddingClient(baseUrl, apiKey, embeddingModel);
             var store = new InMemoryVectorStore(logger: _ctx.Logger);
-            var tok = _ctx.Tokenizer ?? new SharpTokenTokenizer(tokenizerModel);
+            var tok = _ctx.TokenManager ?? new DefaultTokenManager(new SharpTokenTokenizer("gpt-3.5-turbo"));
 
             _ctx.RAG = new RagCoordinator(embeddings, store, tok, _ctx.Logger);
             return this;
@@ -132,7 +129,7 @@ namespace Agenty.AgentCore
                 throw new InvalidOperationException("Executor not set. Call WithExecutor().");
 
             // Trim before executing
-            _tokenManager.Trim(_ctx.Conversation, _ctx.MaxContextTokens);
+            _ctx.TokenManager.Trim(_ctx.Conversation, _ctx.MaxContextTokens);
 
             _ctx.Conversation.Add(Role.User, goal);
 
@@ -140,9 +137,8 @@ namespace Agenty.AgentCore
 
             _ctx.Conversation.Add(Role.Assistant, answer);
 
-            var report = _tokenManager?.Report(_ctx.Conversation, _ctx.MaxContextTokens);
-            if (report != null)
-                _ctx.Logger?.Log(LogLevel.Debug, "OverallTokenReport", report.ToString());
+            var report = _ctx.TokenManager.Report(_ctx.Conversation, _ctx.MaxContextTokens);
+            _ctx.Logger?.Log(LogLevel.Debug, "OverallTokenReport", report.ToString());
 
             return answer;
         }
