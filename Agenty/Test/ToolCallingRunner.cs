@@ -3,7 +3,6 @@ using Agenty.AgentCore.Executors;
 using Agenty.LLMCore.BuiltInTools;
 using Agenty.LLMCore.Logging;
 using Microsoft.Extensions.Logging;
-using IDefaultLogger = Agenty.LLMCore.Logging.IDefaultLogger;
 
 namespace Agenty.Test
 {
@@ -11,7 +10,7 @@ namespace Agenty.Test
     {
         public static async Task RunAsync()
         {
-            IDefaultLogger logger = new ConsoleLogger(LogLevel.Trace);
+            ILogger logger = new ConsoleLogger("ToolCallingRunner", LogLevel.Trace);
 
             var agent = Agent.Create()
                 .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m")

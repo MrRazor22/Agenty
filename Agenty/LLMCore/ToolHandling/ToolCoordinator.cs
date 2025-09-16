@@ -1,4 +1,5 @@
-﻿using Agenty.LLMCore.JsonSchema;
+﻿using Agenty.LLMCore.ChatHandling;
+using Agenty.LLMCore.JsonSchema;
 using System.ComponentModel;
 using System.Reflection;
 using System.Text.Json;
@@ -8,14 +9,15 @@ using System.Text.RegularExpressions;
 
 namespace Agenty.LLMCore.ToolHandling
 {
-    public interface IToolCoordinator
+    public interface ILLMCoordinator
     {
         IToolRegistry Registry { get; }
         Task<LLMResponse> GetToolCalls(Conversation prompt, ToolCallMode toolCallMode = ToolCallMode.Auto, int maxRetries = 0, LLMMode mode = LLMMode.Balanced, params Tool[] tools);
         Task<T?> GetStructuredResponse<T>(Conversation prompt, int maxRetries = 3, LLMMode mode = LLMMode.Deterministic);
+        Task RunToolCalls(List<ToolCall> toolCalls, Conversation chat);
         Task<dynamic?> Invoke(ToolCall tool);
     }
-    internal class ToolCoordinator(ILLMClient llm, IToolRegistry toolRegistry) : IToolCoordinator
+    internal class LLMCoordinator(ILLMClient llm, IToolRegistry toolRegistry) : ILLMCoordinator
     {
         private const string ToolJsonNameTag = "name";
         private const string ToolJsonArgumentsTag = "arguments";
@@ -343,6 +345,30 @@ namespace Agenty.LLMCore.ToolHandling
             return paramValues;
         }
         #endregion 
+
+        public async Task RunToolCalls(List<ToolCall> toolCalls, Conversation chat)
+        {
+            foreach (var call in toolCalls)
+            {
+                if (string.IsNullOrWhiteSpace(call.Name) && !string.IsNullOrWhiteSpace(call.Message))
+                {
+                    chat.Add(Role.Assistant, call.Message);
+                    continue;
+                }
+
+                chat.Add(Role.Assistant, null, toolCall: call);
+
+                try
+                {
+                    var result = await Invoke(call);
+                    chat.Add(Role.Tool, ((object?)result).AsJSONString(), toolCall: call);
+                }
+                catch (Exception ex)
+                {
+                    chat.Add(Role.Tool, $"Tool execution error: {ex.Message}", toolCall: call);
+                }
+            }
+        }
 
         public async Task<dynamic?> Invoke(ToolCall tool)
         {

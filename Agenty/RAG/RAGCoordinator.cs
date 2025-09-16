@@ -2,6 +2,7 @@
 using Agenty.AgentCore.TokenHandling;
 using Agenty.LLMCore;
 using Agenty.LLMCore.Logging;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -33,7 +34,7 @@ namespace Agenty.RAG
         private readonly IEmbeddingClient _embeddings;
         private readonly IVectorStore _store;
         private readonly ITokenManager _tokenManager;
-        private readonly IDefaultLogger? _logger;
+        private readonly ILogger? _logger;
 
         private readonly int _chunkSize;
         private readonly int _chunkOverlap;
@@ -43,7 +44,7 @@ namespace Agenty.RAG
             IEmbeddingClient embeddings,
             IVectorStore store,
             ITokenManager tokenManager,
-            IDefaultLogger? logger = null,
+            ILogger? logger = null,
             int chunkSize = 1000,
             int chunkOverlap = 200)
         {
@@ -84,7 +85,7 @@ namespace Agenty.RAG
 
             if (allChunks.Count == 0)
             {
-                _logger?.Log("[RAG] No chunks produced.");
+                _logger?.LogInformation("[RAG] No chunks produced.");
                 return;
             }
 
@@ -95,7 +96,7 @@ namespace Agenty.RAG
                 newChunks = allChunks.Where(c => !_store.Contains(c.Id)).ToList();
                 if (newChunks.Count == 0)
                 {
-                    _logger?.Log("[RAG] No new chunks to add (all already present in persistent store).");
+                    _logger?.LogInformation("[RAG] No new chunks to add (all already present in persistent store).");
                     return;
                 }
             }
@@ -109,12 +110,12 @@ namespace Agenty.RAG
                 }
                 if (newChunks.Count == 0)
                 {
-                    _logger?.Log("[RAG] No new chunks to add (all already present in ephemeral store).");
+                    _logger?.LogWarning("[RAG] No new chunks to add (all already present in ephemeral store).");
                     return;
                 }
             }
 
-            _logger?.Log($"[RAG] {allChunks.Count} total chunks, {newChunks.Count} new → embedding only new chunks.");
+            _logger?.LogInformation($"[RAG] {allChunks.Count} total chunks, {newChunks.Count} new → embedding only new chunks.");
 
             const int batchSize = 16;
             for (int i = 0; i < newChunks.Count; i += batchSize)
@@ -139,7 +140,7 @@ namespace Agenty.RAG
             }
 
             var storeType = persist ? "persistent" : "ephemeral";
-            _logger?.Log($"[RAG] Ingestion complete ({newChunks.Count} chunks added to {storeType} store).");
+            _logger?.LogInformation($"[RAG] Ingestion complete ({newChunks.Count} chunks added to {storeType} store).");
         }
 
         public async Task<IReadOnlyList<SearchResult>> Search(string query, int topK = 3, SearchScope scope = SearchScope.Both)

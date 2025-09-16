@@ -1,4 +1,5 @@
 ﻿using Agenty.LLMCore;
+using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.ToolHandling;
@@ -8,7 +9,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using ILogger = Agenty.LLMCore.Logging;
 
 namespace Agenty.AgentCore
 {
@@ -23,10 +23,10 @@ namespace Agenty.AgentCore
 
     class AnswerEvaluator : IAnswerEvaluator
     {
-        private readonly IToolCoordinator _coord;
-        private readonly IDefaultLogger _logger;
+        private readonly ILLMCoordinator _coord;
+        private readonly ILogger _logger;
 
-        public AnswerEvaluator(IToolCoordinator coord, IDefaultLogger? logger = null)
+        public AnswerEvaluator(ILLMCoordinator coord, ILogger? logger = null)
         {
             _coord = coord;
             _logger = logger;

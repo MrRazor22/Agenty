@@ -1,4 +1,4 @@
-﻿using Agenty.LLMCore;
+﻿using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.ToolHandling;
 using System;

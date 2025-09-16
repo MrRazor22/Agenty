@@ -6,7 +6,6 @@ using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.Providers.OpenAI;
 using Agenty.RAG;
 using Microsoft.Extensions.Logging;
-using IDefaultLogger = Agenty.LLMCore.Logging.IDefaultLogger;
 
 namespace Agenty.Test
 {
@@ -19,7 +18,7 @@ namespace Agenty.Test
             );
             var docsPath = Path.Combine(solutionRoot, "Agenty", "Test", "ExampleDocumentation");
 
-            IDefaultLogger logger = new ConsoleLogger(LogLevel.Trace);
+            ILogger logger = new ConsoleLogger("RAGToolCallingRunner", LogLevel.Trace);
 
             // Set up embeddings + vector store
             var embeddings = new OpenAIEmbeddingClient("http://127.0.0.1:1234/v1", "lmstudio", "bge-model");

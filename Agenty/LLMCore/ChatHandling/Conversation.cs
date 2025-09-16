@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace Agenty.LLMCore
+namespace Agenty.LLMCore.ChatHandling
 {
     [Flags]
     public enum ChatFilter
@@ -42,7 +42,7 @@ namespace Agenty.LLMCore
                 return this;
 
             var chat = new Chat(role, content, toolCalls, isTemporary);
-            base.Add(chat);
+            Add(chat);
             OnChat?.Invoke(chat);
 
             if (role == Role.Assistant)

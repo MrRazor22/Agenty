@@ -1,4 +1,5 @@
 ﻿using Agenty.LLMCore;
+using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.ToolHandling;
@@ -69,7 +70,7 @@ namespace Agenty.AgentCore.Executors
                 LLMMode.Creative);
         }
 
-        private async Task ExecuteToolChaining(IToolCoordinator coord, LLMResponse response, Conversation chat)
+        private async Task ExecuteToolChaining(ILLMCoordinator coord, LLMResponse response, Conversation chat)
         {
             while (response.ToolCalls.Count != 0)
             {
@@ -78,7 +79,7 @@ namespace Agenty.AgentCore.Executors
             }
         }
 
-        private async Task HandleToolCalls(IToolCoordinator coord, List<ToolCall> toolCalls, Conversation chat)
+        private async Task HandleToolCalls(ILLMCoordinator coord, List<ToolCall> toolCalls, Conversation chat)
         {
             foreach (var call in toolCalls)
             {

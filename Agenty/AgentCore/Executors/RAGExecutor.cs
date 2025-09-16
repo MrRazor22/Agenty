@@ -1,4 +1,5 @@
 ﻿using Agenty.LLMCore;
+using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.ToolHandling;
 using Agenty.RAG;
@@ -54,7 +55,7 @@ namespace Agenty.AgentCore.Executors
                         .Add(Role.System, "Context:\n" + contextText);
 
             // 4. Generate + refine answer
-            var answerEvaluator = new AnswerEvaluator(new ToolCoordinator(context.LLM, context.Tools.Registry), context.Logger);
+            var answerEvaluator = new AnswerEvaluator(new LLMCoordinator(context.LLM, context.Tools.Registry), context.Logger);
             string answer = "";
 
             const int maxRounds = 5;

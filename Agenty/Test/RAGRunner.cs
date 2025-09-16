@@ -4,7 +4,6 @@ using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.Providers.OpenAI;
 using Agenty.RAG;
 using Microsoft.Extensions.Logging;
-using IDefaultLogger = Agenty.LLMCore.Logging.IDefaultLogger;
 
 namespace Agenty.Test
 {
@@ -16,7 +15,7 @@ namespace Agenty.Test
                 Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..")
             );
             var docsPath = Path.Combine(solutionRoot, "Agenty", "Test", "ExampleDocumentation");
-            IDefaultLogger logger = new ConsoleLogger(LogLevel.Trace);
+            ILogger logger = new ConsoleLogger("RAGRunner", LogLevel.Debug);
 
             var agent = Agent.Create()
                 .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m")

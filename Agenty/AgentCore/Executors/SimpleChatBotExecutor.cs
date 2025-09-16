@@ -1,4 +1,4 @@
-﻿using Agenty.LLMCore;
+﻿using Agenty.LLMCore.ChatHandling;
 using System;
 using System.Collections.Generic;
 using System.Linq;

@@ -1,4 +1,5 @@
-﻿using Agenty.LLMCore.ToolHandling;
+﻿using Agenty.LLMCore.ChatHandling;
+using Agenty.LLMCore.ToolHandling;
 using System;
 using System.Collections;
 using System.Text.Json.Nodes;

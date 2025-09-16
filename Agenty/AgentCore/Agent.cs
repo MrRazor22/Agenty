@@ -1,5 +1,6 @@
 ﻿using Agenty.AgentCore.TokenHandling;
 using Agenty.LLMCore;
+using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.ToolHandling;
 using Agenty.RAG;
@@ -23,9 +24,9 @@ namespace Agenty.AgentCore
     public interface IAgentContext
     {
         ILLMClient LLM { get; }
-        IToolCoordinator Tools { get; }
+        ILLMCoordinator Tools { get; }
         IRagCoordinator? RAG { get; }
-        IDefaultLogger Logger { get; }
+        ILogger Logger { get; }
         Conversation Conversation { get; }
         string? SystemPrompt { get; }
         string? Backstory { get; }
@@ -36,9 +37,9 @@ namespace Agenty.AgentCore
     internal sealed class AgentContext : IAgentContext
     {
         public ILLMClient LLM { get; set; } = null!;
-        public IToolCoordinator Tools { get; set; } = null!;
+        public ILLMCoordinator Tools { get; set; } = null!;
         public IRagCoordinator? RAG { get; set; }
-        public IDefaultLogger Logger { get; set; } = new ConsoleLogger(LogLevel.Information);
+        public ILogger Logger { get; set; } = new ConsoleLogger("Agent", LogLevel.Debug);
         public Conversation Conversation { get; } = new();
         public string? SystemPrompt { get; set; }
         public string? Backstory { get; set; }
@@ -69,11 +70,11 @@ namespace Agenty.AgentCore
 
             var registry = new ToolRegistry();
             _ctx.LLM = llm;
-            _ctx.Tools = new ToolCoordinator(llm, registry);
+            _ctx.Tools = new LLMCoordinator(llm, registry);
             return this;
         }
 
-        public Agent WithLogger(IDefaultLogger logger) { _ctx.Logger = logger; return this; }
+        public Agent WithLogger(ILogger logger) { _ctx.Logger = logger; return this; }
 
         public Agent WithTools<T>() { _ctx.Tools.Registry.RegisterAll<T>(); return this; }
         public Agent WithTools(params Delegate[] fns) { _ctx.Tools.Registry.Register(fns); return this; }

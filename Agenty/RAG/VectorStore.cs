@@ -1,6 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Text.Json;
 using Agenty.LLMCore.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace Agenty.RAG
 {
@@ -30,9 +31,9 @@ namespace Agenty.RAG
     {
         private readonly ConcurrentDictionary<string, VectorRecord> _store = new();
         private readonly string _persistPath;
-        private readonly IDefaultLogger? _logger;
+        private readonly ILogger? _logger;
 
-        public InMemoryVectorStore(string? persistDir = null, IDefaultLogger? logger = null)
+        public InMemoryVectorStore(string? persistDir = null, ILogger? logger = null)
         {
             _logger = logger;
 
@@ -89,11 +90,11 @@ namespace Agenty.RAG
                 var list = _store.Values.ToList();
                 var json = JsonSerializer.Serialize(list, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(_persistPath, json);
-                _logger?.Log($"[RAG] Saved {_store.Count} records to {_persistPath}");
+                _logger?.LogInformation($"[RAG] Saved {_store.Count} records to {_persistPath}");
             }
             catch (Exception ex)
             {
-                _logger?.Log($"[RAG] Failed to save store: {ex.Message}");
+                _logger?.LogError($"[RAG] Failed to save store: {ex.Message}");
             }
         }
 
@@ -110,11 +111,11 @@ namespace Agenty.RAG
                 foreach (var e in list)
                     _store.TryAdd(e.Id, e);
 
-                _logger?.Log($"[RAG] Loaded {_store.Count} records from {_persistPath}");
+                _logger?.LogInformation($"[RAG] Loaded {_store.Count} records from {_persistPath}");
             }
             catch (Exception ex)
             {
-                _logger?.Log($"[RAG] Failed to load store: {ex.Message}");
+                _logger?.LogError($"[RAG] Failed to load store: {ex.Message}");
             }
         }
     }

@@ -1,4 +1,5 @@
-﻿using Agenty.LLMCore.ToolHandling;
+﻿using Agenty.LLMCore.ChatHandling;
+using Agenty.LLMCore.ToolHandling;
 using OpenAI;
 using OpenAI.Chat;
 using System.ClientModel;

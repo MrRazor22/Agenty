@@ -1,4 +1,5 @@
 ﻿using Agenty.LLMCore;
+using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.ToolHandling;
@@ -37,7 +38,11 @@ namespace Agenty.AgentCore.Executors
             for (int round = 0; round < maxRounds; round++)
             {
                 var response = await coord.GetToolCalls(sessionChat);
-                await ExecuteToolChaining(coord, response, sessionChat);
+                while (response.ToolCalls.Count != 0)
+                {
+                    await context.Tools.RunToolCalls(response.ToolCalls, sessionChat);
+                    response = await coord.GetToolCalls(sessionChat);
+                }
 
                 var sum = await answerEvaluator.Summarize(sessionChat, goal);
                 var verdict = await answerEvaluator.EvaluateAnswer(goal, sum.summariedAnswer);
@@ -68,39 +73,6 @@ namespace Agenty.AgentCore.Executors
             }
 
             return answer;
-        }
-
-        private static async Task ExecuteToolChaining(IToolCoordinator coord, LLMResponse response, Conversation chat)
-        {
-            while (response.ToolCalls.Count != 0)
-            {
-                await HandleToolCallSequential(coord, response.ToolCalls, chat);
-                response = await coord.GetToolCalls(chat);
-            }
-        }
-
-        private static async Task HandleToolCallSequential(IToolCoordinator coord, List<ToolCall> toolCalls, Conversation chat)
-        {
-            foreach (var call in toolCalls)
-            {
-                if (string.IsNullOrWhiteSpace(call.Name) && !string.IsNullOrWhiteSpace(call.Message))
-                {
-                    chat.Add(Role.Assistant, call.Message);
-                    continue;
-                }
-
-                chat.Add(Role.Assistant, null, toolCall: call);
-
-                try
-                {
-                    var result = await coord.Invoke(call);
-                    chat.Add(Role.Tool, ((object?)result).AsJSONString(), toolCall: call);
-                }
-                catch (Exception ex)
-                {
-                    chat.Add(Role.Tool, $"Tool execution error: {ex.Message}", toolCall: call);
-                }
-            }
         }
     }
 }

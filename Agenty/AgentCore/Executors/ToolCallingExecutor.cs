@@ -1,21 +1,10 @@
 ﻿using Agenty.LLMCore;
-using Agenty.LLMCore.JsonSchema;
-using Agenty.LLMCore.Logging;
-using Agenty.LLMCore.ToolHandling;
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
+using Agenty.LLMCore.ChatHandling;
 
 namespace Agenty.AgentCore.Executors
 {
     public sealed class ToolCallingExecutor : IExecutor
     {
-        private const string _systemPrompt =
-            "You are an assistant. " +
-            "For complex tasks, plan step by step. " +
-            "Use tools if they provide factual data. " +
-            "Keep answers short and clear.";
-
         public async Task<string> ExecuteAsync(IAgentContext context, string goal)
         {
             if (context.LLM == null)
@@ -27,8 +16,6 @@ namespace Agenty.AgentCore.Executors
             var chat = new Conversation().Append(context.Conversation);
             context.Logger?.AttachTo(chat);
 
-            chat.Add(Role.System, _systemPrompt);
-
             IAnswerEvaluator evaluator = context.Logger != null ? new AnswerEvaluator(coord, context.Logger) : null;
 
             const int maxRounds = 50;
@@ -36,7 +23,12 @@ namespace Agenty.AgentCore.Executors
             for (int round = 0; round < maxRounds; round++)
             {
                 var response = await coord.GetToolCalls(chat);
-                await ExecuteToolChaining(coord, response, chat);
+
+                while (response.ToolCalls.Count != 0)
+                {
+                    await coord.RunToolCalls(response.ToolCalls, chat);
+                    response = await coord.GetToolCalls(chat);
+                }
 
                 if (evaluator == null)
                     return await llm.GetResponse(chat);
@@ -66,39 +58,6 @@ namespace Agenty.AgentCore.Executors
                 chat.Add(Role.User,
                 $"Answer clearly: {goal}. Use tool results and reasoning so far."),
                 LLMMode.Creative);
-        }
-
-        private async Task ExecuteToolChaining(IToolCoordinator coord, LLMResponse response, Conversation chat)
-        {
-            while (response.ToolCalls.Count != 0)
-            {
-                await HandleToolCalls(coord, response.ToolCalls, chat);
-                response = await coord.GetToolCalls(chat);
-            }
-        }
-
-        private async Task HandleToolCalls(IToolCoordinator coord, List<ToolCall> toolCalls, Conversation chat)
-        {
-            foreach (var call in toolCalls)
-            {
-                if (string.IsNullOrWhiteSpace(call.Name) && !string.IsNullOrWhiteSpace(call.Message))
-                {
-                    chat.Add(Role.Assistant, call.Message);
-                    continue;
-                }
-
-                chat.Add(Role.Assistant, null, toolCall: call);
-
-                try
-                {
-                    var result = await coord.Invoke(call);
-                    chat.Add(Role.Tool, ((object?)result).AsJSONString(), toolCall: call);
-                }
-                catch (Exception ex)
-                {
-                    chat.Add(Role.Tool, $"Tool execution error: {ex.Message}", toolCall: call);
-                }
-            }
         }
     }
 }
