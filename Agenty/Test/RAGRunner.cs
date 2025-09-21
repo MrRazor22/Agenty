@@ -1,64 +1,64 @@
-﻿using Agenty.AgentCore;
-using Agenty.AgentCore.Executors;
-using Agenty.LLMCore.Logging;
-using Agenty.LLMCore.Providers.OpenAI;
-using Agenty.RAG;
-using Microsoft.Extensions.Logging;
+﻿//using Agenty.AgentCore;
+//using Agenty.AgentCore.Executors;
+//using Agenty.LLMCore.Logging;
+//using Agenty.LLMCore.Providers.OpenAI;
+//using Agenty.RAG;
+//using Microsoft.Extensions.Logging;
 
-namespace Agenty.Test
-{
-    public static class RAGRunner
-    {
-        public static async Task RunAsync()
-        {
-            var solutionRoot = Path.GetFullPath(
-                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..")
-            );
-            var docsPath = Path.Combine(solutionRoot, "Agenty", "Test", "ExampleDocumentation");
-            ILogger logger = new ConsoleLogger("RAGRunner", LogLevel.Debug);
+//namespace Agenty.Test
+//{
+//    public static class RAGRunner
+//    {
+//        public static async Task RunAsync()
+//        {
+//            var solutionRoot = Path.GetFullPath(
+//                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..")
+//            );
+//            var docsPath = Path.Combine(solutionRoot, "Agenty", "Test", "ExampleDocumentation");
+//            ILogger logger = new ConsoleLogger("RAGRunner", LogLevel.Debug);
 
-            var agent = Agent.Create()
-                .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m")
-                .WithLogger(logger)
-                .WithInMemoryRAG("http://127.0.0.1:1234/v1", "lmstudio", "bge-model")
-                .WithExecutor<RAGExecutor>();
+//            var agent = Agent.Create()
+//                .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m")
+//                .WithLogger(logger)
+//                .WithInMemoryRAG("http://127.0.0.1:1234/v1", "lmstudio", "bge-model")
+//                .WithExecutor<RAGExecutor>();
 
-            // Load knowledge base docs
-            var docs = await RAG.IO.DocumentLoader.LoadDirectoryAsync(docsPath);
-            await agent.Context.RAG!.AddDocumentsAsync(docs);
+//            // Load knowledge base docs
+//            var docs = await RAG.IO.DocumentLoader.LoadDirectoryAsync(docsPath);
+//            await agent.Context.RAG!.AddDocumentsAsync(docs);
 
-            Console.WriteLine("🤖 RAG Agent ready. Type 'exit' to quit.");
-            Console.WriteLine("💡 Searches KB first, then falls back to web if needed.");
-            Console.WriteLine();
+//            Console.WriteLine("🤖 RAG Agent ready. Type 'exit' to quit.");
+//            Console.WriteLine("💡 Searches KB first, then falls back to web if needed.");
+//            Console.WriteLine();
 
-            while (true)
-            {
-                Console.Write("You: ");
-                string? input = Console.ReadLine();
+//            while (true)
+//            {
+//                Console.Write("You: ");
+//                string? input = Console.ReadLine();
 
-                if (string.IsNullOrWhiteSpace(input) ||
-                    input.Equals("exit", StringComparison.OrdinalIgnoreCase))
-                    break;
+//                if (string.IsNullOrWhiteSpace(input) ||
+//                    input.Equals("exit", StringComparison.OrdinalIgnoreCase))
+//                    break;
 
-                Console.WriteLine("\n" + new string('=', 60));
+//                Console.WriteLine("\n" + new string('=', 60));
 
-                try
-                {
-                    var answer = await agent.ExecuteAsync(input);
+//                try
+//                {
+//                    var answer = await agent.ExecuteAsync(input);
 
-                    Console.WriteLine("\n🤖 Agent Response:");
-                    Console.WriteLine(new string('-', 40));
-                    Console.WriteLine(answer);
-                    Console.WriteLine(new string('=', 60));
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"\n❌ Error: {ex.Message}");
-                    Console.WriteLine(new string('=', 60));
-                }
-            }
+//                    Console.WriteLine("\n🤖 Agent Response:");
+//                    Console.WriteLine(new string('-', 40));
+//                    Console.WriteLine(answer);
+//                    Console.WriteLine(new string('=', 60));
+//                }
+//                catch (Exception ex)
+//                {
+//                    Console.WriteLine($"\n❌ Error: {ex.Message}");
+//                    Console.WriteLine(new string('=', 60));
+//                }
+//            }
 
-            Console.WriteLine("\n👋 Exiting Agenty.");
-        }
-    }
-}
+//            Console.WriteLine("\n👋 Exiting Agenty.");
+//        }
+//    }
+//}

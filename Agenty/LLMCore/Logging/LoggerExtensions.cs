@@ -1,4 +1,5 @@
-﻿using Agenty.LLMCore.ChatHandling;
+﻿using Agenty.AgentCore.TokenHandling;
+using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -9,19 +10,31 @@ public static class LoggerExtensions
     {
         conversation.OnChat += chat =>
         {
-            var obj = chat.Content ?? (object?)chat.ToolCalls ?? "<empty>";
-            var msg = obj is string s ? s : obj.AsJSONString();
+            var msg = chat.Content?.AsJSONString() ?? "<empty>";
 
             var level = chat.Role switch
             {
                 Role.User => LogLevel.Information,
                 Role.Assistant => LogLevel.Information,
-                Role.Tool => LogLevel.Information,
+                Role.Tool => LogLevel.Debug, // tools are often noisy
                 _ => LogLevel.Debug
             };
 
-            logger.Log(level, new EventId(0, source), $"{source}/{chat.Role}: {msg}");
+            logger.Log(level, new EventId(chat.Role.GetHashCode(), source), $"{source}/{chat.Role}: {msg}");
         };
+    }
+    public static void LogUsage(this ILogger logger, TokenUsageReport report, string source = "Tokens")
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"[Tokens] {report.TotalTokens}/{report.MaxTokens} (trimmed={report.WasTrimmed})");
+
+        foreach (var kv in report.RoleCounts)
+            sb.Append($", {kv.Key}={kv.Value}");
+
+        if (report.DroppedCount > 0)
+            sb.Append($", Dropped≈{report.DroppedCount}");
+
+        logger.LogInformation(new EventId(0, source), sb.ToString());
     }
 }
 

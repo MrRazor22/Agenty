@@ -11,9 +11,9 @@ namespace Agenty
         public static async Task Main(string[] args)
         {
             //await PlanningRunner.RunAsync();
-            await RAGToolCallingRunner.RunAsync();
+            //await RAGToolCallingRunner.RunAsync();
             //await RAGRunner.RunAsync();
-            //await ToolCallingRunner.RunAsync();
+            await ToolCallingRunner.RunAsync();
         }
     }
 }

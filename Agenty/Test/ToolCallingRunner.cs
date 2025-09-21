@@ -1,5 +1,6 @@
 ﻿using Agenty.AgentCore;
 using Agenty.AgentCore.Executors;
+using Agenty.AgentCore.Steps;
 using Agenty.LLMCore.BuiltInTools;
 using Agenty.LLMCore.Logging;
 using Microsoft.Extensions.Logging;
@@ -15,12 +16,26 @@ namespace Agenty.Test
             var agent = Agent.Create()
                 .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m")
                 .WithLogger(logger)
-                .WithTools<SearchTools>()
                 .WithTools<GeoTools>()
                 .WithTools<WeatherTool>()
                 .WithTools<ConversionTools>()
                 .WithTools<MathTools>()
-                .WithExecutor<ToolCallingExecutor>(); // plug in strategy
+                //.WithExecutor(new ToolCallingExecutor(100)); // pick your maxRounds
+                .WithExecutor(
+                    new StepExecutor.Builder()
+                        .Add(new ToolCallingStep())                          // run tools
+                        .Add(new SummarizationStep("Summarize session"))     // summarize
+                        .Add(new PlanningStep("Plan how to solve"))          // initial plan
+                        .Add(new EvaluationStep("Did it solve?"))            // evaluate
+                        .Branch<Answer, string>(
+                            ans => ans?.confidence_score is Verdict.yes or Verdict.partial,
+                            onYes => onYes.Add(new FinalizeStep()),          // finalize
+                            onNo => onNo
+                                .Add(new ReplanningStep("Replan strategy"))  // replan
+                                .Add(new ToolCallingStep())                  // retry tools
+                        )
+                        .Build()
+                );
 
             Console.WriteLine("🤖 Agenty ToolCalling Agent ready. Type 'exit' to quit.");
 

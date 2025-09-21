@@ -13,8 +13,8 @@ namespace Agenty.RAG.IO
         private static readonly string ApiUrl = "https://en.wikipedia.org/w/api.php";
 
         /// <summary>
-        /// Fetch plain text extracts from Wikipedia articles for the given query.
-        /// Returns (Doc, Source) pairs.
+        /// Default web search loader (currently powered by Wikipedia API).
+        /// Returns (Doc, Source) pairs for a query.
         /// </summary>
         public static async Task<IReadOnlyList<(string Doc, string Source)>> SearchAsync(string query, int maxResults = 3)
         {

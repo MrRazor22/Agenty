@@ -1,43 +1,19 @@
 ﻿using System.Collections.Concurrent;
 using System.Text.Json;
-using Agenty.LLMCore.Logging;
 using Microsoft.Extensions.Logging;
 
-namespace Agenty.RAG
+namespace Agenty.RAG.Stores
 {
-    public record VectorRecord(
-        string Id,
-        string Text,
-        float[] Vector,
-        string Source
-    );
-
-    public record SearchResult(
-        string Id,
-        string Text,
-        string Source,
-        double Score
-    );
-
-    public interface IVectorStore
-    {
-        Task AddAsync(VectorRecord item);
-        Task AddBatchAsync(IEnumerable<VectorRecord> items);
-        Task<IReadOnlyList<SearchResult>> SearchAsync(float[] queryVector, int topK = 3);
-        bool Contains(string id);
-    }
-
-    public sealed class InMemoryVectorStore : IVectorStore
+    public sealed class FileVectorStore : IVectorStore
     {
         private readonly ConcurrentDictionary<string, VectorRecord> _store = new();
         private readonly string _persistPath;
         private readonly ILogger? _logger;
 
-        public InMemoryVectorStore(string? persistDir = null, ILogger? logger = null)
+        public FileVectorStore(string? persistDir = null, ILogger? logger = null)
         {
             _logger = logger;
 
-            // Default to AppData/Agenty/kb.json if no dir given
             var baseDir = persistDir ??
                           Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agenty");
             Directory.CreateDirectory(baseDir);
@@ -45,6 +21,7 @@ namespace Agenty.RAG
 
             Load();
         }
+
         public Task AddAsync(VectorRecord item)
         {
             var id = string.IsNullOrWhiteSpace(item.Id) ? RAGHelper.ComputeId(item.Text) : item.Id;
@@ -82,7 +59,7 @@ namespace Agenty.RAG
         public bool Contains(string id) =>
             !string.IsNullOrWhiteSpace(id) && _store.ContainsKey(id);
 
-        // === Persistence internal ===
+        // === Persistence ===
         private void Save()
         {
             try

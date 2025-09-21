@@ -39,22 +39,5 @@ namespace Agenty.RAG
             using var sha = SHA256.Create();
             return Convert.ToHexString(sha.ComputeHash(Encoding.UTF8.GetBytes(text)));
         }
-
-        public static IEnumerable<string> SplitByParagraphs(string text) =>
-            text.Split(new[] { "\n\n", "\r\n\r\n" }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(p => p.Trim())
-                .Where(p => !string.IsNullOrWhiteSpace(p));
-
-        public static IEnumerable<string> Chunk(string text, int maxTokens, int overlap, ITokenizer tokenizer)
-        {
-            var tokens = tokenizer.Encode(text);
-
-            for (int start = 0; start < tokens.Count; start += maxTokens - overlap)
-            {
-                var end = Math.Min(start + maxTokens, tokens.Count);
-                var chunkTokens = tokens.Skip(start).Take(end - start);
-                yield return tokenizer.Decode(chunkTokens);
-            }
-        }
     }
 }

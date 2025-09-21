@@ -3,7 +3,7 @@ using OpenAI.Embeddings;
 using System.ClientModel;
 using System.Text.Json;
 
-namespace Agenty.LLMCore.Providers.OpenAI
+namespace Agenty.RAG.Embeddings.Providers.OpenAI
 {
     public class OpenAIEmbeddingClient : IEmbeddingClient
     {
@@ -37,7 +37,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             var payload = BinaryData.FromObjectAsJson(new
             {
                 model = model ?? _defaultModel,
-                input = input,
+                input,
                 encoding_format = "float"
             });
 

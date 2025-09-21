@@ -1,4 +1,5 @@
 ﻿using Agenty.LLMCore.ChatHandling;
+using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
 using OpenAI;
 using OpenAI.Chat;
@@ -39,39 +40,45 @@ namespace Agenty.LLMCore.Providers.OpenAI
             {
                 switch (msg.Role)
                 {
-                    case Role.System:
-                        yield return ChatMessage.CreateSystemMessage(msg.Content ?? "");
+                    case Role.System when msg.Content is TextContent sysText:
+                        yield return ChatMessage.CreateSystemMessage(sysText.Text);
                         break;
 
-                    case Role.User:
-                        yield return ChatMessage.CreateUserMessage(msg.Content ?? "");
+                    case Role.User when msg.Content is TextContent userText:
+                        yield return ChatMessage.CreateUserMessage(userText.Text);
                         break;
 
-                    case Role.Assistant when msg.ToolCalls != null && msg.ToolCalls.Count > 0:
+                    case Role.Assistant when msg.Content is TextContent assistantText:
+                        yield return ChatMessage.CreateAssistantMessage(assistantText.Text);
+                        break;
+
+                    case Role.Assistant when msg.Content is ToolCall call:
                         yield return ChatMessage.CreateAssistantMessage(
-                            toolCalls: msg.ToolCalls.Select(tc =>
+                            toolCalls: new[]
+                            {
                                 ChatToolCall.CreateFunctionToolCall(
-                                    id: tc.Id,
-                                    functionName: tc.Name,
-                                    functionArguments: BinaryData.FromObjectAsJson(tc.Arguments ?? new JsonObject()))
-                            ).ToArray());
+                                    id: call.Id,
+                                    functionName: call.Name,
+                                    functionArguments: BinaryData.FromObjectAsJson(
+                                        call.Arguments ?? new JsonObject()))
+                            });
                         break;
 
-                    case Role.Assistant:
-                        yield return ChatMessage.CreateAssistantMessage(msg.Content ?? "");
-                        break;
-
-                    case Role.Tool when msg.ToolCalls != null && msg.ToolCalls.Count == 1:
-                        var tc = msg.ToolCalls[0];
-                        yield return ChatMessage.CreateToolMessage(tc.Id, msg.Content ?? "");
+                    case Role.Tool when msg.Content is ToolCallResult result:
+                        yield return ChatMessage.CreateToolMessage(
+                            result.Call.Id,
+                            result.Error != null
+                                ? $"Tool execution error: {result.Error.Message}"
+                                : result.Result?.ToString() ?? "");
                         break;
 
                     default:
-                        throw new InvalidOperationException($"Invalid message state for role {msg.Role}");
+                        throw new InvalidOperationException(
+                            $"Invalid message state for role {msg.Role} with content {msg.Content?.GetType().Name}");
                 }
             }
         }
-        public static void ApplyAgentMode(this ChatCompletionOptions options, LLMMode mode)
+        public static void ApplyLLMMode(this ChatCompletionOptions options, LLMMode mode)
         {
             switch (mode)
             {
@@ -96,28 +103,6 @@ namespace Agenty.LLMCore.Providers.OpenAI
                     options.TopP = 1f;
                     break;
             }
-        }
-
-        public static JsonObject ToOpenAiSchema(this Tool tool)
-        {
-            // Ensure parameters schema has "type": "object"
-            if (tool.ParametersSchema != null && !tool.ParametersSchema.ContainsKey("type"))
-                tool.ParametersSchema["type"] = "object";
-
-            return new JsonObject
-            {
-                ["name"] = tool.Name,
-                ["description"] = tool.Description,
-                ["parameters"] = tool.ParametersSchema?.DeepClone() ?? new JsonObject()
-            };
-        }
-
-        public static JsonArray ToOpenAiSchema(this IToolRegistry registry)
-        {
-            var schemas = new JsonArray();
-            foreach (var tool in registry.RegisteredTools)
-                schemas.Add(tool.ToOpenAiSchema());
-            return schemas;
         }
     }
 }

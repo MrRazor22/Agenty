@@ -1,15 +1,8 @@
-﻿// Enhancing Tools class to support Enums, Async, Recursive, Overloads, Metadata, etc.
-using Agenty.LLMCore.JsonSchema;
-using Microsoft.Win32;
-using System.Collections;
+﻿using Agenty.LLMCore.JsonSchema;
 using System.ComponentModel;
-using System.ComponentModel.DataAnnotations;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 
 namespace Agenty.LLMCore.ToolHandling
 {
