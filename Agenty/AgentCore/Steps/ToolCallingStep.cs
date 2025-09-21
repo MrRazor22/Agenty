@@ -24,7 +24,7 @@ namespace Agenty.AgentCore.Steps
             _mode = mode;
         }
 
-        public async Task<StepResult<object>?> RunAsync(
+        public async Task<object?> RunAsync(
             Conversation chat, ILLMOrchestrator llm, object? input = null)
         {
             if (llm == null)
@@ -39,7 +39,7 @@ namespace Agenty.AgentCore.Steps
             }
 
             // continue pipeline with same input
-            return new StepResult<object>(true, input);
+            return input;
         }
     }
 }

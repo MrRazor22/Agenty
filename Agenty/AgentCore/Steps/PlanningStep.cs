@@ -4,14 +4,14 @@ using Agenty.LLMCore.ChatHandling;
 namespace Agenty.AgentCore.Steps
 {
     // A simple structured plan
-    public record Plan(string[] steps, string rationale);
+    public record Plan(List<string> steps, string rationale);
 
     public sealed class PlanningStep : IAgentStep<string, Plan>
     {
         private readonly string _goal;
         public PlanningStep(string goal) => _goal = goal;
 
-        public async Task<StepResult<Plan>?> RunAsync(
+        public async Task<Plan?> RunAsync(
             Conversation chat, ILLMOrchestrator llm, string? input = null)
         {
             var plan = await llm.GetStructured<Plan>(
@@ -22,7 +22,7 @@ namespace Agenty.AgentCore.Steps
 
             chat.Add(Role.Assistant, $"Planned: {string.Join(", ", plan.steps)}");
 
-            return new StepResult<Plan>(true, plan);
+            return plan;
         }
     }
 
@@ -31,7 +31,7 @@ namespace Agenty.AgentCore.Steps
         private readonly string _goal;
         public ReplanningStep(string goal) => _goal = goal;
 
-        public async Task<StepResult<Plan>?> RunAsync(
+        public async Task<Plan?> RunAsync(
             Conversation chat, ILLMOrchestrator llm, Answer? feedback = null)
         {
             var plan = await llm.GetStructured<Plan>(
@@ -42,7 +42,7 @@ namespace Agenty.AgentCore.Steps
 
             chat.Add(Role.Assistant, $"Replanned: {string.Join(", ", plan.steps)}");
 
-            return new StepResult<Plan>(true, plan);
+            return plan;
         }
     }
 }

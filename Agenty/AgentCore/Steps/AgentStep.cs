@@ -3,41 +3,38 @@ using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Messages;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
 namespace Agenty.AgentCore.Steps
 {
-    // Generic step interface
+    // === Generic step interfaces ===
     public interface IAgentStep<TIn, TOut>
     {
-        Task<StepResult<TOut>?> RunAsync(
+        Task<TOut?> RunAsync(
             Conversation chat,
             ILLMOrchestrator llm,
             TIn? input = default);
     }
 
-    // For steps that don’t need an input at all
     public interface IAgentStep<TOut>
     {
-        Task<StepResult<TOut>?> RunAsync(
+        Task<TOut?> RunAsync(
             Conversation chat,
             ILLMOrchestrator llm);
     }
 
-    // Strongly typed result
-    public record StepResult<T>(bool Continue, T? Payload = default);
-
-    // === Example Steps ===
+    // === Example Models ===
     public enum Verdict { no, partial, yes }
     public record Answer(Verdict confidence_score, string explanation);
+
+    // === Example Steps ===
     public sealed class EvaluationStep : IAgentStep<string, Answer>
     {
         private readonly string _goal;
         public EvaluationStep(string goal) => _goal = goal;
 
-        public async Task<StepResult<Answer>?> RunAsync(
+        public async Task<Answer?> RunAsync(
             Conversation chat, ILLMOrchestrator llm, string? input = null)
         {
             var response = input ?? chat.LastOrDefault(c => c.Role == Role.Assistant)
@@ -50,8 +47,7 @@ namespace Agenty.AgentCore.Steps
                 LLMMode.Deterministic);
 
             chat.Add(Role.Assistant, new TextContent($"Verdict: {verdict.confidence_score}"));
-
-            return new StepResult<Answer>(verdict.confidence_score == Verdict.yes, verdict);
+            return verdict;
         }
     }
 
@@ -60,7 +56,7 @@ namespace Agenty.AgentCore.Steps
         private readonly string _userRequest;
         public SummarizationStep(string userRequest) => _userRequest = userRequest;
 
-        public async Task<StepResult<string>?> RunAsync(
+        public async Task<string?> RunAsync(
             Conversation chat, ILLMOrchestrator llm)
         {
             var summary = await llm.GetStructured<string>(
@@ -70,14 +66,13 @@ namespace Agenty.AgentCore.Steps
                 LLMMode.Creative);
 
             chat.Add(Role.Assistant, new TextContent(summary));
-
-            return new StepResult<string>(false, summary);
+            return summary;
         }
     }
 
     public sealed class FinalizeStep : IAgentStep<string, string>
     {
-        public async Task<StepResult<string>?> RunAsync(
+        public async Task<string?> RunAsync(
             Conversation chat,
             ILLMOrchestrator llm,
             string? input = null)
@@ -89,10 +84,30 @@ namespace Agenty.AgentCore.Steps
             if (!string.IsNullOrWhiteSpace(response))
                 chat.Add(Role.Assistant, response);
 
-            return new StepResult<string>(false, response);
+            return response;
         }
     }
 
+    public sealed class LoopStep : IAgentStep<object, object>
+    {
+        private readonly StepExecutor _body;
+        public LoopStep(StepExecutor body) => _body = body;
+
+        public async Task<object?> RunAsync(
+            Conversation chat, ILLMOrchestrator llm, object? input = null)
+        {
+            while (true)
+            {
+                var result = await _body.Execute(chat, llm);
+
+                // break condition: FinalizeStep produced a string
+                if (result is string s)
+                    return s;
+
+                // otherwise, keep looping
+            }
+        }
+    }
 
     // BranchStep: picks pipeline based on typed predicate
     public sealed class BranchStep<TIn, TOut> : IAgentStep<TIn, TOut>
@@ -110,14 +125,14 @@ namespace Agenty.AgentCore.Steps
             _onFalse = onFalse ?? throw new ArgumentNullException(nameof(onFalse));
         }
 
-        public async Task<StepResult<TOut>?> RunAsync(
+        public async Task<TOut?> RunAsync(
             Conversation chat, ILLMOrchestrator llm, TIn? input = default)
         {
             var branch = _predicate(input) ? _onTrue : _onFalse;
             var result = await branch.Execute(chat, llm);
 
             if (result is TOut typed)
-                return new StepResult<TOut>(true, typed);
+                return typed;
 
             throw new InvalidCastException(
                 $"Branch returned {result?.GetType().Name ?? "null"}, expected {typeof(TOut).Name}");
@@ -158,15 +173,12 @@ namespace Agenty.AgentCore.Steps
                     {
                         throw new InvalidCastException(
                             $"Pipeline type mismatch in step {step.GetType().Name}: " +
-                            $"expected input {typeof(TIn).Name}, but received {input.GetType().Name} " +
+                            $"expected {typeof(TIn).Name}, got {input.GetType().Name} " +
                             $"with value {input}"
                         );
                     }
 
-                    var result = await step.RunAsync(chat, llm, (TIn?)input);
-                    if (result == null) return null;
-                    if (!result.Continue) return result.Payload;
-                    return result.Payload;
+                    return await step.RunAsync(chat, llm, (TIn?)input);
                 };
                 return this;
             }
@@ -177,11 +189,7 @@ namespace Agenty.AgentCore.Steps
                 _pipeline = async (chat, llm) =>
                 {
                     _ = prev == null ? null : await prev(chat, llm);
-
-                    var result = await step.RunAsync(chat, llm);
-                    if (result == null) return null;
-                    if (!result.Continue) return result.Payload;
-                    return result.Payload;
+                    return await step.RunAsync(chat, llm);
                 };
                 return this;
             }

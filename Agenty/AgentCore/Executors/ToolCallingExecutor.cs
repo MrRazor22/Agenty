@@ -27,22 +27,19 @@ namespace Agenty.AgentCore.Executors
 
                 // summarization
                 var summaryResult = await new SummarizationStep("Summarize current conversation").RunAsync(chat, llm);
-                if (summaryResult?.Payload == null) continue;
+                if (string.IsNullOrEmpty(summaryResult)) continue;
 
                 // evaluation
-                var verdictResult = await new EvaluationStep("Does this answer the user goal?").RunAsync(chat, llm, summaryResult.Payload);
-                if (verdictResult?.Payload == null) continue;
+                var verdict = await new EvaluationStep("Does this answer the user goal?").RunAsync(chat, llm, summaryResult);
 
-                var verdict = verdictResult.Payload;
-
-                if (verdict.confidence_score is Verdict.yes or Verdict.partial)
+                if (verdict?.confidence_score is Verdict.yes or Verdict.partial)
                 {
                     if (verdict.confidence_score == Verdict.partial)
                         chat.Add(Role.User, verdict.explanation);
 
                     // finalization (step-based, typed)
                     var finalResult = await new FinalizeStep().RunAsync(chat, llm);
-                    return finalResult?.Payload;
+                    return finalResult;
                 }
 
                 // push correction loop
