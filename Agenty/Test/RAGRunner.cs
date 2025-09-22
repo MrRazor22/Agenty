@@ -60,7 +60,7 @@ namespace Agenty.Test
 
             // Load knowledge base docs
             var docs = await DocumentLoader.LoadDirectoryAsync(docsPath);
-            await retriever.AddDocumentsAsync(docs);
+            await retriever.AddDocumentsAsync(docs, batchSize: 128, maxParallel: 4);
 
             Console.WriteLine("🤖 RAG Agent ready. Type 'exit' to quit.");
             Console.WriteLine("💡 Searches KB first, then falls back to web if needed.");

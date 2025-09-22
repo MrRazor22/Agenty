@@ -9,7 +9,7 @@ namespace Agenty.RAG
     public interface IRagRetriever
     {
         Task AddDocumentAsync(Document doc);
-        Task AddDocumentsAsync(IEnumerable<Document> docs);
+        Task AddDocumentsAsync(IEnumerable<Document> docs, int batchSize = 32, int maxParallel = 2);
         Task<IReadOnlyList<SearchResult>> Search(string query, int topK = 3);
     }
 
@@ -36,7 +36,10 @@ namespace Agenty.RAG
 
         public async Task AddDocumentAsync(Document doc) => await AddDocumentsAsync(new[] { doc });
 
-        public async Task AddDocumentsAsync(IEnumerable<Document> docs)
+        public async Task AddDocumentsAsync(
+            IEnumerable<Document> docs,
+            int batchSize = 32,
+            int maxParallel = 2)
         {
             var allChunks = docs
                 .SelectMany(d =>
@@ -67,23 +70,39 @@ namespace Agenty.RAG
             }
 
             _logger?.LogInformation($"[RAG] {newChunks.Count} new chunks to embed and add to store.");
+             
 
-            const int batchSize = 16;
-            var itemsToAdd = new List<VectorRecord>();
+            var batches = newChunks
+                .Select((c, i) => new { c, i })
+                .GroupBy(x => x.i / batchSize)
+                .Select(g => g.Select(x => x.c).ToList())
+                .ToList();
 
-            for (int i = 0; i < newChunks.Count; i += batchSize)
+            _logger?.LogInformation($"[RAG] Processing {batches.Count} batches (batchSize={batchSize}, concurrency={maxParallel}).");
+
+            var semaphore = new SemaphoreSlim(maxParallel);
+            var tasks = batches.Select(async (batch, batchIndex) =>
             {
-                var batch = newChunks.Skip(i).Take(batchSize).ToList();
-                _logger?.LogDebug($"[RAG] Embedding batch {i / batchSize + 1} with {batch.Count} chunks...");
+                await semaphore.WaitAsync();
+                try
+                {
+                    _logger?.LogDebug($"[RAG] Embedding batch {batchIndex + 1}/{batches.Count} with {batch.Count} chunks...");
+                    var texts = batch.Select(x => x.Content).ToList();
 
-                var texts = batch.Select(x => x.Content).ToList();
-                var vectors = (await _embeddings.GetEmbeddingsAsync(texts)).ToArray();
-                var items = batch.Select((x, j) => x with { Vector = RAGHelper.Normalize(vectors[j]) });
+                    var vectors = (await _embeddings.GetEmbeddingsAsync(texts)).ToArray();
+                    var items = batch.Select((x, j) => x with { Vector = RAGHelper.Normalize(vectors[j]) }).ToList();
 
-                itemsToAdd.AddRange(items);
+                    _logger?.LogDebug($"[RAG] Completed embeddings for batch {batchIndex + 1}.");
+                    return items;
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            });
 
-                _logger?.LogDebug($"[RAG] Completed embeddings for batch {i / batchSize + 1}.");
-            }
+            var results = await Task.WhenAll(tasks);
+            var itemsToAdd = results.SelectMany(r => r).ToList();
 
             await _store.AddBatchAsync(itemsToAdd);
             _logger?.LogInformation($"[RAG] Ingestion complete. {itemsToAdd.Count} chunks added to persistent store.");
