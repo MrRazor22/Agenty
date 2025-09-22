@@ -154,23 +154,7 @@ namespace Agenty.AgentCore.Steps
             }
 
             public StepExecutor Build()
-            {
-                if (_pipeline == null)
-                    throw new InvalidOperationException("Pipeline is empty");
-
-                // Wrap pipeline in a final error check
-                return new StepExecutor(async (ctx, input) =>
-                {
-                    var result = await _pipeline(ctx, input);
-                    if (result is StepFailure failure && _errorPipeline != null)
-                    {
-                        ctx.Logger?.LogWarning("Short-circuiting to OnError for {Step}", failure.Step);
-                        return await _errorPipeline.RunAsync(ctx, failure);
-                    }
-                    return result;
-                });
-            }
-
+                => new StepExecutor(_pipeline ?? throw new InvalidOperationException("Pipeline is empty"));
         }
     }
 }

@@ -28,7 +28,7 @@ namespace Agenty.AgentCore.Steps
                 LLMMode.Creative);
 
             ctx.Memory.Working.Add(Role.Assistant, $"Planned: {string.Join(", ", plan.steps)}");
-            //throw new Exception("WTF");
+            throw new Exception("WTF");
             return plan;
         }
     }
