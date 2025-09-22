@@ -1,78 +1,70 @@
-﻿//using Agenty.LLMCore;
-//using Agenty.LLMCore.ChatHandling;
-//using Agenty.LLMCore.JsonSchema;
-//using Agenty.LLMCore.Logging;
-//using Agenty.LLMCore.ToolHandling;
-//using System;
-//using System.Collections.Generic;
-//using System.Linq;
-//using System.Threading.Tasks;
+﻿using Agenty.AgentCore.Runtime;
+using Agenty.AgentCore.Steps;
+using Agenty.AgentCore.Steps.RAG;
+using Agenty.BuiltInTools;
+using Agenty.LLMCore;
+using Agenty.LLMCore.ChatHandling;
+using Agenty.LLMCore.ToolHandling;
+using Agenty.RAG;
+using Agenty.RAG.Stores;
+using Microsoft.Extensions.Logging;
 
-//namespace Agenty.AgentCore.Executors
-//{
-//    /// <summary>
-//    /// Executor that lets the LLM drive Q&A using RAGTools via tool-calling.
-//    /// </summary>
-//    public sealed class RAGToolCallingExecutor : IExecutor
-//    {
-//        private const string SystemPrompt =
-//            "You are a helpful assistant with access to retrieval tools. " +
-//            "Always prefer using the knowledge base when relevant. " +
-//            "If no knowledge base results are useful, use web search. " +
-//            "For custom input text, use the ad-hoc search tool. " +
-//            "Keep answers short, factual, and always cite sources if available.";
+namespace Agenty.AgentCore.Executors
+{
+    /// <summary>
+    /// Executor that combines RAG with tool-calling in a reflective loop:
+    /// KB Search → (Optional Web Fallback) → Context Build → ToolCalling → Summarization → Evaluation → Finalization/Replanning.
+    /// </summary>
+    public sealed class RagToolCallingExecutor : IExecutor
+    {
+        private readonly int _maxRounds;
 
-//        public async Task<string> ExecuteAsync(IAgentContext context, string goal)
-//        {
-//            var coord = context.Tools;
-//            var answerEvaluator = new AnswerEvaluator(coord, context.Logger);
+        public RagToolCallingExecutor(int maxRounds = 30)
+        {
+            _maxRounds = maxRounds;
+        }
 
-//            var sessionChat = new Conversation().Append(context.Conversation);
-//            context.Logger.AttachTo(sessionChat);
+        public Task<object?> Execute(IAgentContext ctx)
+        {
+            var retriever = ctx.Memory.LongTerm ?? throw new InvalidOperationException("No RAG retriever configured in agent context.");
 
-//            sessionChat.Add(Role.System, SystemPrompt);
+            // Warn if no RAGTools are available
+            if (!ctx.Tools.GetTools(typeof(RAGTools)).Any())
+                ctx.Logger.LogWarning("RagToolCallingExecutor running without any RAGTools registered.");
 
-//            string answer = "";
-//            const int maxRounds = 10;
+            var pipeline = new StepExecutor.Builder()
+                // 1. Retrieve from KB
+                .Add(new KbSearchStep(retriever))
 
-//            for (int round = 0; round < maxRounds; round++)
-//            {
-//                var response = await coord.GetToolCalls(sessionChat);
-//                while (response.ToolCalls.Count != 0)
-//                {
-//                    await context.Tools.RunToolCalls(response.ToolCalls, sessionChat);
-//                    response = await coord.GetToolCalls(sessionChat);
-//                }
+                // 2. If KB is weak, fall back to web
+                .Branch<IReadOnlyList<SearchResult>>(
+                    results => results == null || results.Count == 0 || results.Max(r => r.Score) < 0.6,
+                    onWeak => onWeak.Add(new WebFallbackStep(retriever))
+                )
 
-//                var sum = await answerEvaluator.Summarize(sessionChat, goal);
-//                var verdict = await answerEvaluator.EvaluateAnswer(goal, sum.summariedAnswer);
+                // 3. Inject retrieved context into chat
+                .Add(new ContextBuildStep())
 
-//                if (verdict.confidence_score is Verdict.yes or Verdict.partial)
-//                {
-//                    sessionChat.Add(Role.Assistant, sum.summariedAnswer);
+                // 4. Main tool-calling + refinement loop
+                .Add(new LoopStep(
+                    new StepExecutor.Builder()
+                        .Add(new ToolCallingStep())
+                        .Add(new SummarizationStep())
+                        .Add(new EvaluationStep())
+                        .Branch<Answer, string>(
+                            ans => ans?.confidence_score is Verdict.yes or Verdict.partial,
+                            onYes => onYes.Add(new FinalizeStep("Give a final user friendly answer with sources if possible.")),
+                            onNo => onNo.Add(new ReplanningStep())
+                        )
+                        .Build(),
+                    maxRounds: _maxRounds
+                ))
 
-//                    if (verdict.confidence_score == Verdict.partial)
-//                        sessionChat.Add(Role.User, verdict.explanation);
+                // 5. Safety net
+                .Add(new FinalizeStep("Answer clearly using all reasoning so far."))
+                .Build();
 
-//                    var final = await context.LLM.GetResponse(
-//                        sessionChat.Add(Role.User, "Give a final user friendly answer with sources if possible."),
-//                        LLMMode.Creative);
-
-//                    answer = final;
-//                    break;
-//                }
-
-//                sessionChat.Add(Role.User, verdict.explanation);
-//            }
-
-//            if (string.IsNullOrEmpty(answer))
-//            {
-//                answer = await context.LLM.GetResponse(
-//                    sessionChat.Add(Role.User, $"Answer the user’s request: {goal}. Use the tool results if available."),
-//                    LLMMode.Creative);
-//            }
-
-//            return answer;
-//        }
-//    }
-//}
+            return pipeline.Execute(ctx);
+        }
+    }
+}

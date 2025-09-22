@@ -1,15 +1,13 @@
 ﻿using Agenty.AgentCore.Runtime;
+using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 
 namespace Agenty.AgentCore.Steps
 {
-    // === Generic step interfaces ===
+    // === Generic step interface (context-first) ===
     public interface IAgentStep<TIn, TOut>
     {
-        Task<TOut?> RunAsync(
-            Conversation chat,
-            ILLMCoordinator llm,
-            TIn? input = default);
+        Task<TOut?> RunAsync(IAgentContext ctx, TIn? input = default);
     }
 
     // BranchStep: picks pipeline based on typed predicate
@@ -29,8 +27,7 @@ namespace Agenty.AgentCore.Steps
             _onFalse = onFalse;
         }
 
-        public async Task<TOut?> RunAsync(
-            Conversation chat, ILLMCoordinator llm, TIn? input = default)
+        public async Task<TOut?> RunAsync(IAgentContext ctx, TIn? input = default)
         {
             var branch = _predicate(input) ? _onTrue : _onFalse;
 
@@ -41,7 +38,7 @@ namespace Agenty.AgentCore.Steps
                 return default;
             }
 
-            var result = await branch.Execute(chat, llm);
+            var result = await branch.Execute(ctx);
 
             if (result is TOut typed)
                 return typed;
@@ -51,37 +48,42 @@ namespace Agenty.AgentCore.Steps
         }
     }
 
-
-
     public sealed class LoopStep : IAgentStep<object, object>
     {
         private readonly StepExecutor _body;
         private readonly Func<object?, bool> _breakCondition;
+        private readonly int _maxRounds;
 
-        public LoopStep(StepExecutor body, Func<object?, bool>? breakCondition = null)
+        public LoopStep(
+            StepExecutor body,
+            Func<object?, bool>? breakCondition = null,
+            int maxRounds = 10)
         {
             _body = body ?? throw new ArgumentNullException(nameof(body));
-            _breakCondition = breakCondition ?? (result => result is string); // default stop rule
+            _breakCondition = breakCondition ?? (result => result is string && !string.IsNullOrWhiteSpace(result as string)); // default stop rule
+            _maxRounds = maxRounds;
         }
 
-        public async Task<object?> RunAsync(
-            Conversation chat, ILLMCoordinator llm, object? input = null)
+        public async Task<object?> RunAsync(IAgentContext ctx, object? input = null)
         {
-            while (true)
+            object? lastResult = null;
+
+            for (int round = 0; round < _maxRounds; round++)
             {
-                var result = await _body.Execute(chat, llm);
+                lastResult = await _body.Execute(ctx);
 
-                if (_breakCondition(result))
-                    return result;
-
-                // otherwise, loop again
+                if (_breakCondition(lastResult))
+                    return lastResult;
             }
+
+            ctx.Memory.Working.Add(Role.System, $"[LoopStep] Max rounds ({_maxRounds}) reached, returning last result.");
+            return lastResult;
         }
     }
 
     /// <summary>
-    /// MapStep transforms one step’s output type into another, 
-    /// Think of it like Select/Map in LINQ.
+    /// MapStep transforms one step’s output type into another,
+    /// like Select/Map in LINQ.
     /// </summary>
     public sealed class MapStep<TIn, TOut> : IAgentStep<TIn, TOut>
     {
@@ -92,12 +94,8 @@ namespace Agenty.AgentCore.Steps
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         }
 
-        public Task<TOut?> RunAsync(
-            Conversation chat,
-            ILLMCoordinator llm,
-            TIn? input = default)
+        public Task<TOut?> RunAsync(IAgentContext ctx, TIn? input = default)
         {
-            // just map and return — no LLM call
             var result = _mapper(input);
             return Task.FromResult(result);
         }

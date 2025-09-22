@@ -124,7 +124,7 @@ namespace Agenty.LLMCore.ChatHandling
         /// <summary>
         /// Returns the text of the most recent user message in the conversation.
         /// </summary>
-        public static string? GetLastUserMessage(this Conversation chat)
+        public static string? GetCurrentUserRequest(this Conversation chat)
         {
             var lastUser = chat.LastOrDefault(m => m.Role == Role.User);
             if (lastUser?.Content is TextContent text)

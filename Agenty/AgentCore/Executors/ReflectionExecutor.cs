@@ -1,45 +1,36 @@
-﻿//using Agenty.LLMCore.ChatHandling;
-//using Agenty.LLMCore.Logging;
-//using Agenty.LLMCore.ToolHandling;
-//using System;
-//using System.Threading.Tasks;
+﻿using Agenty.AgentCore.Steps;
+using Agenty.LLMCore;
+using Agenty.LLMCore.ChatHandling;
 
-//namespace Agenty.AgentCore.Executors
-//{
-//    /// <summary>
-//    /// Executor that makes the LLM reflect on its answers,
-//    /// improving them step by step until the grader is satisfied.
-//    /// </summary>
-//    public sealed class ReflectionExecutor : IExecutor
-//    {
-//        public async Task<string> ExecuteAsync(IAgentContext context, string goal)
-//        {
-//            var chat = new Conversation().Append(context.Conversation);
-//            context.Logger.AttachTo(chat);
+namespace Agenty.AgentCore.Executors
+{
+    /// <summary>
+    /// Executor that runs a reflective QA loop using steps:
+    /// Summarization → Evaluation → (Replanning if weak) → Finalization.
+    /// </summary>
+    public sealed class ReflectionExecutor : IExecutor
+    {
+        private readonly IExecutor _pipeline;
 
-//            chat.Add(Role.System, "You are a concise QA assistant. Answer in <=3 sentences.");
+        public ReflectionExecutor(int maxRounds)
+        {
+            _pipeline = new StepExecutor.Builder()
+                .Add(new LoopStep(
+                    new StepExecutor.Builder()
+                        .Add(new ResponseStep())
+                        .Add(new SummarizationStep())
+                        .Add(new EvaluationStep(injectFeedback: true))
+                        .Branch<Answer, string>(
+                            ans => ans?.confidence_score is Verdict.yes or Verdict.partial,
+                            onYes => onYes.Add(new FinalizeStep())
+                        )
+                        .Build(),
+                    maxRounds: 5
+                ))
+                .Add(new FinalizeStep("Wrap up with a concise, user-friendly answer"))// fallback if loop ends without high confidence
+                .Build();
+        }
 
-//            var answerEvaluator = new AnswerEvaluator(context.Tools, context.Logger);
-
-//            const int maxRounds = 10; // hard safety cap
-
-//            for (int round = 0; round < maxRounds; round++)
-//            {
-//                var response = await context.LLM.GetResponse(chat);
-//                chat.Add(Role.Assistant, response);
-
-//                var grade = await answerEvaluator.EvaluateAnswer(goal, chat.ToJson(~ChatFilter.System));
-//                if (grade.confidence_score == Verdict.yes)
-//                {
-//                    return response;
-//                }
-
-//                chat.Add(Role.User, grade.explanation);
-//            }
-
-//            // fallback if no high-confidence answer found
-//            chat.Add(Role.User, "Max rounds reached. Return the best final answer now as plain text.");
-//            return await context.LLM.GetResponse(chat);
-//        }
-//    }
-//}
+        public Task<object?> Execute(IAgentContext ctx) => _pipeline.Execute(ctx);
+    }
+}
