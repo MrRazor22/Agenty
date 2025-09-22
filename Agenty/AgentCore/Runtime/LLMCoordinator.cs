@@ -68,9 +68,11 @@ namespace Agenty.AgentCore.Runtime
             {
                 try
                 {
+                    var schema = JsonSchemaExtensions.GetSchemaFor<T>();
+
                     var response = await _llm.GetStructuredResponse(
                         intPrompt,
-                        JsonSchemaExtensions.GetSchemaFor<T>(),
+                        schema,
                         mode);
 
                     if (response?.StructuredResult == null)
@@ -80,7 +82,20 @@ namespace Agenty.AgentCore.Runtime
                         return default;
                     }
 
-                    var jsonString = response.StructuredResult.ToJsonString();
+                    var jsonNode = response.StructuredResult;
+                    var errors = _parser.ValidateAgainstSchema(jsonNode, schema, path: typeof(T).Name);
+
+                    if (errors.Any())
+                    {
+                        // send structured feedback to the model
+                        var errorMsg = string.Join("; ", errors.Select(e => $"{e.Path}: {e.Message}"));
+                        intPrompt.Add(Role.Assistant,
+                            $"The last response failed validation: {errorMsg}. Please return valid JSON for type {typeof(T).Name}.");
+                        return default;
+                    }
+
+                    // safe to deserialize now
+                    var jsonString = jsonNode.ToJsonString();
                     var jsonOptions = new JsonSerializerOptions
                     {
                         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
@@ -96,6 +111,7 @@ namespace Agenty.AgentCore.Runtime
                 }
             }, prompt);
         }
+
 
         public async Task<ToolCallResponse> GetToolCallResponse(
             Conversation prompt,

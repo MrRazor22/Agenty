@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace Agenty.RAG
@@ -36,8 +37,13 @@ namespace Agenty.RAG
         public static string ComputeId(string text)
         {
             if (text is null) throw new ArgumentNullException(nameof(text));
+
+            // normalize whitespace: collapse tabs/newlines/multiple spaces into a single space
+            var normalized = Regex.Replace(text, @"\s+", " ").Trim();
+
             using var sha = SHA256.Create();
-            return Convert.ToHexString(sha.ComputeHash(Encoding.UTF8.GetBytes(text)));
+            return Convert.ToHexString(sha.ComputeHash(Encoding.UTF8.GetBytes(normalized)));
         }
+
     }
 }

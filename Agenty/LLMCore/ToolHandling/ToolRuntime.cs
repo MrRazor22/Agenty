@@ -75,8 +75,7 @@ namespace Agenty.LLMCore.ToolHandling
 
             foreach (var call in toolCalls)
             {
-                if (string.IsNullOrWhiteSpace(call.Name) &&
-                    !string.IsNullOrWhiteSpace(call.Message))
+                if (string.IsNullOrWhiteSpace(call.Name) && !string.IsNullOrWhiteSpace(call.Message))
                 {
                     results.Add(new ToolCallResult(call, null, null));
                     continue;
@@ -87,6 +86,11 @@ namespace Agenty.LLMCore.ToolHandling
                     var result = await InvokeAsync(call);
                     results.Add(new ToolCallResult(call, result, null));
                 }
+                catch (ToolValidationAggregateException vex)
+                {
+                    // Structured validation failure
+                    results.Add(new ToolCallResult(call, null, vex));
+                }
                 catch (ToolExecutionException tex)
                 {
                     results.Add(new ToolCallResult(call, null, tex));
@@ -95,6 +99,7 @@ namespace Agenty.LLMCore.ToolHandling
 
             return results;
         }
+
     }
 
     // Custom exception type for clarity

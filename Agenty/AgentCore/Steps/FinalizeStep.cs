@@ -20,6 +20,13 @@ namespace Agenty.AgentCore.Steps
         {
             var chat = ctx.Memory.Working;
 
+            // If something was passed in, include it in the chat as neutral context
+            if (!string.IsNullOrWhiteSpace(input))
+            {
+                chat.Add(Role.System, input);
+            }
+
+            // Always add the final user-facing instruction
             var response = await ctx.LLM.GetResponse(
                 chat.Add(Role.User, _finalPrompt),
                 LLMMode.Creative);
@@ -29,5 +36,6 @@ namespace Agenty.AgentCore.Steps
 
             return response;
         }
+
     }
 }

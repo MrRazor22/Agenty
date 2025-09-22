@@ -8,38 +8,31 @@ using Agenty.LLMCore.ToolHandling;
 using Agenty.RAG;
 using Agenty.RAG.Stores;
 using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace Agenty.AgentCore.Executors
 {
     /// <summary>
-    /// Executor that combines RAG with tool-calling in a reflective loop:
-    /// KB Search → (Optional Web Fallback) → Context Build → ToolCalling → Summarization → Evaluation → Finalization/Replanning.
+    /// Composite step: 
+    /// KB Search → (Optional Web Fallback) → Context Build → ToolCalling Loop → Finalization.
     /// </summary>
-    public sealed class RagToolCallingExecutor : IExecutor
+    public sealed class RagToolCallingPipeline : IAgentStep<object, object>
     {
-        private readonly int _maxRounds;
+        private readonly StepExecutor _pipeline;
 
-        public RagToolCallingExecutor(int maxRounds = 30)
+        public RagToolCallingPipeline(int maxRounds = 30)
         {
-            _maxRounds = maxRounds;
-        }
-
-        public Task<object?> Execute(IAgentContext ctx)
-        {
-            var retriever = ctx.Memory.LongTerm ?? throw new InvalidOperationException("No RAG retriever configured in agent context.");
-
-            // Warn if no RAGTools are available
-            if (!ctx.Tools.GetTools(typeof(RAGTools)).Any())
-                ctx.Logger.LogWarning("RagToolCallingExecutor running without any RAGTools registered.");
-
-            var pipeline = new StepExecutor.Builder()
+            _pipeline = new StepExecutor.Builder()
                 // 1. Retrieve from KB
-                .Add(new KbSearchStep(retriever))
+                .Add(new KbSearchStep())
 
                 // 2. If KB is weak, fall back to web
                 .Branch<IReadOnlyList<SearchResult>>(
                     results => results == null || results.Count == 0 || results.Max(r => r.Score) < 0.6,
-                    onWeak => onWeak.Add(new WebFallbackStep(retriever))
+                    onWeak => onWeak.Add(new WebFallbackStep())
                 )
 
                 // 3. Inject retrieved context into chat
@@ -57,14 +50,24 @@ namespace Agenty.AgentCore.Executors
                             onNo => onNo.Add(new ReplanningStep())
                         )
                         .Build(),
-                    maxRounds: _maxRounds
+                    maxRounds: maxRounds
                 ))
 
                 // 5. Safety net
                 .Add(new FinalizeStep("Answer clearly using all reasoning so far."))
                 .Build();
+        }
 
-            return pipeline.Execute(ctx);
+        public Task<object?> RunAsync(IAgentContext ctx, object? input = null)
+        {
+            // sanity check: KB + tools
+            var retriever = ctx.Memory.KnowledgeBase
+                ?? throw new InvalidOperationException("No RAG retriever configured in agent context.");
+
+            if (!ctx.Tools.GetTools(typeof(RAGTools)).Any())
+                ctx.Logger?.LogWarning("RagToolCallingPipeline running without any RAGTools registered.");
+
+            return _pipeline.RunAsync(ctx, input);
         }
     }
 }

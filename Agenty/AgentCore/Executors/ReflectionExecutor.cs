@@ -1,18 +1,19 @@
 ﻿using Agenty.AgentCore.Steps;
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
+using System.Threading.Tasks;
 
 namespace Agenty.AgentCore.Executors
 {
     /// <summary>
-    /// Executor that runs a reflective QA loop using steps:
+    /// Composite step: reflective QA loop.
     /// Summarization → Evaluation → (Replanning if weak) → Finalization.
     /// </summary>
-    public sealed class ReflectionExecutor : IExecutor
+    public sealed class ReflectionPipeline : IAgentStep<object, object>
     {
-        private readonly IExecutor _pipeline;
+        private readonly StepExecutor _pipeline;
 
-        public ReflectionExecutor(int maxRounds)
+        public ReflectionPipeline(int maxRounds = 5)
         {
             _pipeline = new StepExecutor.Builder()
                 .Add(new LoopStep(
@@ -25,12 +26,14 @@ namespace Agenty.AgentCore.Executors
                             onYes => onYes.Add(new FinalizeStep())
                         )
                         .Build(),
-                    maxRounds: 5
+                    maxRounds: maxRounds
                 ))
-                .Add(new FinalizeStep("Wrap up with a concise, user-friendly answer"))// fallback if loop ends without high confidence
+                // safety net if loop exits without a confident answer
+                .Add(new FinalizeStep("Wrap up with a concise, user-friendly answer"))
                 .Build();
         }
 
-        public Task<object?> Execute(IAgentContext ctx) => _pipeline.Execute(ctx);
+        public Task<object?> RunAsync(IAgentContext ctx, object? input = null)
+            => _pipeline.RunAsync(ctx, input);
     }
 }

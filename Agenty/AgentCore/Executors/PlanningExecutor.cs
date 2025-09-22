@@ -4,14 +4,13 @@ using Agenty.AgentCore.Steps;
 namespace Agenty.AgentCore.Executors
 {
     /// <summary>
-    /// Executor that runs a structured planning + refinement loop:
-    /// Planning → Summarization → Evaluation → Finalization/Replanning.
+    /// Composite step: Planning → (Summarization → Evaluation → Finalize/Replan)*.
     /// </summary>
-    public sealed class PlanningExecutor : IExecutor
+    public sealed class PlanningPipeline : IAgentStep<object, object>
     {
-        private readonly IExecutor _pipeline;
+        private readonly StepExecutor _pipeline;
 
-        public PlanningExecutor(int maxRounds = 5)
+        public PlanningPipeline(int maxRounds = 5)
         {
             _pipeline = new StepExecutor.Builder()
                 // 1. Generate an initial plan
@@ -33,6 +32,7 @@ namespace Agenty.AgentCore.Executors
                 .Build();
         }
 
-        public Task<object?> Execute(IAgentContext ctx) => _pipeline.Execute(ctx);
+        public Task<object?> RunAsync(IAgentContext ctx, object? input = null)
+            => _pipeline.RunAsync(ctx, input);
     }
 }

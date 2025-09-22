@@ -1,4 +1,5 @@
 ﻿using Agenty.AgentCore.Runtime;
+using Agenty.AgentCore.Steps;
 using Agenty.AgentCore.TokenHandling;
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
@@ -19,12 +20,6 @@ namespace Agenty.AgentCore
         IAgentContext Context { get; }
         Task<string> ExecuteAsync(string goal);
     }
-
-    public interface IExecutor
-    {
-        Task<object?> Execute(IAgentContext ctx);
-    }
-
     /// <summary>
     /// Minimal contract for agent execution.
     /// </summary>
@@ -45,7 +40,8 @@ namespace Agenty.AgentCore
     public interface IMemory
     {
         Conversation Working { get; }
-        IRagRetriever? LongTerm { get; }
+        IRagRetriever? KnowledgeBase { get; }
+        IRagRetriever? SessionStore { get; }
     }
 
     internal sealed class AgentContext : IAgentContext, IMemory
@@ -58,7 +54,8 @@ namespace Agenty.AgentCore
 
         // Memory
         public Conversation Working { get; } = new();
-        public IRagRetriever? LongTerm { get; set; }
+        public IRagRetriever? KnowledgeBase { get; set; }
+        public IRagRetriever? SessionStore { get; set; }
 
         // Metadata
         public string? SystemPrompt { get; set; }
@@ -71,9 +68,10 @@ namespace Agenty.AgentCore
     public sealed class Agent : IAgent
     {
         private readonly AgentContext _ctx = new();
-        private IExecutor? _executor;
+        private IAgentStep<object, object>? _rootPipeline;
         private int _maxTokenBudget = 4000;
         private ITokenizer _tokenizer;
+
 
         public IAgentContext Context => _ctx;
 
@@ -81,6 +79,13 @@ namespace Agenty.AgentCore
         {
             _tokenizer = new SharpTokenTokenizer("gpt-3.5-turbo");
             _ctx.TokenManager = new SlidingWindowTokenManager(_tokenizer);
+            // default ephemeral/session store
+            _ctx.SessionStore = new RagRetriever(
+                new OpenAIEmbeddingClient("http://127.0.0.1:1234/v1", "lmstudio", "publisherme/bge/bge-large-en-v1.5-q4_k_m.gguf"),
+                new InMemoryVectorStore(),
+                _ctx.TokenManager.Tokenizer,
+                _ctx.Logger
+            );
         }
 
         public static Agent Create() => new();
@@ -139,23 +144,33 @@ namespace Agenty.AgentCore
         public Agent WithRAG(IEmbeddingClient embeddings, IVectorStore store)
         {
             var tok = _ctx.TokenManager.Tokenizer;
-            _ctx.LongTerm = new RagRetriever(embeddings, store, tok, _ctx.Logger);
+            _ctx.KnowledgeBase = new RagRetriever(embeddings, store, tok, _ctx.Logger);
             return this;
         }
 
         public Agent WithRAGRetriever(IRagRetriever ragRetriever)
         {
             var tok = _ctx.TokenManager.Tokenizer;
-            _ctx.LongTerm = ragRetriever;
+            _ctx.KnowledgeBase = ragRetriever;
             return this;
         }
 
-        public Agent WithInMemoryRAG(string embeddingModel, string baseUrl, string apiKey)
+        public Agent WithSessionRAG(string embeddingModel, string baseUrl, string apiKey)
         {
             var embeddings = new OpenAIEmbeddingClient(baseUrl, apiKey, embeddingModel);
             var store = new InMemoryVectorStore();
             var tok = _ctx.TokenManager.Tokenizer;
-            _ctx.LongTerm = new RagRetriever(embeddings, store, tok, _ctx.Logger);
+
+            _ctx.SessionStore = new RagRetriever(embeddings, store, tok, _ctx.Logger);
+            return this;
+        }
+
+        public Agent WithKnowledgeBaseRAG(string embeddingModel, string baseUrl, string apiKey)
+        {
+            var embeddings = new OpenAIEmbeddingClient(baseUrl, apiKey, embeddingModel);
+            var store = new FileVectorStore();
+            var tok = _ctx.TokenManager.Tokenizer;
+            _ctx.KnowledgeBase = new RagRetriever(embeddings, store, tok, _ctx.Logger);
             return this;
         }
 
@@ -173,15 +188,9 @@ namespace Agenty.AgentCore
             return this;
         }
 
-        public Agent WithExecutor<T>() where T : IExecutor, new()
+        public Agent WithPipeline(IAgentStep<object, object> pipeline)
         {
-            _executor = new T();
-            return this;
-        }
-
-        public Agent WithExecutor(IExecutor executor)
-        {
-            _executor = executor;
+            _rootPipeline = pipeline;
             return this;
         }
 
@@ -191,15 +200,15 @@ namespace Agenty.AgentCore
             if (_ctx.LLM == null)
                 throw new InvalidOperationException("LLM not configured. Call WithLLM().");
 
-            if (_executor == null)
-                throw new InvalidOperationException("Executor not set. Call WithExecutor().");
+            if (_rootPipeline == null)
+                throw new InvalidOperationException("Pipeline not set. Call WithPipeline().");
 
-            // Trim before executing
+            _ctx.Logger.AttachTo(_ctx.Working);
+
             _ctx.TokenManager.Trim(_ctx.Working);
-
             _ctx.Working.Add(Role.User, goal);
 
-            var answer = await _executor.Execute(_ctx);
+            var answer = await _rootPipeline.RunAsync(_ctx);
 
             if (answer is string text)
                 _ctx.Working.Add(Role.Assistant, text);

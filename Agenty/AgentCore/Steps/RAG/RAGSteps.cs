@@ -10,16 +10,9 @@ namespace Agenty.AgentCore.Steps.RAG
     // 1. Retrieve from KB
     public sealed class KbSearchStep : IAgentStep<object, IReadOnlyList<SearchResult>>
     {
-        private readonly IRagRetriever? _overrideRetriever;
-
-        public KbSearchStep(IRagRetriever? retriever = null)
-        {
-            _overrideRetriever = retriever;
-        }
-
         public async Task<IReadOnlyList<SearchResult>?> RunAsync(IAgentContext ctx, object? input = null)
         {
-            var retriever = _overrideRetriever ?? ctx.Memory.LongTerm
+            var retriever = ctx.Memory.KnowledgeBase
                 ?? throw new InvalidOperationException("No retriever available for KB search.");
 
             var query = ctx.Memory.Working.GetCurrentUserRequest();
@@ -33,16 +26,9 @@ namespace Agenty.AgentCore.Steps.RAG
     // 2. Fallback to web if KB is weak
     public sealed class WebFallbackStep : IAgentStep<IReadOnlyList<SearchResult>, IReadOnlyList<SearchResult>>
     {
-        private readonly IRagRetriever? _overrideRetriever;
-
-        public WebFallbackStep(IRagRetriever? retriever = null)
-        {
-            _overrideRetriever = retriever;
-        }
-
         public async Task<IReadOnlyList<SearchResult>?> RunAsync(IAgentContext ctx, IReadOnlyList<SearchResult>? kbResults = null)
         {
-            var retriever = _overrideRetriever ?? ctx.Memory.LongTerm
+            var retriever = ctx.Memory.SessionStore
                 ?? throw new InvalidOperationException("No retriever available for web fallback.");
 
             var goal = ctx.Memory.Working.GetCurrentUserRequest()

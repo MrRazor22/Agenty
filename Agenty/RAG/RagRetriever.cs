@@ -3,6 +3,7 @@ using Agenty.RAG.Embeddings;
 using Agenty.RAG.IO;
 using Agenty.RAG.Stores;
 using Microsoft.Extensions.Logging;
+using System.Text.RegularExpressions;
 
 namespace Agenty.RAG
 {
@@ -24,7 +25,7 @@ namespace Agenty.RAG
         private readonly int _chunkOverlap;
 
         public RagRetriever(IEmbeddingClient embeddings, IVectorStore store, ITokenizer tokenizer, ILogger? logger = null,
-            int chunkSize = 1000, int chunkOverlap = 200)
+            int chunkSize = 400, int chunkOverlap = 100)
         {
             _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
             _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -70,7 +71,7 @@ namespace Agenty.RAG
             }
 
             _logger?.LogInformation($"[RAG] {newChunks.Count} new chunks to embed and add to store.");
-             
+
 
             var batches = newChunks
                 .Select((c, i) => new { c, i })
@@ -108,10 +109,23 @@ namespace Agenty.RAG
             _logger?.LogInformation($"[RAG] Ingestion complete. {itemsToAdd.Count} chunks added to persistent store.");
         }
 
-        private IEnumerable<string> SplitByParagraphs(string text) =>
-           text.Split(new[] { "\n\n", "\r\n\r\n" }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(p => p.Trim())
-                .Where(p => !string.IsNullOrWhiteSpace(p));
+        private IEnumerable<string> SplitByParagraphs(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                yield break;
+
+            // Normalize line endings
+            var normalized = text.Replace("\r\n", "\n").Replace("\r", "\n");
+
+            // Split on 2+ newlines
+            var parts = Regex.Split(normalized, @"\n{2,}");
+
+            foreach (var part in parts)
+            {
+                if (!string.IsNullOrWhiteSpace(part))
+                    yield return part;
+            }
+        }
 
         private IEnumerable<string> Chunk(string text, int maxTokens, int overlap)
         {

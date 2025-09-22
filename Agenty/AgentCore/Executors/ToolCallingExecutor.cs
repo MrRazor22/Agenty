@@ -5,28 +5,34 @@ using Agenty.LLMCore.ChatHandling;
 namespace Agenty.AgentCore.Executors
 {
     /// <summary>
-    /// Executor that lets the LLM call tools in a reflective loop:
-    /// Planning → ToolCalling → Summarization → Evaluation → Finalization/Replanning.
+    /// Composite step: Planning → Loop(ToolCalling → ReflectiveQA) → Finalization.
     /// </summary>
-    public sealed class ToolCallingExecutor : IExecutor
+    public sealed class ToolCallingPipeline : IAgentStep<object, object>
     {
-        private readonly IExecutor _pipeline;
+        private readonly StepExecutor _pipeline;
 
-        public ToolCallingExecutor(int maxRounds = 10, string finalPrompt = "Give a final user friendly answer with sources if possible.")
+        public ToolCallingPipeline(int maxRounds = 10, string finalPrompt = "Give a final user friendly answer with sources if possible.")
         {
             _pipeline = new StepExecutor.Builder()
-                .Add(new PlanningStep()) // optional one-time planning
+                .Add(new PlanningStep())
                 .Add(new LoopStep(
                     new StepExecutor.Builder()
                         .Add(new ToolCallingStep())
-                        .Add(new ReflectiveQAStep())   // summarize, evaluate, finalize/replan
+                        .Add(new ReflectiveQAStep())
                         .Build(),
                     maxRounds: maxRounds
                 ))
-                .Add(new FinalizeStep(finalPrompt)) // safety net if loop exits without high confidence
+                .Add(new FinalizeStep(finalPrompt))
+                .OnError(
+                    new StepExecutor.Builder()
+                        .Add(new MapStep<StepFailure, string>(f => $"Sorry, {f.Step} failed: {f.Error?.Message}"))
+                        .Add(new FinalizeStep("Return user-friendly error"))
+                        .Build()
+                )
                 .Build();
         }
 
-        public Task<object?> Execute(IAgentContext ctx) => _pipeline.Execute(ctx);
+        public Task<object?> RunAsync(IAgentContext ctx, object? input = null)
+            => _pipeline.RunAsync(ctx, input);
     }
 }
