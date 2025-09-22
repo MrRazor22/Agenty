@@ -15,8 +15,10 @@ namespace Agenty.AgentCore.Steps.RAG
         public async Task<IReadOnlyList<SearchResult>?> RunAsync(
             Conversation chat, ILLMOrchestrator llm, string? query = null)
         {
+            query ??= chat.GetLastUserMessage();
             if (string.IsNullOrWhiteSpace(query))
-                throw new ArgumentException("KbSearchStep requires a query string.");
+                throw new ArgumentException("No user query found for KB search.");
+
             return await _retriever.Search(query, topK: 3);
         }
     }

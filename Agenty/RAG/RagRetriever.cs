@@ -24,7 +24,7 @@ namespace Agenty.RAG
         private readonly int _chunkOverlap;
 
         public RagRetriever(IEmbeddingClient embeddings, IVectorStore store, ITokenizer tokenizer, ILogger? logger = null,
-            int chunkSize = 200, int chunkOverlap = 50)
+            int chunkSize = 1000, int chunkOverlap = 200)
         {
             _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
             _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -50,13 +50,43 @@ namespace Agenty.RAG
                 .DistinctBy(x => x.Id)
                 .ToList();
 
-            if (allChunks.Count == 0) return;
+            if (allChunks.Count == 0)
+            {
+                _logger?.LogInformation("[RAG] No chunks produced from input documents.");
+                return;
+            }
 
-            var vectors = (await _embeddings.GetEmbeddingsAsync(allChunks.Select(x => x.Content).ToList())).ToArray();
-            var items = allChunks.Select((x, i) => x with { Vector = RAGHelper.Normalize(vectors[i]) }).ToList();
+            _logger?.LogInformation($"[RAG] {allChunks.Count} total unique chunks produced.");
 
-            await _store.AddBatchAsync(items);
-            _logger?.LogInformation($"[RAG] Added {items.Count} chunks (persistent KB).");
+            // Filter out already-present chunks
+            var newChunks = allChunks.Where(c => !_store.Contains(c.Id)).ToList();
+            if (newChunks.Count == 0)
+            {
+                _logger?.LogInformation("[RAG] All chunks already exist in the store. Nothing new to add.");
+                return;
+            }
+
+            _logger?.LogInformation($"[RAG] {newChunks.Count} new chunks to embed and add to store.");
+
+            const int batchSize = 16;
+            var itemsToAdd = new List<VectorRecord>();
+
+            for (int i = 0; i < newChunks.Count; i += batchSize)
+            {
+                var batch = newChunks.Skip(i).Take(batchSize).ToList();
+                _logger?.LogDebug($"[RAG] Embedding batch {i / batchSize + 1} with {batch.Count} chunks...");
+
+                var texts = batch.Select(x => x.Content).ToList();
+                var vectors = (await _embeddings.GetEmbeddingsAsync(texts)).ToArray();
+                var items = batch.Select((x, j) => x with { Vector = RAGHelper.Normalize(vectors[j]) });
+
+                itemsToAdd.AddRange(items);
+
+                _logger?.LogDebug($"[RAG] Completed embeddings for batch {i / batchSize + 1}.");
+            }
+
+            await _store.AddBatchAsync(itemsToAdd);
+            _logger?.LogInformation($"[RAG] Ingestion complete. {itemsToAdd.Count} chunks added to persistent store.");
         }
 
         private IEnumerable<string> SplitByParagraphs(string text) =>

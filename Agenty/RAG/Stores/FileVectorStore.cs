@@ -10,14 +10,18 @@ namespace Agenty.RAG.Stores
         private readonly string _persistPath;
         private readonly ILogger? _logger;
 
-        public FileVectorStore(string? persistDir = null, ILogger? logger = null)
+        public FileVectorStore(
+        string? persistDir = null,
+        string fileName = "kb.json",
+        ILogger? logger = null)
         {
             _logger = logger;
 
             var baseDir = persistDir ??
                           Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agenty");
             Directory.CreateDirectory(baseDir);
-            _persistPath = Path.Combine(baseDir, "kb.json");
+
+            _persistPath = Path.Combine(baseDir, fileName);
 
             Load();
         }
