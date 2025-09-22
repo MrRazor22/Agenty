@@ -1,5 +1,6 @@
 ﻿using Agenty.AgentCore.TokenHandling;
 using Agenty.RAG.Embeddings;
+using Agenty.RAG.IO;
 using Agenty.RAG.Stores;
 using Microsoft.Extensions.Logging;
 
@@ -7,10 +8,11 @@ namespace Agenty.RAG
 {
     public interface IRagRetriever
     {
-        Task AddDocumentAsync(string doc, string source = "unknown");
-        Task AddDocumentsAsync(IEnumerable<(string Doc, string Source)> docs);
+        Task AddDocumentAsync(Document doc);
+        Task AddDocumentsAsync(IEnumerable<Document> docs);
         Task<IReadOnlyList<SearchResult>> Search(string query, int topK = 3);
     }
+
 
     public sealed class RagRetriever : IRagRetriever
     {
@@ -22,7 +24,7 @@ namespace Agenty.RAG
         private readonly int _chunkOverlap;
 
         public RagRetriever(IEmbeddingClient embeddings, IVectorStore store, ITokenizer tokenizer, ILogger? logger = null,
-            int chunkSize = 1000, int chunkOverlap = 200)
+            int chunkSize = 200, int chunkOverlap = 50)
         {
             _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
             _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -32,18 +34,17 @@ namespace Agenty.RAG
             _chunkOverlap = chunkOverlap;
         }
 
-        public async Task AddDocumentAsync(string doc, string source = "unknown") =>
-            await AddDocumentsAsync(new[] { (doc, source) });
+        public async Task AddDocumentAsync(Document doc) => await AddDocumentsAsync(new[] { doc });
 
-        public async Task AddDocumentsAsync(IEnumerable<(string Doc, string Source)> docs)
+        public async Task AddDocumentsAsync(IEnumerable<Document> docs)
         {
             var allChunks = docs
                 .SelectMany(d =>
-                    SplitByParagraphs(d.Doc)
+                    SplitByParagraphs(d.Content)
                         .SelectMany(s => Chunk(s, _chunkSize, _chunkOverlap)
                             .Select(chunk => new VectorRecord(
                                 Id: RAGHelper.ComputeId(chunk),
-                                Text: chunk,
+                                Content: chunk,
                                 Vector: Array.Empty<float>(),
                                 Source: d.Source))))
                 .DistinctBy(x => x.Id)
@@ -51,7 +52,7 @@ namespace Agenty.RAG
 
             if (allChunks.Count == 0) return;
 
-            var vectors = (await _embeddings.GetEmbeddingsAsync(allChunks.Select(x => x.Text).ToList())).ToArray();
+            var vectors = (await _embeddings.GetEmbeddingsAsync(allChunks.Select(x => x.Content).ToList())).ToArray();
             var items = allChunks.Select((x, i) => x with { Vector = RAGHelper.Normalize(vectors[i]) }).ToList();
 
             await _store.AddBatchAsync(items);
@@ -60,8 +61,8 @@ namespace Agenty.RAG
 
         private IEnumerable<string> SplitByParagraphs(string text) =>
            text.Split(new[] { "\n\n", "\r\n\r\n" }, StringSplitOptions.RemoveEmptyEntries)
-               .Select(p => p.Trim())
-               .Where(p => !string.IsNullOrWhiteSpace(p));
+                .Select(p => p.Trim())
+                .Where(p => !string.IsNullOrWhiteSpace(p));
 
         private IEnumerable<string> Chunk(string text, int maxTokens, int overlap)
         {

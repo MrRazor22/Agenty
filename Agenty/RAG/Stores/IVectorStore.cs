@@ -7,14 +7,14 @@ namespace Agenty.RAG.Stores
 {
     public record VectorRecord(
         string Id,
-        string Text,
+        string Content,
         float[] Vector,
         string Source
     );
 
     public record SearchResult(
         string Id,
-        string Text,
+        string Content,
         string Source,
         double Score
     );

@@ -12,8 +12,8 @@ namespace Agenty
         {
             //await PlanningRunner.RunAsync();
             //await RAGToolCallingRunner.RunAsync();
-            //await RAGRunner.RunAsync();
-            await ToolCallingRunner.RunAsync();
+            await RAGRunner.RunAsync();
+            //await ToolCallingRunner.RunAsync();
         }
     }
 }

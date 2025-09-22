@@ -8,7 +8,7 @@ namespace Agenty.RAG.Stores
 
         public Task AddAsync(VectorRecord item)
         {
-            var id = string.IsNullOrWhiteSpace(item.Id) ? RAGHelper.ComputeId(item.Text) : item.Id;
+            var id = string.IsNullOrWhiteSpace(item.Id) ? RAGHelper.ComputeId(item.Content) : item.Id;
             _store.TryAdd(id, item with { Id = id });
             return Task.CompletedTask;
         }
@@ -17,7 +17,7 @@ namespace Agenty.RAG.Stores
         {
             foreach (var item in items)
             {
-                var id = string.IsNullOrWhiteSpace(item.Id) ? RAGHelper.ComputeId(item.Text) : item.Id;
+                var id = string.IsNullOrWhiteSpace(item.Id) ? RAGHelper.ComputeId(item.Content) : item.Id;
                 _store.TryAdd(id, item with { Id = id });
             }
             return Task.CompletedTask;
@@ -28,7 +28,7 @@ namespace Agenty.RAG.Stores
             var results = _store.Values
                 .Select(e => new SearchResult(
                     e.Id,
-                    e.Text,
+                    e.Content,
                     e.Source,
                     RAGHelper.CosineSimilarity(queryVector, e.Vector)))
                 .OrderByDescending(r => r.Score)

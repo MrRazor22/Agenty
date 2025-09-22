@@ -26,11 +26,11 @@ namespace Agenty.AgentCore.Executors
                 }
 
                 // summarization
-                var summaryResult = await new SummarizationStep("Summarize current conversation").RunAsync(chat, llm);
+                var summaryResult = await new SummarizationStep().RunAsync(chat, llm);
                 if (string.IsNullOrEmpty(summaryResult)) continue;
 
                 // evaluation
-                var verdict = await new EvaluationStep("Does this answer the user goal?").RunAsync(chat, llm, summaryResult);
+                var verdict = await new EvaluationStep().RunAsync(chat, llm, summaryResult);
 
                 if (verdict?.confidence_score is Verdict.yes or Verdict.partial)
                 {

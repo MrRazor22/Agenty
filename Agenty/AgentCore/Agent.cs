@@ -142,6 +142,13 @@ namespace Agenty.AgentCore
             return this;
         }
 
+        public Agent WithRAGRetriever(IRagRetriever ragRetriever)
+        {
+            var tok = _ctx.TokenManager.Tokenizer;
+            _ctx.LongTerm = ragRetriever;
+            return this;
+        }
+
         public Agent WithInMemoryRAG(string embeddingModel, string baseUrl, string apiKey)
         {
             var embeddings = new OpenAIEmbeddingClient(baseUrl, apiKey, embeddingModel);

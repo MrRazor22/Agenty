@@ -23,16 +23,16 @@ namespace Agenty.Test
                 //.WithExecutor(new ToolCallingExecutor(100)); // pick your maxRounds
                 .WithExecutor(
                     new StepExecutor.Builder()
-                        .Add(new PlanningStep("Plan how to solve"))   // run once
+                        .Add(new PlanningStep())   // run once
                         .Add(new LoopStep(
                             new StepExecutor.Builder()
                                 .Add(new ToolCallingStep())
-                                .Add(new SummarizationStep("Summarize session"))
-                                .Add(new EvaluationStep("Did it solve?"))
+                                .Add(new SummarizationStep())
+                                .Add(new EvaluationStep())
                                 .Branch<Answer, string>(
                                     ans => ans?.confidence_score is Verdict.yes or Verdict.partial,
                                     onYes => onYes.Add(new FinalizeStep()),
-                                    onNo => onNo.Add(new ReplanningStep("Replan strategy"))
+                                    onNo => onNo.Add(new ReplanningStep())
                                 )
                                 .Build()
                         ))

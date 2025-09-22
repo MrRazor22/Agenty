@@ -1,5 +1,4 @@
-﻿using Agenty.LLMCore.Messages;   // 👈 neutral namespace for IMessageContent
-using Agenty.LLMCore.ToolHandling;
+﻿using Agenty.LLMCore.Messages;
 
 namespace Agenty.LLMCore.ChatHandling
 {
@@ -9,6 +8,12 @@ namespace Agenty.LLMCore.ChatHandling
 
     public class Conversation : List<Chat>
     {
+        public Conversation() { }
+        public Conversation(IEnumerable<Chat> messages)
+        {
+            foreach (var msg in messages) Add(msg.Role, msg.Content);
+        }
+
         public event Action<Chat>? OnChat;
 
         public Conversation Add(Role role, TextContent text) => Add(role, (IMessageContent)text);
