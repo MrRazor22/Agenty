@@ -1,4 +1,5 @@
-﻿using Agenty.LLMCore;
+﻿using Agenty.AgentCore.Runtime;
+using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.Messages;
 
@@ -14,11 +15,11 @@ namespace Agenty.AgentCore.TokenHandling
     {
         public ITokenizer Tokenizer { get; }
         public int MaxTokens { get; }
-        private readonly ILLMOrchestrator _llm;
+        private readonly ILLMCoordinator _llm;
 
         private int _lastDropped = 0;
 
-        public SummarizingTokenManager(ITokenizer tokenizer, ILLMOrchestrator llm, int maxTokens = 4000)
+        public SummarizingTokenManager(ITokenizer tokenizer, ILLMCoordinator llm, int maxTokens = 4000)
         {
             Tokenizer = tokenizer ?? throw new ArgumentNullException(nameof(tokenizer));
             _llm = llm ?? throw new ArgumentNullException(nameof(llm));

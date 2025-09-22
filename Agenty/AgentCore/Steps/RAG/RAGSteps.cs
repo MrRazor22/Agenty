@@ -1,4 +1,4 @@
-﻿using Agenty.LLMCore;
+﻿using Agenty.AgentCore.Runtime;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.RAG;
 using Agenty.RAG.IO;
@@ -13,7 +13,7 @@ namespace Agenty.AgentCore.Steps.RAG
         public KbSearchStep(IRagRetriever retriever) => _retriever = retriever;
 
         public async Task<IReadOnlyList<SearchResult>?> RunAsync(
-            Conversation chat, ILLMOrchestrator llm, string? query = null)
+            Conversation chat, ILLMCoordinator llm, string? query = null)
         {
             query ??= chat.GetLastUserMessage();
             if (string.IsNullOrWhiteSpace(query))
@@ -31,7 +31,7 @@ namespace Agenty.AgentCore.Steps.RAG
         public WebFallbackStep(IRagRetriever retriever) => _retriever = retriever;
 
         public async Task<IReadOnlyList<SearchResult>?> RunAsync(
-            Conversation chat, ILLMOrchestrator llm, IReadOnlyList<SearchResult>? kbResults = null)
+            Conversation chat, ILLMCoordinator llm, IReadOnlyList<SearchResult>? kbResults = null)
         {
             if (chat.GetLastUserMessage() is not string goal)
                 throw new InvalidOperationException("No user query found for web fallback.");
@@ -59,7 +59,7 @@ namespace Agenty.AgentCore.Steps.RAG
     public sealed class ContextBuildStep : IAgentStep<IReadOnlyList<SearchResult>, string>
     {
         public Task<string?> RunAsync(
-            Conversation chat, ILLMOrchestrator llm, IReadOnlyList<SearchResult>? results = null)
+            Conversation chat, ILLMCoordinator llm, IReadOnlyList<SearchResult>? results = null)
         {
             var contextText = results?.Any() == true
                 ? string.Join("\n\n", results.Select(r => $"[{r.Source}] {r.Content}"))

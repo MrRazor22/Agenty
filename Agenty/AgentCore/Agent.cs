@@ -1,4 +1,5 @@
-﻿using Agenty.AgentCore.TokenHandling;
+﻿using Agenty.AgentCore.Runtime;
+using Agenty.AgentCore.TokenHandling;
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.Logging;
@@ -30,7 +31,7 @@ namespace Agenty.AgentCore
     public interface IAgentContext
     {
         IToolRegistry Tools { get; }
-        ILLMOrchestrator LLM { get; }
+        ILLMCoordinator LLM { get; }
         ILogger Logger { get; }
         IMemory Memory { get; }
         string? SystemPrompt { get; }
@@ -51,7 +52,7 @@ namespace Agenty.AgentCore
     {
         // Core
         public IToolRegistry Tools { get; } = new ToolRegistry();
-        public ILLMOrchestrator LLM { get; set; } = null!;
+        public ILLMCoordinator LLM { get; set; } = null!;
         public ILogger Logger { get; set; } = new ConsoleLogger("Agent", LogLevel.Debug);
         public ITokenManager TokenManager { get; set; } = null!;
 
@@ -90,7 +91,7 @@ namespace Agenty.AgentCore
             var llmClient = new LLMCore.Providers.OpenAI.OpenAILLMClient();
             llmClient.Initialize(baseUrl, apiKey, model);
 
-            _ctx.LLM = new LLMOrchestrator(
+            _ctx.LLM = new LLMCoordinator(
                 llmClient,
                 _ctx.Tools,
                 new ToolRuntime(_ctx.Tools),

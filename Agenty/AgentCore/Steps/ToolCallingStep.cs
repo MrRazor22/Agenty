@@ -1,4 +1,5 @@
-﻿using Agenty.LLMCore;
+﻿using Agenty.AgentCore.Runtime;
+using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.ToolHandling;
 
@@ -25,7 +26,7 @@ namespace Agenty.AgentCore.Steps
         }
 
         public async Task<object?> RunAsync(
-            Conversation chat, ILLMOrchestrator llm, object? input = null)
+            Conversation chat, ILLMCoordinator llm, object? input = null)
         {
             if (llm == null)
                 throw new InvalidOperationException("LLM is required for ToolCallingStep.");

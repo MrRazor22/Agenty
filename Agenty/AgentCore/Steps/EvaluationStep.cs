@@ -1,4 +1,5 @@
-﻿using Agenty.LLMCore;
+﻿using Agenty.AgentCore.Runtime;
+using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 
 namespace Agenty.AgentCore.Steps
@@ -9,7 +10,7 @@ namespace Agenty.AgentCore.Steps
     public sealed class EvaluationStep : IAgentStep<string, Answer>
     {
         public async Task<Answer?> RunAsync(
-            Conversation chat, ILLMOrchestrator llm, string? input = null)
+            Conversation chat, ILLMCoordinator llm, string? input = null)
         {
             if (string.IsNullOrWhiteSpace(input))
                 throw new ArgumentException("EvaluationStep requires a non-empty summary input.");

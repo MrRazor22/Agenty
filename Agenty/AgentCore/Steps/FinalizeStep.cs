@@ -1,4 +1,5 @@
-﻿using Agenty.LLMCore;
+﻿using Agenty.AgentCore.Runtime;
+using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 
 namespace Agenty.AgentCore.Steps
@@ -7,7 +8,7 @@ namespace Agenty.AgentCore.Steps
     {
         public async Task<string?> RunAsync(
             Conversation chat,
-            ILLMOrchestrator llm,
+            ILLMCoordinator llm,
             string? input = null)
         {
             var response = await llm.GetResponse(

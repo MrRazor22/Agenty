@@ -1,66 +1,53 @@
-﻿//using Agenty.RAG;
-//using Agenty.RAG.IO;
-//using Agenty.RAG.Stores;
-//using System;
-//using System.Collections.Generic;
-//using System.ComponentModel;
-//using System.Linq;
-//using System.Threading.Tasks;
+﻿using Agenty.RAG;
+using Agenty.RAG.IO;
+using Agenty.RAG.Stores;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Linq;
+using System.Threading.Tasks;
 
-//namespace Agenty.LLMCore.BuiltInTools
-//{
-//    public class RAGTools
-//    {
-//        private IRagRetriever? _coord;
-//        private int _defaultTopK = 3;
-//        private SearchScope _defaultScope = SearchScope.Both;
-//        private double _minScore = 0.6;
+namespace Agenty.BuiltInTools
+{
+    public class RAGTools
+    {
+        private readonly IRagRetriever _retriever;
+        private readonly int _defaultTopK;
+        private readonly double _minScore;
+        private readonly string _defaultSource;
 
-//        public RAGTools(IRagRetriever coord, int topK = 3, SearchScope scope = SearchScope.Both, double minScore = 0.6)
-//        {
-//            _coord = coord;
-//            _defaultTopK = topK;
-//            _defaultScope = scope;
-//            _minScore = minScore;
-//        }
+        public RAGTools(IRagRetriever retriever, int topK = 3, double minScore = 0.6, string defaultSource = "unknown")
+        {
+            _retriever = retriever ?? throw new ArgumentNullException(nameof(retriever));
+            _defaultTopK = topK;
+            _minScore = minScore;
+            _defaultSource = defaultSource;
+        }
 
-//        [Description("Search knowledge base for relevant context.")]
-//        public async Task<IReadOnlyList<SearchResult>> SearchKnowledgeBase(
-//            [Description("Query to search for.")] string query)
-//        {
-//            if (_coord == null)
-//                throw new InvalidOperationException("RAGTools not initialized.");
+        [Description("Search knowledge base for relevant context.")]
+        public async Task<IReadOnlyList<SearchResult>> SearchKnowledgeBase(string query)
+        {
+            var results = await _retriever.Search(query, _defaultTopK);
+            return results.Where(r => r.Score >= _minScore).ToList();
+        }
 
-//            var results = await _coord.Search(query, _defaultTopK, _defaultScope);
-//            return results.Where(r => r.Score >= _minScore).ToList();
-//        }
+        [Description("Search web for relevant information.")]
+        public async Task<IReadOnlyList<SearchResult>> SearchWeb(string query)
+        {
+            var docs = await WebSearchLoader.SearchAsync(query, _defaultTopK);
+            await _retriever.AddDocumentsAsync(docs.Select(d => new Document(d.Doc, d.Source ?? _defaultSource)));
 
-//        [Description("Search Wikipedia for relevant information.")]
-//        public async Task<IReadOnlyList<SearchResult>> SearchWeb(
-//            [Description("Query to search online.")] string query)
-//        {
-//            if (_coord == null)
-//                throw new InvalidOperationException("RAGTools not initialized.");
+            var results = await _retriever.Search(query, _defaultTopK);
+            return results.Where(r => r.Score >= _minScore).ToList();
+        }
 
-//            var docs = await WebSearchLoader.SearchAsync(query, _defaultTopK);
-//            await _coord.AddDocumentsAsync(docs.Select(d => (d.Doc, d.Source)), persist: false);
+        [Description("Search within a custom text block.")]
+        public async Task<IReadOnlyList<SearchResult>> SearchInText(string query, string text)
+        {
+            await _retriever.AddDocumentAsync(new Document(text, _defaultSource));
 
-//            var results = await _coord.Search(query, _defaultTopK, SearchScope.Session);
-//            return results.Where(r => r.Score >= _minScore).ToList();
-//        }
-
-//        [Description("Search within a custom text block.")]
-//        public async Task<IReadOnlyList<SearchResult>> SearchInText(
-//            [Description("Query to search for.")] string query,
-//            [Description("The text content to analyze.")] string text)
-//        {
-//            if (_coord == null)
-//                throw new InvalidOperationException("RAGTools not initialized.");
-
-//            await _coord.AddDocumentAsync(text, source: "ephemeral", persist: false);
-
-//            var results = await _coord.Search(query, _defaultTopK, SearchScope.Session);
-//            return results.Where(r => r.Score >= _minScore).ToList();
-//        }
-//    }
-//}
+            var results = await _retriever.Search(query, _defaultTopK);
+            return results.Where(r => r.Score >= _minScore).ToList();
+        }
+    }
+}

@@ -1,4 +1,5 @@
-﻿using Agenty.LLMCore;
+﻿using Agenty.AgentCore.Runtime;
+using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 
 namespace Agenty.AgentCore.Steps
@@ -10,7 +11,7 @@ namespace Agenty.AgentCore.Steps
     {
 
         public async Task<Plan?> RunAsync(
-            Conversation chat, ILLMOrchestrator llm, string? input = null)
+            Conversation chat, ILLMCoordinator llm, string? input = null)
         {
             var plan = await llm.GetStructured<Plan>(
                 new Conversation()
@@ -27,7 +28,7 @@ namespace Agenty.AgentCore.Steps
     public sealed class ReplanningStep : IAgentStep<Answer, Plan>
     {
         public async Task<Plan?> RunAsync(
-            Conversation chat, ILLMOrchestrator llm, Answer? feedback = null)
+            Conversation chat, ILLMCoordinator llm, Answer? feedback = null)
         {
             var plan = await llm.GetStructured<Plan>(
                 new Conversation()

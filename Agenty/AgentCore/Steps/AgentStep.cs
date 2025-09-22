@@ -1,4 +1,4 @@
-﻿using Agenty.LLMCore;
+﻿using Agenty.AgentCore.Runtime;
 using Agenty.LLMCore.ChatHandling;
 
 namespace Agenty.AgentCore.Steps
@@ -8,7 +8,7 @@ namespace Agenty.AgentCore.Steps
     {
         Task<TOut?> RunAsync(
             Conversation chat,
-            ILLMOrchestrator llm,
+            ILLMCoordinator llm,
             TIn? input = default);
     }
 
@@ -30,7 +30,7 @@ namespace Agenty.AgentCore.Steps
         }
 
         public async Task<TOut?> RunAsync(
-            Conversation chat, ILLMOrchestrator llm, TIn? input = default)
+            Conversation chat, ILLMCoordinator llm, TIn? input = default)
         {
             var branch = _predicate(input) ? _onTrue : _onFalse;
 
@@ -65,7 +65,7 @@ namespace Agenty.AgentCore.Steps
         }
 
         public async Task<object?> RunAsync(
-            Conversation chat, ILLMOrchestrator llm, object? input = null)
+            Conversation chat, ILLMCoordinator llm, object? input = null)
         {
             while (true)
             {
@@ -94,7 +94,7 @@ namespace Agenty.AgentCore.Steps
 
         public Task<TOut?> RunAsync(
             Conversation chat,
-            ILLMOrchestrator llm,
+            ILLMCoordinator llm,
             TIn? input = default)
         {
             // just map and return — no LLM call

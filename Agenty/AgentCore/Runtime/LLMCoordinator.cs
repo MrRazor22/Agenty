@@ -1,11 +1,12 @@
-﻿using Agenty.LLMCore.ChatHandling;
+﻿using Agenty.LLMCore;
+using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Agenty.LLMCore
+namespace Agenty.AgentCore.Runtime
 {
     // Slimmed return type for tool calls
     public record ToolCallResponse(
@@ -14,7 +15,7 @@ namespace Agenty.LLMCore
         string? FinishReason
     );
 
-    public interface ILLMOrchestrator
+    public interface ILLMCoordinator
     {
         // Plain response (text only, convenience)
         Task<string?> GetResponse(Conversation prompt, LLMMode mode = LLMMode.Balanced);
@@ -33,7 +34,7 @@ namespace Agenty.LLMCore
         Task<IReadOnlyList<ToolCallResult>> RunToolCalls(List<ToolCall> toolCalls);
     }
 
-    internal sealed class LLMOrchestrator : ILLMOrchestrator
+    internal sealed class LLMCoordinator : ILLMCoordinator
     {
         private readonly ILLMClient _llm;
         private readonly IToolRegistry _registry;
@@ -41,7 +42,7 @@ namespace Agenty.LLMCore
         private readonly IToolCallParser _parser;
         private readonly IRetryPolicy _retryPolicy;
 
-        public LLMOrchestrator(
+        public LLMCoordinator(
             ILLMClient llm,
             IToolRegistry registry,
             IToolRuntime runtime,

@@ -1,4 +1,5 @@
-﻿using Agenty.LLMCore;
+﻿using Agenty.AgentCore.Runtime;
+using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 
 namespace Agenty.AgentCore.Steps
@@ -6,7 +7,7 @@ namespace Agenty.AgentCore.Steps
     public sealed class SummarizationStep : IAgentStep<object, string>
     {
         public async Task<string?> RunAsync(
-            Conversation chat, ILLMOrchestrator llm, object? input = null)
+            Conversation chat, ILLMCoordinator llm, object? input = null)
         {
             var userRequest = chat.GetLastUserMessage()
                 ?? throw new InvalidOperationException("No user request found.");

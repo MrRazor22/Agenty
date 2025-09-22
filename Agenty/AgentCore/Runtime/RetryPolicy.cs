@@ -4,7 +4,7 @@ using Agenty.LLMCore.ToolHandling;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Agenty.LLMCore
+namespace Agenty.AgentCore.Runtime
 {
     public interface IRetryPolicy
     {

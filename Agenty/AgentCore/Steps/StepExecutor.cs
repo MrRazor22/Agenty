@@ -1,4 +1,4 @@
-﻿using Agenty.LLMCore;
+﻿using Agenty.AgentCore.Runtime;
 using Agenty.LLMCore.ChatHandling;
 using Microsoft.Extensions.Logging;
 using System;
@@ -13,8 +13,8 @@ namespace Agenty.AgentCore.Steps
     // === StepExecutor === 
     public sealed class StepExecutor : IExecutor
     {
-        private readonly Func<Conversation, ILLMOrchestrator, ILogger?, Task<object?>> _fn;
-        private StepExecutor(Func<Conversation, ILLMOrchestrator, ILogger?, Task<object?>> fn) => _fn = fn;
+        private readonly Func<Conversation, ILLMCoordinator, ILogger?, Task<object?>> _fn;
+        private StepExecutor(Func<Conversation, ILLMCoordinator, ILogger?, Task<object?>> fn) => _fn = fn;
 
         public Task<object?> Execute(IAgentContext ctx)
         {
@@ -24,7 +24,7 @@ namespace Agenty.AgentCore.Steps
             return Execute(ctx.Memory.Working, ctx.LLM, ctx.Logger);
         }
 
-        internal Task<object?> Execute(Conversation chat, ILLMOrchestrator llm, ILogger? logger = null)
+        internal Task<object?> Execute(Conversation chat, ILLMCoordinator llm, ILogger? logger = null)
             => _fn(chat ?? throw new ArgumentNullException(nameof(chat)),
                    llm ?? throw new ArgumentNullException(nameof(llm)),
                    logger);
@@ -32,7 +32,7 @@ namespace Agenty.AgentCore.Steps
         // --- Fluent Builder ---
         public sealed class Builder
         {
-            private Func<Conversation, ILLMOrchestrator, ILogger?, Task<object?>>? _pipeline;
+            private Func<Conversation, ILLMCoordinator, ILogger?, Task<object?>>? _pipeline;
 
             public Builder Add<TIn, TOut>(IAgentStep<TIn, TOut> step)
             {
@@ -53,7 +53,7 @@ namespace Agenty.AgentCore.Steps
 
             private static async Task<TOut?> RunStep<TIn, TOut>(
                 IAgentStep<TIn, TOut> step, TIn? input,
-                Conversation chat, ILLMOrchestrator llm, ILogger? logger)
+                Conversation chat, ILLMCoordinator llm, ILogger? logger)
             {
                 var sw = Stopwatch.StartNew();
                 try
