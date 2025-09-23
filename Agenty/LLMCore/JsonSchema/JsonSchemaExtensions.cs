@@ -1,6 +1,8 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Reflection;
 using System.Text.Json.Nodes;
 
@@ -9,6 +11,7 @@ namespace Agenty.LLMCore.JsonSchema
     public static class JsonSchemaExtensions
     {
         public static JsonObject GetSchemaFor<T>() => GetSchemaForType(typeof(T));
+
         public static JsonObject GetSchemaForType(this Type type, HashSet<Type>? visited = null)
         {
             visited ??= new HashSet<Type>();
@@ -43,8 +46,14 @@ namespace Agenty.LLMCore.JsonSchema
                 return GetDictionarySchema(type.GetGenericArguments()[1], visited);
             }
 
+            if (visited.Contains(type))
+            {
+                // return a safe object placeholder for recursive types (avoids infinite loop)
+                return new JsonSchemaBuilder()
+                    .Type<object>()
+                    .Build();
+            }
 
-            if (visited.Contains(type)) return new JsonSchemaBuilder().Build();
             visited.Add(type);
 
             var props = new JsonObject();
@@ -58,11 +67,9 @@ namespace Agenty.LLMCore.JsonSchema
                 var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
                 var propSchema = propType.GetSchemaForType(visited);
 
+                // map description/email/stringlength/regex/range
                 if (!string.IsNullOrEmpty(prop.GetCustomAttribute<DescriptionAttribute>()?.Description))
-                {
-                    var description = prop.GetCustomAttribute<DescriptionAttribute>()?.Description;
-                    propSchema[JsonSchemaConstants.DescriptionKey] = description;
-                }
+                    propSchema[JsonSchemaConstants.DescriptionKey] = prop.GetCustomAttribute<DescriptionAttribute>()!.Description;
 
                 if (prop.GetCustomAttribute<EmailAddressAttribute>() != null)
                     propSchema[JsonSchemaConstants.FormatKey] = "email";
@@ -76,6 +83,18 @@ namespace Agenty.LLMCore.JsonSchema
                 if (prop.GetCustomAttribute<RegularExpressionAttribute>() is { } regex)
                     propSchema[JsonSchemaConstants.PatternKey] = regex.Pattern;
 
+                if (prop.GetCustomAttribute<RangeAttribute>() is { } range)
+                {
+                    if (double.TryParse(range.Minimum?.ToString() ?? "", out var min))
+                        propSchema[JsonSchemaConstants.MinimumKey] = min;
+                    if (double.TryParse(range.Maximum?.ToString() ?? "", out var max))
+                        propSchema[JsonSchemaConstants.MaximumKey] = max;
+                }
+
+                // default value
+                if (prop.GetCustomAttribute<DefaultValueAttribute>() is { } dv)
+                    propSchema[JsonSchemaConstants.DefaultKey] = JsonValue.Create(dv.Value);
+
                 props[prop.Name] = propSchema;
 
                 if (!prop.IsOptional())
@@ -86,9 +105,10 @@ namespace Agenty.LLMCore.JsonSchema
                 .Type<object>()
                 .Properties(props)
                 .Required(required)
-                //.AdditionalProperties(false)
+                .AdditionalProperties(false)
                 .Build();
         }
+
         private static JsonObject GetDictionarySchema(Type valueType, HashSet<Type> visited)
         {
             var valueSchema = valueType.GetSchemaForType(visited);
@@ -100,9 +120,65 @@ namespace Agenty.LLMCore.JsonSchema
 
         private static bool IsOptional(this PropertyInfo prop)
         {
-            var type = prop.PropertyType;
-            return Nullable.GetUnderlyingType(type) != null || type.IsClass && type != typeof(string);
+            // 1) nullable value types are optional
+            if (Nullable.GetUnderlyingType(prop.PropertyType) != null) return true;
+
+            // 2) DefaultValueAttribute marks optional
+            if (prop.GetCustomAttribute<DefaultValueAttribute>() != null) return true;
+
+            // 3) nullable reference type (C# 8+): detect compiler NullableAttribute / NullableContextAttribute
+            if (IsNullableReference(prop)) return true;
+
+            // otherwise required
+            return false;
         }
+
+        private static bool IsNullableReference(PropertyInfo prop)
+        {
+            // check on the property first
+            var nullAttr = prop.GetCustomAttributes().FirstOrDefault(a => a.GetType().Name == "NullableAttribute");
+            if (nullAttr != null)
+            {
+                // NullableAttribute usually has a byte[] or byte value; if present and indicates '2' or '1,2' => nullable.
+                var flags = nullAttr.GetType().GetField("NullableFlags", BindingFlags.Public | BindingFlags.Instance);
+                try
+                {
+                    var val = flags?.GetValue(nullAttr);
+                    if (val is byte b) return b == 2;
+                    if (val is byte[] arr && arr.Length > 0) return arr[0] == 2;
+                }
+                catch { /* fall through to context check */ }
+            }
+
+            // fallback: check NullableContextAttribute on declaring type or assembly
+            var ctxAttr = prop.DeclaringType?.GetCustomAttributes().FirstOrDefault(a => a.GetType().Name == "NullableContextAttribute");
+            if (ctxAttr != null)
+            {
+                var flagField = ctxAttr.GetType().GetField("Flag", BindingFlags.Public | BindingFlags.Instance);
+                try
+                {
+                    var f = flagField?.GetValue(ctxAttr);
+                    if (f is byte fb) return fb == 2;
+                }
+                catch { }
+            }
+
+            // last-resort: check assembly-level attribute
+            var asmCtx = prop.Module.Assembly.GetCustomAttributes().FirstOrDefault(a => a.GetType().Name == "NullableContextAttribute");
+            if (asmCtx != null)
+            {
+                var flagField = asmCtx.GetType().GetField("Flag", BindingFlags.Public | BindingFlags.Instance);
+                try
+                {
+                    var f = flagField?.GetValue(asmCtx);
+                    if (f is byte fb) return fb == 2;
+                }
+                catch { }
+            }
+
+            return false;
+        }
+
         public static bool IsSimpleType(this Type type) =>
             type.IsPrimitive ||
             type == typeof(string) ||
@@ -113,20 +189,17 @@ namespace Agenty.LLMCore.JsonSchema
         public static string MapClrTypeToJsonType(this Type type)
         {
             if (type == null) throw new ArgumentNullException(nameof(type));
-            // Handle nullable types: Nullable<T> => T
             if (Nullable.GetUnderlyingType(type) is Type underlyingType) type = underlyingType;
-            if (type.IsEnum) return "string"; // JSON Schema enums are strings with enum keyword, so treat enum as string here 
+            if (type.IsEnum) return "string";
             if (type == typeof(string) || type == typeof(char)) return "string";
             if (type == typeof(bool)) return "boolean";
             if (type == typeof(float) || type == typeof(double) || type == typeof(decimal)) return "number";
             if (type == typeof(void) || type == typeof(DBNull)) return "null";
-            if (type.IsArray || typeof(System.Collections.IEnumerable).IsAssignableFrom(type) && type != typeof(string)) return "array";
+            if (type.IsArray || (typeof(IEnumerable).IsAssignableFrom(type) && type != typeof(string))) return "array";
             if (type == typeof(int) || type == typeof(long) || type == typeof(short) || type == typeof(byte) ||
                 type == typeof(uint) || type == typeof(ulong) || type == typeof(ushort) || type == typeof(sbyte))
                 return "integer";
-            // For all other types, treat as "object"
             return "object";
         }
-
     }
 }

@@ -123,17 +123,19 @@ namespace Agenty.AgentCore.Steps
             }
 
             public Builder Branch<TIn, TOut>(
-                Func<TIn?, bool> predicate,
-                Action<Builder> onTrue,
-                Action<Builder>? onFalse = null)
+    Func<TIn?, bool> predicate,
+    Action<Builder> onTrue,
+    Action<Builder>? onFalse = null)
             {
                 var trueBuilder = new Builder();
+                trueBuilder._errorPipeline = this._errorPipeline; // ADD THIS
                 onTrue(trueBuilder);
 
                 StepExecutor? falseExec = null;
                 if (onFalse != null)
                 {
                     var falseBuilder = new Builder();
+                    falseBuilder._errorPipeline = this._errorPipeline; // ADD THIS  
                     onFalse(falseBuilder);
                     falseExec = falseBuilder.Build();
                 }

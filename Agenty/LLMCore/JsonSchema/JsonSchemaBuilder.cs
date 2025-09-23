@@ -15,6 +15,9 @@ namespace Agenty.LLMCore.JsonSchema
         public const string PatternKey = "pattern";
         public const string AdditionalPropertiesKey = "additionalProperties";
         public const string ItemsKey = "items";
+        public const string MinimumKey = "minimum";
+        public const string MaximumKey = "maximum";
+        public const string DefaultKey = "default";
     }
     public class JsonSchemaBuilder
     {

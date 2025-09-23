@@ -64,112 +64,110 @@ namespace Agenty.AgentCore.Runtime
 
         public async Task<T?> GetStructured<T>(Conversation prompt, LLMMode mode = LLMMode.Deterministic)
         {
-            return await _retryPolicy.ExecuteAsync(async intPrompt =>
-            {
-                try
-                {
-                    var schema = JsonSchemaExtensions.GetSchemaFor<T>();
-
-                    var response = await _llm.GetStructuredResponse(
-                        intPrompt,
-                        schema,
-                        mode);
-
-                    if (response?.StructuredResult == null)
-                    {
-                        intPrompt.Add(Role.Assistant,
-                            $"The last response was empty or invalid. Please return a valid JSON response for type {typeof(T).Name}.");
-                        return default;
-                    }
-
-                    var jsonNode = response.StructuredResult;
-                    var errors = _parser.ValidateAgainstSchema(jsonNode, schema, path: typeof(T).Name);
-
-                    if (errors.Any())
-                    {
-                        // send structured feedback to the model
-                        var errorMsg = string.Join("; ", errors.Select(e => $"{e.Path}: {e.Message}"));
-                        intPrompt.Add(Role.Assistant,
-                            $"The last response failed validation: {errorMsg}. Please return valid JSON for type {typeof(T).Name}.");
-                        return default;
-                    }
-
-                    // safe to deserialize now
-                    var jsonString = jsonNode.ToJsonString();
-                    var jsonOptions = new JsonSerializerOptions
-                    {
-                        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
-                        PropertyNameCaseInsensitive = true
-                    };
-                    return JsonSerializer.Deserialize<T>(jsonString, jsonOptions);
-                }
-                catch (Exception ex)
-                {
-                    intPrompt.Add(Role.Assistant,
-                        $"The last response failed with [{ex.Message}]. Please provide a valid JSON response matching the schema for {typeof(T).Name}.");
-                    throw;
-                }
-            }, prompt);
+#if DEBUG
+            return await RunStructuredOnce<T>(prompt, mode); // no retry, easy to step through
+#else
+    return await _retryPolicy.ExecuteAsync(intPrompt => RunOnce<T>(intPrompt, mode), prompt);
+#endif
         }
 
+        private async Task<T?> RunStructuredOnce<T>(Conversation intPrompt, LLMMode mode)
+        {
+            var schema = JsonSchemaExtensions.GetSchemaFor<T>();
+            var response = await _llm.GetStructuredResponse(intPrompt, schema, mode);
+
+            if (response?.StructuredResult == null)
+            {
+                intPrompt.Add(Role.Assistant, $"Empty/invalid. Return valid JSON for {typeof(T).Name}.");
+                return default;
+            }
+
+            var jsonNode = response.StructuredResult;
+            var errors = _parser.ValidateAgainstSchema(jsonNode, schema, typeof(T).Name);
+
+            if (errors.Any())
+            {
+                var msg = string.Join("; ", errors.Select(e => $"{e.Path}: {e.Message}"));
+                intPrompt.Add(Role.Assistant, $"Validation failed: {msg}. Return valid JSON for {typeof(T).Name}.");
+                return default;
+            }
+
+            return JsonSerializer.Deserialize<T>(
+                jsonNode.ToJsonString(),
+                new JsonSerializerOptions
+                {
+                    Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
+                    PropertyNameCaseInsensitive = true
+                });
+        }
 
         public async Task<ToolCallResponse> GetToolCallResponse(
-            Conversation prompt,
-            ToolCallMode toolCallMode = ToolCallMode.Auto,
-            LLMMode mode = LLMMode.Balanced,
-            params Tool[] tools)
+    Conversation prompt,
+    ToolCallMode toolCallMode = ToolCallMode.Auto,
+    LLMMode mode = LLMMode.Balanced,
+    params Tool[] tools)
         {
             tools = tools?.Any() == true ? tools : _registry.RegisteredTools.ToArray();
             if (tools.Length == 0) throw new ArgumentException("No tools registered.", nameof(tools));
 
-            var resp = await _retryPolicy.ExecuteAsync(async intPrompt =>
+#if DEBUG
+            return await RunToolCallOnce(prompt, toolCallMode, mode, tools);
+#else
+    var resp = await _retryPolicy.ExecuteAsync(
+        intPrompt => RunToolCallOnce(intPrompt, toolCallMode, mode, tools),
+        prompt);
+    return resp ?? new ToolCallResponse(Array.Empty<ToolCall>(), "No tool call produced.", null);
+#endif
+        }
+
+        private async Task<ToolCallResponse> RunToolCallOnce(
+            Conversation intPrompt,
+            ToolCallMode toolCallMode,
+            LLMMode mode,
+            Tool[] tools)
+        {
+            var response = await _llm.GetToolCallResponse(intPrompt, tools, toolCallMode, mode);
+
+            var valid = new List<ToolCall>();
+            foreach (var call in response.ToolCalls)
             {
-                var response = await _llm.GetToolCallResponse(intPrompt, tools, toolCallMode, mode);
-
-                var valid = new List<ToolCall>();
-                foreach (var call in response.ToolCalls)
+                if (_registry.Contains(call.Name))
                 {
-                    if (_registry.Contains(call.Name))
+                    if (intPrompt.IsToolAlreadyCalled(call))
                     {
-                        if (prompt.IsToolAlreadyCalled(call))
-                        {
-                            string lastResult = prompt.GetLastToolCallResult(call);
-
-                            intPrompt.Add(Role.User,
-                                $"Tool `{call.Name}` was already called with the same arguments. " +
-                                $"The result was: {lastResult}. ");
-                            continue;
-                        }
-                        valid.Add(new ToolCall(
-                            call.Id ?? Guid.NewGuid().ToString(),
-                            call.Name,
-                            call.Arguments,
-                            _parser.ParseToolParams(_registry, call.Name, call.Arguments)
-                        ));
-                    }
-                }
-
-                if (valid.Count == 0 && !string.IsNullOrWhiteSpace(response.AssistantMessage))
-                {
-                    if (prompt.IsLastAssistantMessageSame(response.AssistantMessage))
-                    {
+                        string lastResult = intPrompt.GetLastToolCallResult(call);
                         intPrompt.Add(Role.User,
-                            "You just gave the same assistant message. Don’t repeat — refine or add new info.");
-                        return null;
+                            $"Tool `{call.Name}` was already called with the same arguments. " +
+                            $"The result was: {lastResult}. ");
+                        continue;
                     }
-                    var inline = _parser.TryExtractInlineToolCall(_registry, response.AssistantMessage);
-                    if (inline != null)
-                        valid.AddRange(inline.Calls);
+                    valid.Add(new ToolCall(
+                        call.Id ?? Guid.NewGuid().ToString(),
+                        call.Name,
+                        call.Arguments,
+                        _parser.ParseToolParams(_registry, call.Name, call.Arguments)
+                    ));
                 }
+            }
 
-                return new ToolCallResponse(
-                    valid,
-                    response.AssistantMessage,
-                    response.FinishReason
-                );
-            }, prompt);
+            if (valid.Count == 0 && !string.IsNullOrWhiteSpace(response.AssistantMessage))
+            {
+                if (intPrompt.IsLastAssistantMessageSame(response.AssistantMessage))
+                {
+                    intPrompt.Add(Role.User,
+                        "You just gave the same assistant message. Don’t repeat — refine or add new info.");
+                    return null!;
+                }
+                var inline = _parser.TryExtractInlineToolCall(_registry, response.AssistantMessage);
+                if (inline != null)
+                    valid.AddRange(inline.Calls);
+            }
 
-            return resp ?? new ToolCallResponse(Array.Empty<ToolCall>(), "No tool call produced.", null);
+            return new ToolCallResponse(
+                valid,
+                response.AssistantMessage,
+                response.FinishReason
+            );
         }
 
         public Task<IReadOnlyList<ToolCallResult>> RunToolCalls(List<ToolCall> toolCalls) =>
