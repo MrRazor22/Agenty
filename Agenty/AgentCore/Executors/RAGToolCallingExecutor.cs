@@ -40,7 +40,7 @@ namespace Agenty.AgentCore.Executors
 
                 // 4. Main tool-calling + refinement loop
                 .Add(new LoopStep(
-                    new StepExecutor.Builder()
+                    body => body
                         .Add(new ToolCallingStep())
                         .Add(new SummarizationStep())
                         .Add(new EvaluationStep())
@@ -48,10 +48,9 @@ namespace Agenty.AgentCore.Executors
                             ans => ans?.confidence_score is Verdict.yes or Verdict.partial,
                             onYes => onYes.Add(new FinalizeStep("Give a final user friendly answer with sources if possible.")),
                             onNo => onNo.Add(new ReplanningStep())
-                        )
-                        .Build(),
+                        ),
                     maxRounds: maxRounds
-                ))
+                )) 
 
                 // 5. Safety net
                 .Add(new FinalizeStep("Answer clearly using all reasoning so far."))

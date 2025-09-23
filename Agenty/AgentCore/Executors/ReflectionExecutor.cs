@@ -16,18 +16,17 @@ namespace Agenty.AgentCore.Executors
         public ReflectionPipeline(int maxRounds = 5)
         {
             _pipeline = new StepExecutor.Builder()
-                .Add(new LoopStep(
-                    new StepExecutor.Builder()
+                .Loop(
+                    body => body
                         .Add(new ResponseStep())
                         .Add(new SummarizationStep())
                         .Add(new EvaluationStep(injectFeedback: true))
                         .Branch<Answer, string>(
                             ans => ans?.confidence_score is Verdict.yes or Verdict.partial,
                             onYes => onYes.Add(new FinalizeStep())
-                        )
-                        .Build(),
+                        ),
                     maxRounds: maxRounds
-                ))
+                )
                 // safety net if loop exits without a confident answer
                 .Add(new FinalizeStep("Wrap up with a concise, user-friendly answer"))
                 .Build();

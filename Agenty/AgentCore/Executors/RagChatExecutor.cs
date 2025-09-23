@@ -18,20 +18,29 @@ namespace Agenty.AgentCore.Executors
         public RagChatPipeline(IRagRetriever retriever, int maxRounds = 5, string finalPrompt = "Summarize clearly with sources if possible.")
         {
             _pipeline = new StepExecutor.Builder()
-                .Add(new KbSearchStep())   // search KB
+                // 1. Search KB
+                .Add(new KbSearchStep())
+
+                // 2. If KB is weak, fallback to web
                 .Branch<IReadOnlyList<SearchResult>>(
                     results => results == null || !results.Any() || results.Max(r => r.Score) < 0.6,
                     onWeak => onWeak.Add(new WebFallbackStep())
                 )
-                .Add(new ContextBuildStep())        // add context into chat
-                .Add(new LoopStep(
-                    new StepExecutor.Builder()
-                        .Add(new ResponseStep())       // model answers
-                        .Add(new ReflectiveQAStep())   // summarize, evaluate, finalize/replan
-                        .Build(),
+
+                // 3. Inject context
+                .Add(new ContextBuildStep())
+
+                // 4. Reflection loop
+                .Loop(
+                    body => body
+                        .Add(new ResponseStep())      // model answers
+                        .Add(new ReflectiveQAStep()), // summarize, evaluate, finalize/replan
                     maxRounds: maxRounds
-                ))
-                .Add(new FinalizeStep(finalPrompt))   // safety net
+                )
+
+                // 5. Safety net
+                .Add(new FinalizeStep(finalPrompt))
+
                 .Build();
         }
 

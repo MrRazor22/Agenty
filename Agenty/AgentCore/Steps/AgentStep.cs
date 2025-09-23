@@ -11,7 +11,7 @@ namespace Agenty.AgentCore.Steps
         Task<TOut?> RunAsync(IAgentContext ctx, TIn? input = default);
     }
 
-    // BranchStep: picks pipeline based on typed predicate
+    // BranchStep: picks pipeline based on typed predicate (flat builder)
     public sealed class BranchStep<TIn, TOut> : IAgentStep<TIn, TOut>
     {
         private readonly Func<TIn?, bool> _predicate;
@@ -20,12 +20,21 @@ namespace Agenty.AgentCore.Steps
 
         public BranchStep(
             Func<TIn?, bool> predicate,
-            StepExecutor onTrue,
-            StepExecutor? onFalse = null)
+            Action<StepExecutor.Builder> onTrue,
+            Action<StepExecutor.Builder>? onFalse = null)
         {
             _predicate = predicate ?? throw new ArgumentNullException(nameof(predicate));
-            _onTrue = onTrue ?? throw new ArgumentNullException(nameof(onTrue));
-            _onFalse = onFalse;
+
+            var trueBuilder = new StepExecutor.Builder();
+            onTrue?.Invoke(trueBuilder);
+            _onTrue = trueBuilder.Build();
+
+            if (onFalse != null)
+            {
+                var falseBuilder = new StepExecutor.Builder();
+                onFalse(falseBuilder);
+                _onFalse = falseBuilder.Build();
+            }
         }
 
         public async Task<TOut?> RunAsync(IAgentContext ctx, TIn? input = default)
@@ -57,9 +66,11 @@ namespace Agenty.AgentCore.Steps
     {
         private readonly StepExecutor _errorPipeline;
 
-        public ErrorStep(StepExecutor errorPipeline)
+        public ErrorStep(Action<StepExecutor.Builder> errorPipeline)  // FIX: accept builder lambda
         {
-            _errorPipeline = errorPipeline ?? throw new ArgumentNullException(nameof(errorPipeline));
+            var builder = new StepExecutor.Builder();
+            errorPipeline?.Invoke(builder);
+            _errorPipeline = builder.Build();
         }
 
         public async Task<object?> RunAsync(IAgentContext ctx, StepFailure? failure = null)
@@ -74,7 +85,6 @@ namespace Agenty.AgentCore.Steps
 
             try
             {
-                // Feed StepFailure as input to error pipeline
                 return await _errorPipeline.RunAsync(ctx, failure);
             }
             catch (Exception ex)
@@ -85,7 +95,7 @@ namespace Agenty.AgentCore.Steps
         }
     }
 
-
+    // LoopStep: repeats inner pipeline (flat builder)
     public sealed class LoopStep : IAgentStep<object, object>
     {
         private readonly StepExecutor _body;
@@ -93,24 +103,27 @@ namespace Agenty.AgentCore.Steps
         private readonly int _maxRounds;
 
         public LoopStep(
-            StepExecutor body,
+            Action<StepExecutor.Builder> body,   // FIX: accept builder lambda
             Func<object?, bool>? breakCondition = null,
             int maxRounds = 10)
         {
-            _body = body ?? throw new ArgumentNullException(nameof(body));
+            var builder = new StepExecutor.Builder();
+            body?.Invoke(builder);
+            _body = builder.Build();
+
             _breakCondition = breakCondition ?? (r => r is string s && !string.IsNullOrWhiteSpace(s));
             _maxRounds = maxRounds;
         }
 
         public async Task<object?> RunAsync(IAgentContext ctx, object? input = null)
         {
-            object? lastResult = null;
+            object? lastResult = input;
 
             for (int round = 0; round < _maxRounds; round++)
             {
                 ctx.Logger?.LogDebug("LoopStep iteration {Round}/{MaxRounds} started", round + 1, _maxRounds);
 
-                lastResult = await _body.RunAsync(ctx, input);
+                lastResult = await _body.RunAsync(ctx, lastResult);
 
                 if (_breakCondition(lastResult))
                 {
@@ -125,10 +138,7 @@ namespace Agenty.AgentCore.Steps
         }
     }
 
-    /// <summary>
-    /// MapStep transforms one step’s output type into another,
-    /// like Select/Map in LINQ.
-    /// </summary>
+    // MapStep: transforms one step’s output type into another
     public sealed class MapStep<TIn, TOut> : IAgentStep<TIn, TOut>
     {
         private readonly Func<TIn?, TOut?> _mapper;

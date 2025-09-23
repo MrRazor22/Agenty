@@ -16,19 +16,18 @@ namespace Agenty.AgentCore.Executors
                 // 1. Generate an initial plan
                 .Add(new PlanningStep())
 
-                // 2. Refinement loop
-                .Add(new LoopStep(
-                    new StepExecutor.Builder()
+                // 2. Refinement loop (flattened, no nested StepExecutor)
+                .Loop(
+                    body => body
                         .Add(new SummarizationStep())   // condense plan into clear answer
                         .Add(new EvaluationStep())      // check quality
                         .Branch<Answer, string>(
                             ans => ans?.confidence_score is Verdict.yes or Verdict.partial,
                             onYes => onYes.Add(new FinalizeStep()),   // good enough → finalize
-                            onNo => onNo.Add(new ReplanningStep())    // not good → replan
-                        )
-                        .Build(),
+                            onNo => onNo.Add(new ReplanningStep())   // not good → replan
+                        ),
                     maxRounds: maxRounds
-                ))
+                )
                 .Build();
         }
 
