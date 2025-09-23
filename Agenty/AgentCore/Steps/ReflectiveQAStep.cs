@@ -26,7 +26,7 @@ namespace Agenty.AgentCore.Steps
             if (verdict?.confidence_score is Verdict.yes or Verdict.partial)
             {
                 if (verdict.confidence_score == Verdict.partial)
-                    chat.Add(Role.User, verdict.explanation);
+                    chat.Add(Role.Assistant, verdict.explanation);
 
                 // 3. Finalize
                 return await new FinalizeStep(_finalPrompt).RunAsync(ctx, summary);

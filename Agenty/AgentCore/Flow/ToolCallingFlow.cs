@@ -14,8 +14,7 @@ namespace Agenty.AgentCore.Flows
         private readonly StepExecutor _pipeline;
 
         public ToolCallingFlow(
-      int maxRounds = 10,
-      string finalPrompt = "Give a final user friendly answer with sources if possible.")
+      int maxRounds = 10)
         {
             _pipeline = new StepExecutor.Builder()
                 .Add(new PlanningStep())
@@ -25,7 +24,6 @@ namespace Agenty.AgentCore.Flows
                         .Add(new ReflectiveQAStep()),
                     maxRounds: maxRounds
                 )
-                .Add(new FinalizeStep(finalPrompt))
                 .OnError(
                     new StepExecutor.Builder()
                         .Add(new MapStep<StepFailure, string>(

@@ -71,7 +71,7 @@ namespace Agenty.AgentCore.TokenHandling
             var summary = await _llm.GetResponse(
                 new Conversation()
                     .Add(Role.System, "Summarize this conversation history as compactly as possible, preserving key facts.")
-                    .Append(historyConv, includeSystem: false)
+                    .Append(historyConv, ChatFilter.All & ~ChatFilter.System)
                     .Add(Role.User, "Summarize above into a short context note."),
                 LLMMode.Deterministic);
 

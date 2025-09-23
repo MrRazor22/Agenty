@@ -37,16 +37,19 @@ namespace Agenty.LLMCore.ChatHandling
             return copy;
         }
 
-        public Conversation Append(Conversation other, bool includeSystem = false)
+        public Conversation Append(Conversation other, ChatFilter filter = ChatFilter.All)
         {
             foreach (var chat in other)
             {
-                if (!includeSystem && chat.Role == Role.System)
-                    continue;
+                if (chat.Role == Role.System && !filter.HasFlag(ChatFilter.System)) continue;
+                if (chat.Role == Role.User && !filter.HasFlag(ChatFilter.User)) continue;
+                if (chat.Role == Role.Assistant && !filter.HasFlag(ChatFilter.Assistant)) continue;
+                if (chat.Role == Role.Tool && !filter.HasFlag(ChatFilter.ToolResults)) continue;
 
                 Add(chat.Role, chat.Content);
             }
             return this;
         }
+
     }
 }

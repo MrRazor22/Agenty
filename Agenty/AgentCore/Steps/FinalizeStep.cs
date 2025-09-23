@@ -11,7 +11,8 @@ namespace Agenty.AgentCore.Steps
     {
         private readonly string _finalPrompt;
 
-        public FinalizeStep(string finalPrompt = "Give a final user friendly answer.")
+        public FinalizeStep(
+            string finalPrompt = "Wrap up the conversation with a clear, user-facing answer.")
         {
             _finalPrompt = finalPrompt;
         }
@@ -20,22 +21,28 @@ namespace Agenty.AgentCore.Steps
         {
             var chat = ctx.Memory.Working;
 
-            // If something was passed in, include it in the chat as neutral context
-            if (!string.IsNullOrWhiteSpace(input))
-            {
-                chat.Add(Role.System, input);
-            }
+            var goal = chat.GetCurrentUserRequest() ?? "the user request";
 
-            // Always add the final user-facing instruction
-            var response = await ctx.LLM.GetResponse(
-                chat.Add(Role.User, _finalPrompt),
+            var candidate = string.IsNullOrWhiteSpace(input)
+                ? "(no candidate answer produced)"
+                : input;
+
+            var refined = await ctx.LLM.GetResponse(
+                new Conversation(chat.Where(m => m.Role != Role.System)) // filter inline
+                    .Add(Role.System, _finalPrompt)
+                    .Add(Role.User,
+                        $"USER GOAL: {goal}\n" +
+                        $"CANDIDATE ANSWER: {candidate}\n\n" +
+                        "Return only the final, user-facing answer in a clear and concise way."),
                 LLMMode.Creative);
 
-            if (!string.IsNullOrWhiteSpace(response))
-                chat.Add(Role.Assistant, response);
+            if (!string.IsNullOrWhiteSpace(refined))
+                chat.Add(Role.Assistant, refined);
 
-            return response;
+            return refined;
         }
 
     }
+
 }
+
