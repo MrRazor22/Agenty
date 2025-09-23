@@ -1,13 +1,13 @@
-﻿using Agenty.AgentCore.Steps;
+﻿using Agenty.AgentCore.Runtime;
 using Agenty.LLMCore.ChatHandling;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore.Executors
+namespace Agenty.AgentCore.Flows
 {
     /// <summary>
     /// Dead simple chatbot: just ask the LLM for a response.
     /// </summary>
-    public sealed class SimpleChatBotStep : IAgentStep<object, string>
+    public sealed class SimpleChatBotFlow : IAgentStep<object, string>
     {
         public async Task<string?> RunAsync(IAgentContext ctx, object? input = null)
         {

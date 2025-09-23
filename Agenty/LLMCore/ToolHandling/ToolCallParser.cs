@@ -310,7 +310,7 @@ namespace Agenty.LLMCore.ToolHandling
     string Param,
     string? Path,
     string Message,
-    string ErrorType    
+    string ErrorType
     );
 
     public sealed class ToolValidationAggregateException : Exception

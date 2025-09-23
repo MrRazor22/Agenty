@@ -38,20 +38,20 @@ namespace Agenty.AgentCore.Runtime
     {
         private readonly ILLMClient _llm;
         private readonly IToolRegistry _registry;
-        private readonly IToolRuntime _runtime;
+        private readonly IToolRuntime _Runtime;
         private readonly IToolCallParser _parser;
         private readonly IRetryPolicy _retryPolicy;
 
         public LLMCoordinator(
             ILLMClient llm,
             IToolRegistry registry,
-            IToolRuntime runtime,
+            IToolRuntime Runtime,
             IToolCallParser parser,
             IRetryPolicy retryPolicy)
         {
             _llm = llm;
             _registry = registry;
-            _runtime = runtime;
+            _Runtime = Runtime;
             _parser = parser;
             _retryPolicy = retryPolicy;
         }
@@ -171,6 +171,6 @@ namespace Agenty.AgentCore.Runtime
         }
 
         public Task<IReadOnlyList<ToolCallResult>> RunToolCalls(List<ToolCall> toolCalls) =>
-            _runtime.HandleToolCallsAsync(toolCalls);
+            _Runtime.HandleToolCallsAsync(toolCalls);
     }
 }

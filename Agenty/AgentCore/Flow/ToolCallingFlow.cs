@@ -1,17 +1,20 @@
-﻿using Agenty.AgentCore.Steps;
+﻿using Agenty.AgentCore.Runtime;
+using Agenty.AgentCore.Steps;
+using Agenty.AgentCore.Steps.ControlFlow;
+using Agenty.AgentCore.Steps.Domain;
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 
-namespace Agenty.AgentCore.Executors
+namespace Agenty.AgentCore.Flows
 {
     /// <summary>
     /// Composite step: Planning → Loop(ToolCalling → ReflectiveQA) → Finalization.
     /// </summary>
-    public sealed class ToolCallingPipeline : IAgentStep<object, object>
+    public sealed class ToolCallingFlow : IAgentStep<object, object>
     {
         private readonly StepExecutor _pipeline;
 
-        public ToolCallingPipeline(
+        public ToolCallingFlow(
       int maxRounds = 10,
       string finalPrompt = "Give a final user friendly answer with sources if possible.")
         {

@@ -1,16 +1,17 @@
 ﻿using Agenty.AgentCore.Runtime;
 using Agenty.AgentCore.Steps;
+using Agenty.AgentCore.Steps.Domain;
 
-namespace Agenty.AgentCore.Executors
+namespace Agenty.AgentCore.Flows
 {
     /// <summary>
     /// Composite step: Planning → (Summarization → Evaluation → Finalize/Replan)*.
     /// </summary>
-    public sealed class PlanningPipeline : IAgentStep<object, object>
+    public sealed class PlanningFlow : IAgentStep<object, object>
     {
         private readonly StepExecutor _pipeline;
 
-        public PlanningPipeline(int maxRounds = 5)
+        public PlanningFlow(int maxRounds = 5)
         {
             _pipeline = new StepExecutor.Builder()
                 // 1. Generate an initial plan

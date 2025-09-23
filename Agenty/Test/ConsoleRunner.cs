@@ -1,5 +1,5 @@
 ﻿using Agenty.AgentCore;
-using Agenty.AgentCore.Executors;
+using Agenty.AgentCore.Flows;
 using Agenty.AgentCore.TokenHandling;
 using Agenty.BuiltInTools;
 using Agenty.LLMCore.BuiltInTools;
@@ -38,7 +38,7 @@ public static class ConsoleRunner
             .WithTools<WeatherTool>()
             .WithTools<ConversionTools>()
             .WithTools<MathTools>()
-            .WithPipeline(new ToolCallingPipeline(maxRounds: 50));
+            .WithFlow(new ToolCallingFlow(maxRounds: 50));
         //.WithExecutor(new RagToolCallingExecutor(maxRounds: 50));
         //.WithExecutor(new PlanningExecutor(maxRounds: 50)); 
 

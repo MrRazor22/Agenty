@@ -3,7 +3,7 @@ using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.ToolHandling;
 
-namespace Agenty.AgentCore.Steps
+namespace Agenty.AgentCore.Steps.Domain
 {
     /// <summary>
     /// Step that runs tool calls until none remain.

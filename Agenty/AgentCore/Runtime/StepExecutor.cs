@@ -1,5 +1,4 @@
-﻿using Agenty.AgentCore.Runtime;
-using Agenty.LLMCore;
+﻿using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 using Microsoft.Extensions.Logging;
 using System;
@@ -8,7 +7,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore.Steps
+namespace Agenty.AgentCore.Runtime
 {
     public record StepFailure(string Step, string Expected, string? Actual, Exception Error);
 
@@ -78,7 +77,7 @@ namespace Agenty.AgentCore.Steps
     => Branch<T, T>(predicate, onTrue, onFalse);
 
             public Builder Branch<TIn, TOut>(
-    Func<TIn?, bool> predicate,
+    Func<TIn?, bool> when,
     Action<Builder> onTrue,
     Action<Builder>? onFalse = null)
             {
@@ -112,7 +111,7 @@ namespace Agenty.AgentCore.Steps
                     }
 
                     bool takeTrue;
-                    try { takeTrue = predicate(typed); }
+                    try { takeTrue = when(typed); }
                     catch (Exception ex)
                     {
                         ctx.Logger?.LogError(ex, "Branch predicate threw");
@@ -121,7 +120,7 @@ namespace Agenty.AgentCore.Steps
 
                     var branchResult = takeTrue
                         ? await truePipeline(ctx, typed)
-                        : (falsePipeline != null ? await falsePipeline(ctx, typed) : input);
+                        : falsePipeline != null ? await falsePipeline(ctx, typed) : input;
 
                     return await next(ctx, branchResult);
                 });
@@ -160,7 +159,7 @@ namespace Agenty.AgentCore.Steps
                 return this;
             }
 
-            public Builder OnError(StepExecutor.Builder errorBuilder)
+            public Builder OnError(Builder errorBuilder)
             {
                 if (errorBuilder == null) throw new ArgumentNullException(nameof(errorBuilder));
                 return OnError(errorBuilder.Build());

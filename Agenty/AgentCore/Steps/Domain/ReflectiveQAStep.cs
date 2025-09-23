@@ -1,7 +1,7 @@
 ﻿using Agenty.AgentCore.Runtime;
 using Agenty.LLMCore.ChatHandling;
 
-namespace Agenty.AgentCore.Steps
+namespace Agenty.AgentCore.Steps.Domain
 {
     public sealed class ReflectiveQAStep : IAgentStep<object, string>
     {

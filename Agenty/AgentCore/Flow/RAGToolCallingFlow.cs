@@ -1,5 +1,7 @@
 ﻿using Agenty.AgentCore.Runtime;
 using Agenty.AgentCore.Steps;
+using Agenty.AgentCore.Steps.ControlFlow;
+using Agenty.AgentCore.Steps.Domain;
 using Agenty.AgentCore.Steps.RAG;
 using Agenty.BuiltInTools;
 using Agenty.LLMCore;
@@ -13,17 +15,17 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore.Executors
+namespace Agenty.AgentCore.Flows
 {
     /// <summary>
     /// Composite step: 
     /// KB Search → (Optional Web Fallback) → Context Build → ToolCalling Loop → Finalization.
     /// </summary>
-    public sealed class RagToolCallingPipeline : IAgentStep<object, object>
+    public sealed class RagToolCallingFlow : IAgentStep<object, object>
     {
         private readonly StepExecutor _pipeline;
 
-        public RagToolCallingPipeline(int maxRounds = 30)
+        public RagToolCallingFlow(int maxRounds = 30)
         {
             _pipeline = new StepExecutor.Builder()
                 // 1. Retrieve from KB
@@ -50,7 +52,7 @@ namespace Agenty.AgentCore.Executors
                             onNo => onNo.Add(new ReplanningStep())
                         ),
                     maxRounds: maxRounds
-                )) 
+                ))
 
                 // 5. Safety net
                 .Add(new FinalizeStep("Answer clearly using all reasoning so far."))

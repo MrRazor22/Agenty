@@ -1,19 +1,21 @@
-﻿using Agenty.AgentCore.Steps;
+﻿using Agenty.AgentCore.Runtime;
+using Agenty.AgentCore.Steps;
+using Agenty.AgentCore.Steps.Domain;
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore.Executors
+namespace Agenty.AgentCore.Flows
 {
     /// <summary>
     /// Composite step: reflective QA loop.
     /// Summarization → Evaluation → (Replanning if weak) → Finalization.
     /// </summary>
-    public sealed class ReflectionPipeline : IAgentStep<object, object>
+    public sealed class ReflectionFlow : IAgentStep<object, object>
     {
         private readonly StepExecutor _pipeline;
 
-        public ReflectionPipeline(int maxRounds = 5)
+        public ReflectionFlow(int maxRounds = 5)
         {
             _pipeline = new StepExecutor.Builder()
                 .Loop(
@@ -22,7 +24,7 @@ namespace Agenty.AgentCore.Executors
                         .Add(new SummarizationStep())
                         .Add(new EvaluationStep(injectFeedback: true))
                         .Branch<Answer, string>(
-                            ans => ans?.confidence_score is Verdict.yes or Verdict.partial,
+                            when: ans => ans?.confidence_score is Verdict.yes or Verdict.partial,
                             onYes => onYes.Add(new FinalizeStep())
                         ),
                     maxRounds: maxRounds

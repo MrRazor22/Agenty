@@ -2,7 +2,7 @@
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 
-namespace Agenty.AgentCore.Steps
+namespace Agenty.AgentCore.Steps.Domain
 {
     public enum Verdict { no, partial, yes }
     public record Answer(Verdict confidence_score, string explanation);

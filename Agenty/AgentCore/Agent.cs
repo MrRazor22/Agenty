@@ -1,5 +1,4 @@
 ﻿using Agenty.AgentCore.Runtime;
-using Agenty.AgentCore.Steps;
 using Agenty.AgentCore.TokenHandling;
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
@@ -188,7 +187,7 @@ namespace Agenty.AgentCore
             return this;
         }
 
-        public Agent WithPipeline(IAgentStep<object, object> pipeline)
+        public Agent WithFlow(IAgentStep<object, object> pipeline)
         {
             _rootPipeline = pipeline;
             return this;

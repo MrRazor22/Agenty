@@ -2,7 +2,7 @@
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 
-namespace Agenty.AgentCore.Steps
+namespace Agenty.AgentCore.Steps.Domain
 {
     // A simple structured plan
     public record Plan(List<string> steps, string rationale);
@@ -28,7 +28,7 @@ namespace Agenty.AgentCore.Steps
                 LLMMode.Creative);
 
             ctx.Memory.Working.Add(Role.Assistant, $"Planned: {string.Join(", ", plan.steps)}");
-            //throw new Exception("WTF");
+            throw new Exception("WTF");
             return plan;
         }
     }
