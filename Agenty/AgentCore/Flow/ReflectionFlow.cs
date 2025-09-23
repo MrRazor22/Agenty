@@ -1,6 +1,5 @@
 ﻿using Agenty.AgentCore.Runtime;
 using Agenty.AgentCore.Steps;
-using Agenty.AgentCore.Steps.Domain;
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 using System.Threading.Tasks;

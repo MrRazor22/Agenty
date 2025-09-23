@@ -1,6 +1,5 @@
 ﻿using Agenty.AgentCore.Runtime;
 using Agenty.AgentCore.Steps;
-using Agenty.AgentCore.Steps.Domain;
 using Agenty.AgentCore.Steps.RAG;
 using Agenty.RAG;
 using Agenty.RAG.Stores;

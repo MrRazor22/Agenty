@@ -2,7 +2,7 @@
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 
-namespace Agenty.AgentCore.Steps.Domain
+namespace Agenty.AgentCore.Steps
 {
     // A simple structured plan
     public record Plan(List<string> steps, string rationale);

@@ -2,7 +2,7 @@
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 
-namespace Agenty.AgentCore.Steps.Domain
+namespace Agenty.AgentCore.Steps
 {
     /// <summary>
     /// Step that finalizes the conversation with a user-friendly answer.
