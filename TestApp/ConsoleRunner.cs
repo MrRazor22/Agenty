@@ -33,15 +33,15 @@ namespace Agenty.Test
 
             var agent = Agent.Create()
                 .WithSystemPrompt("You are a helpful assistant.")
-                .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m")
+                .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m") //.WithLLM("http://localhost:11434/v1", "ollama", "qwen-local")
                 .WithLogger(logger)
-                .WithSessionRAG("lmstudio", "http://127.0.0.1:1234/v1", "publisherme/bge/bge-large-en-v1.5-q4_k_m.gguf")
+                .WithSessionRAG("lmstudio", "http://127.0.0.1:1234/v1", "publisherme/bge/bge-base-en-v1.5-q4_k_m.gguf")
                 .WithKnowledgeBaseRAG("lmstudio", "http://127.0.0.1:1234/v1", "publisherme/bge/bge-large-en-v1.5-q4_k_m.gguf")
                 .WithTools<GeoTools>()
                 .WithTools<WeatherTool>()
                 .WithTools<ConversionTools>()
                 .WithTools<MathTools>()
-                .WithFlow(new ToolCallingFlow());
+                .WithFlow(new ToolCallingStep());
             //.WithExecutor(new RagToolCallingExecutor(maxRounds: 50));
             //.WithExecutor(new PlanningExecutor(maxRounds: 50)); 
 

@@ -13,6 +13,7 @@
 		<PackageReference Include="OpenAI" Version="2.5.0" />
 		<PackageReference Include="SharpToken" Version="2.0.4" />
 		<PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
+		<PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0.0" />
 	</ItemGroup>
 
 </Project>

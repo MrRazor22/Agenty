@@ -82,7 +82,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             var result = response.Value;
 
             var toolCalls = new List<ToolCall>();
-            if (result.ToolCalls != null && result.ToolCalls.Count > 0) // ✅ .NET Standard safe
+            if (result.ToolCalls != null && result.ToolCalls.Count > 0)
             {
                 foreach (var chatToolCall in result.ToolCalls)
                 {
@@ -100,7 +100,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
 
             }
 
-            string content = (result.Content != null && result.Content.Count > 0)
+            string? content = (result.Content != null && result.Content.Count > 0)
                 ? result.Content[0].Text
                 : null;
 

@@ -20,7 +20,7 @@ namespace Agenty.LLMCore.BuiltInTools
             _http.DefaultRequestHeaders.UserAgent.ParseAdd(HttpDefaults.UserAgent);
         }
 
-        [Description("Quick search using DuckDuckGo Instant Answer API.")]
+        [Description("Quick search Internet using DuckDuckGo Instant Answer API.")]
         public static async Task<string> Search(
             [Description("Search query text")] string query)
         {

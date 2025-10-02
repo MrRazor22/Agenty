@@ -203,8 +203,8 @@ namespace Agenty.AgentCore
                 throw new InvalidOperationException("Pipeline not set. Call WithPipeline().");
 
             _ctx.Logger.AttachTo(_ctx.Working);
-
             _ctx.TokenManager.Trim(_ctx.Working);
+
             _ctx.Working.Add(Role.User, goal);
 
             var answer = await _rootPipeline.RunAsync(_ctx);
