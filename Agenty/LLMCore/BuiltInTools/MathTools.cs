@@ -1,28 +1,142 @@
-﻿using System.ComponentModel;
+﻿using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Linq;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Agenty.LLMCore.BuiltInTools
 {
     class MathTools
     {
-        private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(10) };
-        private static readonly ThreadLocal<Random> _random = new(() => new Random());
+        private static readonly HttpClient _httpClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(10) };
+        private static readonly ThreadLocal<Random> _random = new ThreadLocal<Random>(() => new Random());
 
         // DTOs for structured outputs
-        public record MathResult(string Expression, string Result);
-        public record RandomIntResult(int Min, int Max, int Value);
-        public record RandomIntsResult(int Min, int Max, int Count, List<int> Values);
-        public record RandomDecimalResult(double Min, double Max, double Value);
-        public record StatisticsResult(int Count, double Sum, double Mean, double Median, string Mode, double StdDev);
-        public record ConversionResult(string Input, int FromBase, int ToBase, string Output);
-        public record GcdResult(List<int> Numbers, int GCD);
-        public record LcmResult(List<long> Numbers, long LCM);
+        public sealed class MathResult
+        {
+            public string Expression { get; }
+            public string Result { get; }
+
+            public MathResult(string expression, string result)
+            {
+                Expression = expression;
+                Result = result;
+            }
+        }
+
+        public sealed class RandomIntResult
+        {
+            public int Min { get; }
+            public int Max { get; }
+            public int Value { get; }
+
+            public RandomIntResult(int min, int max, int value)
+            {
+                Min = min;
+                Max = max;
+                Value = value;
+            }
+        }
+
+        public sealed class RandomIntsResult
+        {
+            public int Min { get; }
+            public int Max { get; }
+            public int Count { get; }
+            public List<int> Values { get; }
+
+            public RandomIntsResult(int min, int max, int count, List<int> values)
+            {
+                Min = min;
+                Max = max;
+                Count = count;
+                Values = values;
+            }
+        }
+
+        public sealed class RandomDecimalResult
+        {
+            public double Min { get; }
+            public double Max { get; }
+            public double Value { get; }
+
+            public RandomDecimalResult(double min, double max, double value)
+            {
+                Min = min;
+                Max = max;
+                Value = value;
+            }
+        }
+
+        public sealed class StatisticsResult
+        {
+            public int Count { get; }
+            public double Sum { get; }
+            public double Mean { get; }
+            public double Median { get; }
+            public string Mode { get; }
+            public double StdDev { get; }
+
+            public StatisticsResult(int count, double sum, double mean, double median, string mode, double stdDev)
+            {
+                Count = count;
+                Sum = sum;
+                Mean = mean;
+                Median = median;
+                Mode = mode;
+                StdDev = stdDev;
+            }
+        }
+
+        public sealed class ConversionResult
+        {
+            public string Input { get; }
+            public int FromBase { get; }
+            public int ToBase { get; }
+            public string Output { get; }
+
+            public ConversionResult(string input, int fromBase, int toBase, string output)
+            {
+                Input = input;
+                FromBase = fromBase;
+                ToBase = toBase;
+                Output = output;
+            }
+        }
+
+        public sealed class GcdResult
+        {
+            public List<int> Numbers { get; }
+            public int GCD { get; }
+
+            public GcdResult(List<int> numbers, int gcd)
+            {
+                Numbers = numbers;
+                GCD = gcd;
+            }
+        }
+
+        public sealed class LcmResult
+        {
+            public List<long> Numbers { get; }
+            public long LCM { get; }
+
+            public LcmResult(List<long> numbers, long lcm)
+            {
+                Numbers = numbers;
+                LCM = lcm;
+            }
+        }
+
 
         [Description("Evaluates a mathematical expression using MathJS API.")]
         public static async Task<MathResult> EvaluateMathAsync(
             [Description("Expression like '2+2*5', 'sqrt(16)', 'sin(pi/2)'.")] string expression)
         {
             if (string.IsNullOrWhiteSpace(expression))
-                return new(expression, "Error: empty");
+                return new MathResult(expression, "Error: empty");
 
             var encoded = Uri.EscapeDataString(expression.Trim());
             var url = $"https://api.mathjs.org/v4/?expr={encoded}";
@@ -30,7 +144,7 @@ namespace Agenty.LLMCore.BuiltInTools
             using var response = await _httpClient.GetAsync(url);
             var result = await response.Content.ReadAsStringAsync();
 
-            return new(expression, response.IsSuccessStatusCode ? result.Trim() : $"Error: {result}");
+            return new MathResult(expression, response.IsSuccessStatusCode ? result.Trim() : $"Error: {result}");
         }
 
         [Description("Generates a cryptographically secure random integer within the specified range.")]
@@ -39,7 +153,7 @@ namespace Agenty.LLMCore.BuiltInTools
             [Description("Maximum value (inclusive)")] int max)
         {
             var value = _random.Value.Next(min, max + 1);
-            return new(min, max, value);
+            return new RandomIntResult(min, max, value);
         }
 
         [Description("Generates multiple random integers within the specified range.")]
@@ -48,7 +162,7 @@ namespace Agenty.LLMCore.BuiltInTools
         {
             var rng = _random.Value;
             var values = Enumerable.Range(0, count).Select(_ => rng.Next(min, max + 1)).ToList();
-            return new(min, max, count, values);
+            return new RandomIntsResult(min, max, count, values);
         }
 
         [Description("Generates a random decimal number within the specified range with configurable precision.")]
@@ -57,7 +171,7 @@ namespace Agenty.LLMCore.BuiltInTools
         {
             var rng = _random.Value;
             var value = Math.Round(min + rng.NextDouble() * (max - min), decimalPlaces);
-            return new(min, max, value);
+            return new RandomDecimalResult(min, max, value);
         }
 
         [Description("Calculates mean, median, mode, std dev for a list of numbers.")]
@@ -73,7 +187,7 @@ namespace Agenty.LLMCore.BuiltInTools
             var variance = list.Sum(x => Math.Pow(x - mean, 2)) / list.Count;
             var stdDev = Math.Sqrt(variance);
 
-            return new(list.Count, list.Sum(), mean, median, mode, stdDev);
+            return new StatisticsResult(list.Count, list.Sum(), mean, median, mode, stdDev);
         }
 
         [Description("Converts numbers between bases (binary, octal, decimal, hex).")]
@@ -81,7 +195,7 @@ namespace Agenty.LLMCore.BuiltInTools
         {
             var dec = Convert.ToInt64(number, fromBase);
             var result = Convert.ToString(dec, toBase);
-            return new(number, fromBase, toBase, result);
+            return new ConversionResult(number, fromBase, toBase, result);
         }
 
         [Description("Calculates the GCD of integers.")]
@@ -89,7 +203,7 @@ namespace Agenty.LLMCore.BuiltInTools
         {
             var list = numbers.Split(',').Select(int.Parse).ToList();
             int gcd = list.Aggregate((a, b) => { while (b != 0) { (a, b) = (b, a % b); } return a; });
-            return new(list, gcd);
+            return new GcdResult(list, gcd);
         }
 
         [Description("Calculates the LCM of integers.")]
@@ -97,7 +211,7 @@ namespace Agenty.LLMCore.BuiltInTools
         {
             var list = numbers.Split(',').Select(long.Parse).ToList();
             long lcm = list.Aggregate((a, b) => Math.Abs(a * b) / Gcd((int)a, (int)b));
-            return new(list, lcm);
+            return new LcmResult(list, lcm);
         }
 
         private static int Gcd(int a, int b) => b == 0 ? a : Gcd(b, a % b);

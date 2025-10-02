@@ -1,9 +1,10 @@
-﻿using System.Text.Json.Nodes;
+﻿using Newtonsoft.Json.Linq;
+using System.Linq;
 
 namespace Agenty.LLMCore.JsonSchema
 {
     public static class JsonSchemaConstants
-    { // Key constants
+    {
         public const string TypeKey = "type";
         public const string PropertiesKey = "properties";
         public const string RequiredKey = "required";
@@ -19,18 +20,19 @@ namespace Agenty.LLMCore.JsonSchema
         public const string MaximumKey = "maximum";
         public const string DefaultKey = "default";
     }
+
     public class JsonSchemaBuilder
     {
-        private readonly JsonObject _schema;
+        private readonly JObject _schema;
 
         public JsonSchemaBuilder()
         {
-            _schema = new JsonObject();
+            _schema = new JObject();
         }
 
-        public JsonSchemaBuilder(JsonObject existingSchema)
+        public JsonSchemaBuilder(JObject existingSchema)
         {
-            _schema = existingSchema ?? new JsonObject();
+            _schema = existingSchema ?? new JObject();
         }
 
         public JsonSchemaBuilder Type(string type)
@@ -38,6 +40,7 @@ namespace Agenty.LLMCore.JsonSchema
             _schema[JsonSchemaConstants.TypeKey] = type;
             return this;
         }
+
         public JsonSchemaBuilder Type<T>()
         {
             var clrType = typeof(T);
@@ -45,14 +48,13 @@ namespace Agenty.LLMCore.JsonSchema
             return this;
         }
 
-        public JsonSchemaBuilder Properties(JsonObject properties)
+        public JsonSchemaBuilder Properties(JObject properties)
         {
-            //if (properties != null && properties.Count > 0)
             _schema[JsonSchemaConstants.PropertiesKey] = properties;
             return this;
         }
 
-        public JsonSchemaBuilder Required(JsonArray required)
+        public JsonSchemaBuilder Required(JArray required)
         {
             if (required != null && required.Count > 0)
                 _schema[JsonSchemaConstants.RequiredKey] = required;
@@ -68,7 +70,7 @@ namespace Agenty.LLMCore.JsonSchema
 
         public JsonSchemaBuilder Enum(string[] values)
         {
-            _schema[JsonSchemaConstants.EnumKey] = new JsonArray(values.Select(v => JsonValue.Create(v)).ToArray());
+            _schema[JsonSchemaConstants.EnumKey] = new JArray(values.Select(v => new JValue(v)).ToArray());
             return this;
         }
 
@@ -97,36 +99,31 @@ namespace Agenty.LLMCore.JsonSchema
                 _schema[JsonSchemaConstants.PatternKey] = pattern;
             return this;
         }
+
         public JsonSchemaBuilder AdditionalProperties(bool allow)
         {
             _schema[JsonSchemaConstants.AdditionalPropertiesKey] = allow;
             return this;
         }
 
-        public JsonSchemaBuilder AdditionalProperties(JsonObject additionalProps)
+        public JsonSchemaBuilder AdditionalProperties(JObject additionalProps)
         {
             _schema[JsonSchemaConstants.AdditionalPropertiesKey] = additionalProps;
             return this;
         }
 
-        public JsonSchemaBuilder Items(JsonNode items)
+        public JsonSchemaBuilder Items(JToken items)
         {
             _schema[JsonSchemaConstants.ItemsKey] = items;
             return this;
         }
 
-        /// <summary>
-        /// Sets "anyOf" with the provided schemas array.
-        /// </summary>
-        public JsonSchemaBuilder AnyOf(params JsonNode[] schemas)
+        public JsonSchemaBuilder AnyOf(params JToken[] schemas)
         {
-            _schema["anyOf"] = new JsonArray(schemas);
+            _schema["anyOf"] = new JArray(schemas);
             return this;
         }
 
-        public JsonObject Build() => _schema;
-
-        // You can add helpers to read properties too, if needed
+        public JObject Build() => _schema;
     }
-
 }

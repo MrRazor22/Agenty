@@ -3,25 +3,41 @@ using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace Agenty.AgentCore.Runtime
 {
     // Slimmed return type for tool calls
-    public record ToolCallResponse(
-        IReadOnlyList<ToolCall> Calls,
-        string? AssistantMessage,
-        string? FinishReason
-    );
+    public class ToolCallResponse
+    {
+        public IReadOnlyList<ToolCall> Calls { get; }
+        public string? AssistantMessage { get; }
+        public string? FinishReason { get; }
+
+        public ToolCallResponse(
+            IReadOnlyList<ToolCall> calls,
+            string? assistantMessage,
+            string? finishReason
+        )
+        {
+            Calls = calls;
+            AssistantMessage = assistantMessage;
+            FinishReason = finishReason;
+        }
+    }
 
     public interface ILLMCoordinator
     {
         // Plain response (text only, convenience)
         Task<string?> GetResponse(Conversation prompt, LLMMode mode = LLMMode.Balanced);
 
-        // Structured JSON response
-        Task<T?> GetStructured<T>(Conversation prompt, LLMMode mode = LLMMode.Balanced);
+        // Structured JSON response (T must be a reference type)
+        Task<T?> GetStructured<T>(Conversation prompt, LLMMode mode = LLMMode.Balanced)
+            where T : class;
 
         // Tool calls (returns only what agent devs care about)
         Task<ToolCallResponse> GetToolCallResponse(
@@ -33,6 +49,7 @@ namespace Agenty.AgentCore.Runtime
         // Tool execution
         Task<IReadOnlyList<ToolCallResult>> RunToolCalls(List<ToolCall> toolCalls);
     }
+
 
     internal sealed class LLMCoordinator : ILLMCoordinator
     {
@@ -62,7 +79,7 @@ namespace Agenty.AgentCore.Runtime
             return resp.AssistantMessage;
         }
 
-        public async Task<T?> GetStructured<T>(Conversation prompt, LLMMode mode = LLMMode.Deterministic)
+        public async Task<T?> GetStructured<T>(Conversation prompt, LLMMode mode = LLMMode.Deterministic) where T : class
         {
 #if DEBUG
             return await RunStructuredOnce<T>(prompt, mode); // no retry, easy to step through
@@ -71,9 +88,10 @@ namespace Agenty.AgentCore.Runtime
 #endif
         }
 
-        private async Task<T?> RunStructuredOnce<T>(Conversation intPrompt, LLMMode mode)
+        private async Task<T?> RunStructuredOnce<T>(Conversation intPrompt, LLMMode mode) where T : class
         {
-            var schema = JsonSchemaExtensions.GetSchemaFor<T>();
+            // build schema with Newtonsoft
+            var schema = JsonSchemaExtensions.GetSchemaFor<T>(); // JObject
             var response = await _llm.GetStructuredResponse(intPrompt, schema, mode);
 
             if (response?.StructuredResult == null)
@@ -82,7 +100,7 @@ namespace Agenty.AgentCore.Runtime
                 return default;
             }
 
-            var jsonNode = response.StructuredResult;
+            var jsonNode = response.StructuredResult; // should be JToken/JObject
             var errors = _parser.ValidateAgainstSchema(jsonNode, schema, typeof(T).Name);
 
             if (errors.Any())
@@ -92,13 +110,10 @@ namespace Agenty.AgentCore.Runtime
                 return default;
             }
 
-            return JsonSerializer.Deserialize<T>(
-                jsonNode.ToJsonString(),
-                new JsonSerializerOptions
-                {
-                    Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
-                    PropertyNameCaseInsensitive = true
-                });
+            return jsonNode.ToObject<T>(JsonSerializer.Create(new JsonSerializerSettings
+            {
+                Converters = { new Newtonsoft.Json.Converters.StringEnumConverter() }
+            }));
         }
 
         public async Task<ToolCallResponse> GetToolCallResponse(

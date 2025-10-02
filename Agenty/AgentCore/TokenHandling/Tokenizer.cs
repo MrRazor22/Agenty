@@ -1,4 +1,6 @@
 ﻿using SharpToken;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Agenty.AgentCore.TokenHandling
 {

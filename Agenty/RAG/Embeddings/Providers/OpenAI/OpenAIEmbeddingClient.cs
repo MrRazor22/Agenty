@@ -1,7 +1,11 @@
 ﻿using OpenAI;
 using OpenAI.Embeddings;
+using System;
 using System.ClientModel;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace Agenty.RAG.Embeddings.Providers.OpenAI
 {

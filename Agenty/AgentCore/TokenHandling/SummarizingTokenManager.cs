@@ -2,6 +2,9 @@
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.Messages;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace Agenty.AgentCore.TokenHandling
 {
@@ -86,18 +89,21 @@ namespace Agenty.AgentCore.TokenHandling
             int limit = maxTokens ?? MaxTokens;
 
             int totalTokens = CountTokens(convo.ToJson(ChatFilter.All));
-            var roleCounts = convo.GroupBy(c => c.Role).ToDictionary(g => g.Key, g => g.Count());
+            var roleCounts = convo
+                .GroupBy(c => c.Role)
+                .ToDictionary(g => g.Key, g => g.Count());
 
             bool wasTrimmed = totalTokens > limit;
 
             return new TokenUsageReport(
-                TotalTokens: totalTokens,
-                MaxTokens: limit,
-                RoleCounts: roleCounts,
-                DroppedCount: _lastDropped,
-                WasTrimmed: wasTrimmed
+                totalTokens,
+                limit,
+                roleCounts,
+                _lastDropped,
+                wasTrimmed
             );
         }
+
 
         public int CountTokens(string text) => Tokenizer.Encode(text).Count;
     }

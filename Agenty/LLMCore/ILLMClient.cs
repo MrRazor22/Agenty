@@ -1,7 +1,9 @@
 ﻿using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
-using System.Text.Json.Nodes;
+using Newtonsoft.Json.Linq;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace Agenty.LLMCore
 {
@@ -18,7 +20,7 @@ namespace Agenty.LLMCore
             LLMMode mode = LLMMode.Balanced);
         Task<LLMResponse> GetStructuredResponse(
             Conversation prompt,
-            JsonObject responseFormat,
+            JObject responseFormat,
             LLMMode mode = LLMMode.Balanced);
     }
 
@@ -40,8 +42,8 @@ namespace Agenty.LLMCore
     public sealed class LLMResponse
     {
         public string? AssistantMessage { get; set; }
-        public JsonNode? StructuredResult { get; set; }
-        public List<ToolCall> ToolCalls { get; set; } = new();
+        public JObject? StructuredResult { get; set; }   // <-- Newtonsoft JObject
+        public List<ToolCall> ToolCalls { get; set; } = new List<ToolCall>();
         public string? FinishReason { get; set; }
 
         public LLMResponse() { }
@@ -50,9 +52,10 @@ namespace Agenty.LLMCore
         {
             AssistantMessage = assistantMessage;
         }
+
         public LLMResponse(
             string? assistantMessage = null,
-            JsonNode? structuredResult = null,
+            JObject? structuredResult = null,   // <-- JObject
             List<ToolCall>? toolCalls = null,
             string? finishReason = null)
         {
@@ -62,6 +65,4 @@ namespace Agenty.LLMCore
             FinishReason = finishReason;
         }
     }
-
-
 }

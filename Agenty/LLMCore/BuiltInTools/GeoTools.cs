@@ -34,7 +34,7 @@ namespace Agenty.LLMCore.BuiltInTools
     }
     class GeoTools
     {
-        private static readonly HttpClient _http = new()
+        private static readonly HttpClient _http = new HttpClient()
         {
             Timeout = TimeSpan.FromSeconds(30)
         };

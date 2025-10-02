@@ -12,7 +12,17 @@ namespace Agenty.RAG.IO
     /// <summary>
     /// A document with content and metadata.
     /// </summary>
-    public record Document(string Content, string Source);
+    public class Document
+    {
+        public string Content { get; }
+        public string Source { get; }
+
+        public Document(string content, string source)
+        {
+            Content = content;
+            Source = source;
+        }
+    }
 
     /// <summary>
     /// Contract for any document loader (file, directory, URL, DB, etc.)
@@ -29,10 +39,12 @@ namespace Agenty.RAG.IO
     {
         public async Task<IReadOnlyList<Document>> LoadAsync(string path)
         {
-            if (!File.Exists(path)) return Array.Empty<Document>();
+            if (!File.Exists(path))
+                return Array.Empty<Document>();
+
             try
             {
-                var text = await File.ReadAllTextAsync(path);
+                var text = await Task.Run(() => File.ReadAllText(path));
                 return new[] { new Document(text, Path.GetFileName(path)) };
             }
             catch
@@ -41,6 +53,7 @@ namespace Agenty.RAG.IO
             }
         }
     }
+
 
     /// <summary>
     /// Load all files from a directory 

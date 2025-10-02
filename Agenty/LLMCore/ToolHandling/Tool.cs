@@ -1,5 +1,8 @@
-﻿using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
+﻿using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Agenty.LLMCore.ToolHandling
 {
@@ -7,14 +10,20 @@ namespace Agenty.LLMCore.ToolHandling
     {
         public string Name { get; set; }
         public string Description { get; set; }
-        public JsonObject ParametersSchema { get; set; }
-        [JsonIgnore] public Delegate? Function { get; set; }
-        [JsonIgnore] public List<string> Tags { get; set; } = new();
+        public JObject ParametersSchema { get; set; }
+
+        [JsonIgnore]
+        public Delegate? Function { get; set; }
+
+        [JsonIgnore]
+        public List<string> Tags { get; set; } = new List<string>();
+
         public override string ToString()
         {
-            var props = ParametersSchema?["properties"]?.AsObject();
+            var props = ParametersSchema?["properties"] as JObject;
+
             var args = props != null
-                ? string.Join(", ", props.Select(p => p.Key))
+                ? string.Join(", ", props.Properties().Select(p => p.Name))
                 : "";
 
             var argPart = args.Length > 0 ? $"({args})" : "()";
@@ -22,7 +31,6 @@ namespace Agenty.LLMCore.ToolHandling
             return !string.IsNullOrWhiteSpace(Description)
                 ? $"{Name}{argPart} => {Description}"
                 : $"{Name}{argPart}";
-            //return Name;
         }
     }
 }

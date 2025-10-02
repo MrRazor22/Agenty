@@ -1,5 +1,9 @@
-﻿using System.Text.Json;
+﻿using Newtonsoft.Json;
+using System;
+using System.IO;
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 
 namespace Agenty.LLMCore.ChatHandling
 {
@@ -36,17 +40,19 @@ namespace Agenty.LLMCore.ChatHandling
         public async Task SaveAsync(string sessionId, Conversation conversation)
         {
             var file = GetFilePath(sessionId);
-            var json = JsonSerializer.Serialize(conversation, _jsonOptions);
-            await File.WriteAllTextAsync(file, json);
+            var json = JsonConvert.SerializeObject(conversation, Formatting.Indented);
+
+            // Wrap sync call for async compatibility in .NET Standard 2.0
+            await Task.Run(() => File.WriteAllText(file, json));
         }
 
-        public async Task<Conversation?> LoadAsync(string sessionId)
+        public async Task<Conversation> LoadAsync(string sessionId)
         {
             var file = GetFilePath(sessionId);
             if (!File.Exists(file)) return null;
 
-            var json = await File.ReadAllTextAsync(file);
-            return JsonSerializer.Deserialize<Conversation>(json, _jsonOptions);
+            var json = await Task.Run(() => File.ReadAllText(file));
+            return JsonConvert.DeserializeObject<Conversation>(json);
         }
 
         public async Task AppendAsync(string sessionId, Chat chat)

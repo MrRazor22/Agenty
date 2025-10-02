@@ -52,7 +52,7 @@ namespace Agenty.AgentCore
         public ITokenManager TokenManager { get; set; } = null!;
 
         // Memory
-        public Conversation Working { get; } = new();
+        public Conversation Working { get; } = new Conversation();
         public IRagRetriever? KnowledgeBase { get; set; }
         public IRagRetriever? SessionStore { get; set; }
 
@@ -66,8 +66,8 @@ namespace Agenty.AgentCore
 
     public sealed class Agent : IAgent
     {
-        private readonly AgentContext _ctx = new();
-        private IAgentStep<object, object>? _rootPipeline;
+        private readonly AgentContext _ctx = new AgentContext();
+        private IAgentStep? _rootPipeline;
         private int _maxTokenBudget = 4000;
         private ITokenizer _tokenizer;
 
@@ -87,7 +87,7 @@ namespace Agenty.AgentCore
             );
         }
 
-        public static Agent Create() => new();
+        public static Agent Create() => new Agent();
 
         // === Fluent config ===
         public Agent WithLLM(string baseUrl, string apiKey, string model = "any_model")
@@ -118,7 +118,7 @@ namespace Agenty.AgentCore
 
         public Agent WithTools<T>(T instance, params string[] tags)
         {
-            _ctx.Tools.RegisterAll(instance, tags);
+            _ctx.Tools.RegisterAll<T>(instance, tags);
             return this;
         }
 
@@ -187,7 +187,7 @@ namespace Agenty.AgentCore
             return this;
         }
 
-        public Agent WithFlow(IAgentStep<object, object> pipeline)
+        public Agent WithFlow(IAgentStep pipeline)
         {
             _rootPipeline = pipeline;
             return this;

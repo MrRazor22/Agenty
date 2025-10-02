@@ -1,12 +1,17 @@
-﻿using System.Collections.Concurrent;
+﻿using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Agenty.RAG.Stores
 {
     public sealed class FileVectorStore : IVectorStore
     {
-        private readonly ConcurrentDictionary<string, VectorRecord> _store = new();
+        private readonly ConcurrentDictionary<string, VectorRecord> _store = new ConcurrentDictionary<string, VectorRecord>();
         private readonly string _persistPath;
         private readonly ILogger? _logger;
 
@@ -29,7 +34,7 @@ namespace Agenty.RAG.Stores
         public Task AddAsync(VectorRecord item)
         {
             var id = string.IsNullOrWhiteSpace(item.Id) ? RAGHelper.ComputeId(item.Content) : item.Id;
-            _store.TryAdd(id, item with { Id = id });
+            _store.TryAdd(id, item.With(id: id));
             Save();
             return Task.CompletedTask;
         }
@@ -39,7 +44,7 @@ namespace Agenty.RAG.Stores
             foreach (var item in items)
             {
                 var id = string.IsNullOrWhiteSpace(item.Id) ? RAGHelper.ComputeId(item.Content) : item.Id;
-                _store.TryAdd(id, item with { Id = id });
+                _store.TryAdd(id, item.With(id: id));
             }
             Save();
             await Task.CompletedTask;

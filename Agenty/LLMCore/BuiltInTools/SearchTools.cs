@@ -13,7 +13,7 @@ namespace Agenty.LLMCore.BuiltInTools
 
     class SearchTools
     {
-        private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
+        private static readonly HttpClient _http = new HttpClient() { Timeout = TimeSpan.FromSeconds(15) };
 
         static SearchTools()
         {

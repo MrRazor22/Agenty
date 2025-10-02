@@ -1,15 +1,33 @@
 ﻿using Agenty.LLMCore.ChatHandling;
+using System.Collections.Generic;
 using System.Text;
 
 namespace Agenty.AgentCore.TokenHandling
 {
-    public record TokenUsageReport(
-        int TotalTokens,
-        int MaxTokens,
-        IReadOnlyDictionary<Role, int> RoleCounts,
-        int DroppedCount,
-        bool WasTrimmed
-    );
+    public class TokenUsageReport
+    {
+        public int TotalTokens { get; }
+        public int MaxTokens { get; }
+        public IReadOnlyDictionary<Role, int> RoleCounts { get; }
+        public int DroppedCount { get; }
+        public bool WasTrimmed { get; }
+
+        public TokenUsageReport(
+            int totalTokens,
+            int maxTokens,
+            IReadOnlyDictionary<Role, int> roleCounts,
+            int droppedCount,
+            bool wasTrimmed
+        )
+        {
+            TotalTokens = totalTokens;
+            MaxTokens = maxTokens;
+            RoleCounts = roleCounts;
+            DroppedCount = droppedCount;
+            WasTrimmed = wasTrimmed;
+        }
+    }
+
     public interface ITokenManager
     {
         void Trim(Conversation convo, int? maxTokens = null);

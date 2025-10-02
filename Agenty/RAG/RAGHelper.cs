@@ -36,14 +36,18 @@ namespace Agenty.RAG
         }
         public static string ComputeId(string text)
         {
-            if (text is null) throw new ArgumentNullException(nameof(text));
+            if (text == null)
+                throw new ArgumentNullException(nameof(text));
 
             // normalize whitespace: collapse tabs/newlines/multiple spaces into a single space
             var normalized = Regex.Replace(text, @"\s+", " ").Trim();
 
-            using var sha = SHA256.Create();
-            return Convert.ToHexString(sha.ComputeHash(Encoding.UTF8.GetBytes(normalized)));
+            using (var sha = SHA256.Create())
+            {
+                var bytes = Encoding.UTF8.GetBytes(normalized);
+                var hash = sha.ComputeHash(bytes);
+                return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+            }
         }
-
     }
 }

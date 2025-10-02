@@ -1,10 +1,22 @@
 ﻿using Agenty.LLMCore.Messages;
+using System;
+using System.Collections.Generic;
 
 namespace Agenty.LLMCore.ChatHandling
 {
     public enum Role { System, Assistant, User, Tool }
 
-    public record Chat(Role Role, IMessageContent Content);
+    public class Chat
+    {
+        public Role Role { get; }
+        public IMessageContent Content { get; }
+
+        public Chat(Role role, IMessageContent content)
+        {
+            Role = role;
+            Content = content;
+        }
+    }
 
     public class Conversation : List<Chat>
     {

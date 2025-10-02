@@ -1,4 +1,7 @@
 ﻿using Agenty.LLMCore.Messages;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace Agenty.LLMCore.ToolHandling
 {

@@ -1,23 +1,51 @@
-﻿using System.Collections.Concurrent;
-using System.Text.Json;
-using Agenty.LLMCore.Logging;
-using Microsoft.Extensions.Logging;
+﻿using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace Agenty.RAG.Stores
 {
-    public record VectorRecord(
-        string Id,
-        string Content,
-        float[] Vector,
-        string Source
-    );
+    public class VectorRecord
+    {
+        public string Id { get; }
+        public string Content { get; }
+        public float[] Vector { get; }
+        public string Source { get; }
 
-    public record SearchResult(
-        string Id,
-        string Content,
-        string Source,
-        double Score
-    );
+        public VectorRecord(string id, string content, float[] vector, string source)
+        {
+            Id = id;
+            Content = content;
+            Vector = vector;
+            Source = source;
+        }
+
+        // manual clone helper
+        public VectorRecord With(string id = null, string content = null, float[] vector = null, string source = null)
+        {
+            return new VectorRecord(
+                id ?? this.Id,
+                content ?? this.Content,
+                vector ?? this.Vector,
+                source ?? this.Source
+            );
+        }
+    }
+
+
+    public class SearchResult
+    {
+        public string Id { get; }
+        public string Content { get; }
+        public string Source { get; }
+        public double Score { get; }
+
+        public SearchResult(string id, string content, string source, double score)
+        {
+            Id = id;
+            Content = content;
+            Source = source;
+            Score = score;
+        }
+    }
 
     public interface IVectorStore
     {

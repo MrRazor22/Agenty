@@ -74,12 +74,12 @@ namespace Agenty.AgentCore.TokenHandling
             bool wasTrimmed = totalTokens > limit;
 
             return new TokenUsageReport(
-                TotalTokens: totalTokens,
-                MaxTokens: limit,
-                RoleCounts: roleCounts,
-                DroppedCount: _lastDropped,
-                WasTrimmed: wasTrimmed
-            );
+                 totalTokens,
+                 limit,
+                 roleCounts,
+                 _lastDropped,
+                 wasTrimmed
+             ); 
         }
 
         public int CountTokens(string text) => Tokenizer.Encode(text).Count;

@@ -3,7 +3,12 @@ using Agenty.RAG.Embeddings;
 using Agenty.RAG.IO;
 using Agenty.RAG.Stores;
 using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Agenty.RAG
 {
@@ -43,15 +48,16 @@ namespace Agenty.RAG
             int maxParallel = 2)
         {
             var allChunks = docs
-                .SelectMany(d =>
-                    SplitByParagraphs(d.Content)
-                        .SelectMany(s => Chunk(s, _chunkSize, _chunkOverlap)
-                            .Select(chunk => new VectorRecord(
-                                Id: RAGHelper.ComputeId(chunk),
-                                Content: chunk,
-                                Vector: Array.Empty<float>(),
-                                Source: d.Source))))
-                .DistinctBy(x => x.Id)
+    .SelectMany(d =>
+        SplitByParagraphs(d.Content)
+            .SelectMany(s => Chunk(s, _chunkSize, _chunkOverlap)
+                .Select(chunk => new VectorRecord(
+                    RAGHelper.ComputeId(chunk),
+                    chunk,
+                    Array.Empty<float>(),
+                    d.Source))))
+                .GroupBy(x => x.Id)
+                .Select(g => g.First())
                 .ToList();
 
             if (allChunks.Count == 0)
@@ -91,8 +97,9 @@ namespace Agenty.RAG
                     var texts = batch.Select(x => x.Content).ToList();
 
                     var vectors = (await _embeddings.GetEmbeddingsAsync(texts)).ToArray();
-                    var items = batch.Select((x, j) => x with { Vector = RAGHelper.Normalize(vectors[j]) }).ToList();
-
+                    var items = batch
+                                .Select((x, j) => x.With(vector: RAGHelper.Normalize(vectors[j])))
+                                .ToList();
                     _logger?.LogDebug($"[RAG] Completed embeddings for batch {batchIndex + 1}.");
                     return items;
                 }

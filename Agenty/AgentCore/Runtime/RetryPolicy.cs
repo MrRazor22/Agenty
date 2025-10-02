@@ -1,8 +1,10 @@
 ﻿using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.ToolHandling;
+using System;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 
 namespace Agenty.AgentCore.Runtime
 {
@@ -10,7 +12,8 @@ namespace Agenty.AgentCore.Runtime
     {
         Task<T?> ExecuteAsync<T>(
             Func<Conversation, Task<T?>> action,
-            Conversation prompt);
+            Conversation prompt)
+            where T : class;
     }
 
     /// <summary>
@@ -35,6 +38,7 @@ namespace Agenty.AgentCore.Runtime
         public async Task<T?> ExecuteAsync<T>(
             Func<Conversation, Task<T?>> action,
             Conversation prompt)
+            where T : class
         {
             var intPrompt = Conversation.Clone(prompt);
 
@@ -46,7 +50,8 @@ namespace Agenty.AgentCore.Runtime
                 }
                 catch (Exception ex)
                 {
-                    if (attempt == _maxRetries) throw;
+                    if (attempt == _maxRetries)
+                        throw;
 
                     intPrompt.Add(Role.Assistant,
                         $"The last response failed with [{ex.Message}]. Please retry.");
@@ -63,4 +68,5 @@ namespace Agenty.AgentCore.Runtime
             return default;
         }
     }
+
 }

@@ -6,8 +6,6 @@ using OpenAI.Chat;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 
 namespace Agenty.LLMCore.Providers.OpenAI
 {
@@ -29,9 +27,14 @@ namespace Agenty.LLMCore.Providers.OpenAI
                 ChatTool.CreateFunctionTool(
                     tool.Name,
                     tool.Description ?? "",
-                    BinaryData.FromString(tool.ParametersSchema?.ToJsonString() ?? "{\"type\":\"object\"}"))
+                    BinaryData.FromString(
+                        tool.ParametersSchema?.ToString(Newtonsoft.Json.Formatting.None)
+                        ?? "{\"type\":\"object\"}"
+                    )
+                )
             ).ToList();
         }
+
 
         // Converts ChatHistory to IEnumerable<ChatMessage> suitable for OpenAI chat completion
         public static IEnumerable<ChatMessage> ToChatMessages(this Conversation history)
@@ -56,11 +59,11 @@ namespace Agenty.LLMCore.Providers.OpenAI
                         yield return ChatMessage.CreateAssistantMessage(
                             toolCalls: new[]
                             {
-                                ChatToolCall.CreateFunctionToolCall(
-                                    id: call.Id,
-                                    functionName: call.Name,
-                                    functionArguments: BinaryData.FromObjectAsJson(
-                                        call.Arguments ?? new JsonObject()))
+                        ChatToolCall.CreateFunctionToolCall(
+                            id: call.Id,
+                            functionName: call.Name,
+                            functionArguments: BinaryData.FromString(
+                                call.Arguments?.ToString() ?? "{}"))
                             });
                         break;
 
@@ -78,6 +81,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
                 }
             }
         }
+
         public static void ApplyLLMMode(this ChatCompletionOptions options, LLMMode mode)
         {
             switch (mode)

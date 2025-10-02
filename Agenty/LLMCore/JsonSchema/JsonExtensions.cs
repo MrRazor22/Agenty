@@ -1,32 +1,29 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Nodes;
-using System.Threading.Tasks;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Agenty.LLMCore.JsonSchema
 {
     public static class JsonExtensions
     {
-        public static string NormalizeArgs(this JsonObject args) =>
-        Canonicalize(args).ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+        public static string NormalizeArgs(this JObject args) =>
+            Canonicalize(args).ToString(Formatting.None);
 
-        private static JsonNode Canonicalize(JsonNode? node)
+        private static JToken Canonicalize(JToken? node)
         {
             switch (node)
             {
-                case JsonObject obj:
-                    var newObj = new JsonObject();
-                    foreach (var kvp in obj.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
+                case JObject obj:
+                    var newObj = new JObject();
+                    foreach (var kvp in obj.Properties().OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase))
                     {
-                        newObj[kvp.Key] = Canonicalize(kvp.Value);
+                        newObj[kvp.Name] = Canonicalize(kvp.Value);
                     }
                     return newObj;
 
-                case JsonArray arr:
-                    var newArr = new JsonArray();
+                case JArray arr:
+                    var newArr = new JArray();
                     foreach (var item in arr)
                     {
                         newArr.Add(Canonicalize(item));
@@ -34,16 +31,14 @@ namespace Agenty.LLMCore.JsonSchema
                     return newArr;
 
                 default:
-                    // For primitives: return a *new* JsonValue, not the same node
-                    return node is null ? null! : JsonValue.Create(node.GetValue<object>());
+                    return node?.DeepClone() ?? JValue.CreateNull();
             }
         }
-
 
         public static string AsJSONString(this object? obj)
         {
             if (obj == null) return "<null>";
-            return obj is string s ? s : JsonSerializer.Serialize(obj);
+            return obj is string s ? s : JsonConvert.SerializeObject(obj);
         }
     }
 }

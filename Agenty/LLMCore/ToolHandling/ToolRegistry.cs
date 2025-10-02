@@ -1,30 +1,50 @@
 ﻿using Agenty.LLMCore.JsonSchema;
+using Newtonsoft.Json.Linq;
+using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Text.Json.Nodes;
 
 namespace Agenty.LLMCore.ToolHandling
 {
     public interface IToolRegistry
     {
         IReadOnlyList<Tool> RegisteredTools { get; }
+
         void Register(params Delegate[] funcs);
         void Register(Delegate func, params string[] tags);
+
         void RegisterAll<T>(params string[] tags);
-        void RegisterAll<T>(T? instance = default, params string[] tags);
-        Tool? Get(Delegate func);
-        Tool? Get(string toolName);
+        void RegisterAll<T>(T instance, params string[] tags);
+
+
+        Tool Get(Delegate func);   // return null if not found
+        Tool Get(string toolName); // return null if not found
+
         IEnumerable<Tool> GetTools(params Type[] toolTypes);
         IEnumerable<Tool> GetByTags(bool include = true, params string[] tags);
+
         bool Contains(string toolName);
     }
-    public class ToolRegistry(IEnumerable<Tool>? tools = null) : IToolRegistry
+
+    public class ToolRegistry : IToolRegistry
     {
-        private List<Tool> _registeredTools = tools?.ToList() ?? new();
+        private readonly List<Tool> _registeredTools;
+
+        public ToolRegistry(IEnumerable<Tool> tools = null)
+        {
+            _registeredTools = tools != null ? new List<Tool>(tools) : new List<Tool>();
+        }
+
         public IReadOnlyList<Tool> RegisteredTools => _registeredTools;
 
-        public static implicit operator ToolRegistry(List<Tool> tools) => new ToolRegistry(tools);
+        public static implicit operator ToolRegistry(List<Tool> tools)
+        {
+            return new ToolRegistry(tools);
+        }
+
         public void Register(params Delegate[] funcs)
         {
             foreach (var f in funcs)
@@ -49,52 +69,55 @@ namespace Agenty.LLMCore.ToolHandling
             {
                 try
                 {
-                    var del = Delegate.CreateDelegate(
-                        Expression.GetDelegateType(
-                            method.GetParameters().Select(p => p.ParameterType)
-                            .Concat(new[] { method.ReturnType })
-                            .ToArray()), method);
-
-                    Register(del, tags);
-                }
-                catch
-                {
-                    // Skip overloads or mismatches
-                }
-            }
-        }
-        public void RegisterAll<T>(T? instance = default, params string[] tags)
-        {
-            var methods = typeof(T).GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance);
-
-            foreach (var method in methods)
-            {
-                try
-                {
-                    // If instance is null, only allow static methods
-                    if (!method.IsStatic && instance == null)
-                        continue;
-
-                    if (method.DeclaringType == typeof(object))
-                        continue;
-
                     var paramTypes = method.GetParameters()
                         .Select(p => p.ParameterType)
                         .Concat(new[] { method.ReturnType })
                         .ToArray();
 
-                    var del = Delegate.CreateDelegate(Expression.GetDelegateType(paramTypes),
-                                                      instance, method, throwOnBindFailure: false);
+                    var del = Delegate.CreateDelegate(
+                        Expression.GetDelegateType(paramTypes),
+                        method
+                    );
+
+                    Register(del, tags);
+                }
+                catch
+                {
+                    // skip if not compatible
+                }
+            }
+        }
+
+        public void RegisterAll<T>(T instance, params string[] tags)
+        {
+            var methods = typeof(T).GetMethods(BindingFlags.Public | BindingFlags.Instance);
+
+            foreach (var method in methods)
+            {
+                try
+                {
+                    var paramTypes = method.GetParameters()
+                        .Select(p => p.ParameterType)
+                        .Concat(new[] { method.ReturnType })
+                        .ToArray();
+
+                    var del = Delegate.CreateDelegate(
+                        Expression.GetDelegateType(paramTypes),
+                        instance,
+                        method,
+                        throwOnBindFailure: false
+                    );
 
                     if (del != null)
                         Register(del, tags);
                 }
                 catch
                 {
-                    // Skip overloads or mismatches
+                    // skip if not compatible
                 }
             }
         }
+
         public Tool? Get(Delegate func)
         {
             if (func == null) throw new ArgumentNullException(nameof(func));
@@ -127,15 +150,15 @@ namespace Agenty.LLMCore.ToolHandling
             var description = method.GetCustomAttribute<DescriptionAttribute>()?.Description ?? method.Name;
             var parameters = method.GetParameters();
 
-            var properties = new JsonObject();
-            var required = new JsonArray();
+            var properties = new JObject();
+            var required = new JArray();
 
             foreach (var param in parameters)
             {
                 var name = param.Name!;
                 var desc = param.GetCustomAttribute<DescriptionAttribute>()?.Description ?? name;
                 var typeSchema = param.ParameterType.GetSchemaForType();
-                typeSchema[JsonSchemaConstants.DescriptionKey] ??= desc;
+                typeSchema[JsonSchemaConstants.DescriptionKey] = typeSchema[JsonSchemaConstants.DescriptionKey] ?? desc;
 
                 properties[name] = typeSchema;
                 if (!param.IsOptional) required.Add(name);
@@ -151,7 +174,7 @@ namespace Agenty.LLMCore.ToolHandling
             {
                 Name = method.Name,
                 Description = description,
-                ParametersSchema = schema,
+                ParametersSchema = schema, // already JObject
                 Function = func,
                 Tags = new List<string>()
             };

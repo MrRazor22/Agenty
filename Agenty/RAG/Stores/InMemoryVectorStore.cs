@@ -1,15 +1,21 @@
 ﻿using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace Agenty.RAG.Stores
 {
     public sealed class InMemoryVectorStore : IVectorStore
     {
-        private readonly ConcurrentDictionary<string, VectorRecord> _store = new();
+        private readonly ConcurrentDictionary<string, VectorRecord> _store = new ConcurrentDictionary<string, VectorRecord>();
 
         public Task AddAsync(VectorRecord item)
         {
-            var id = string.IsNullOrWhiteSpace(item.Id) ? RAGHelper.ComputeId(item.Content) : item.Id;
-            _store.TryAdd(id, item with { Id = id });
+            var id = string.IsNullOrWhiteSpace(item.Id)
+                ? RAGHelper.ComputeId(item.Content)
+                : item.Id;
+
+            _store.TryAdd(id, item.With(id: id));
             return Task.CompletedTask;
         }
 
@@ -17,8 +23,11 @@ namespace Agenty.RAG.Stores
         {
             foreach (var item in items)
             {
-                var id = string.IsNullOrWhiteSpace(item.Id) ? RAGHelper.ComputeId(item.Content) : item.Id;
-                _store.TryAdd(id, item with { Id = id });
+                var id = string.IsNullOrWhiteSpace(item.Id)
+                    ? RAGHelper.ComputeId(item.Content)
+                    : item.Id;
+
+                _store.TryAdd(id, item.With(id: id));
             }
             return Task.CompletedTask;
         }

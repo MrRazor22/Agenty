@@ -1,9 +1,10 @@
 ﻿using Agenty.AgentCore.Runtime;
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Messages;
-using System.Text.Json;
-using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
+using Newtonsoft.Json.Linq;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace Agenty.LLMCore.ToolHandling
@@ -11,8 +12,8 @@ namespace Agenty.LLMCore.ToolHandling
     public interface IToolCallParser
     {
         ToolCallResponse TryExtractInlineToolCall(IToolRegistry registry, string content, bool strict = false);
-        object?[] ParseToolParams(IToolRegistry registry, string toolName, JsonObject arguments);
-        List<ToolValidationError> ValidateAgainstSchema(JsonNode? node, JsonObject schema, string path = "");
+        object[] ParseToolParams(IToolRegistry registry, string toolName, JObject arguments);
+        List<ToolValidationError> ValidateAgainstSchema(JToken? node, JObject schema, string path = "");
     }
 
     public sealed class ToolCallParser : IToolCallParser
@@ -20,12 +21,6 @@ namespace Agenty.LLMCore.ToolHandling
         private const string ToolJsonNameTag = "name";
         private const string ToolJsonArgumentsTag = "arguments";
         private const string ToolJsonAssistantMessageTag = "message";
-
-        private readonly JsonSerializerOptions JsonOptions = new()
-        {
-            Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
-            PropertyNameCaseInsensitive = true
-        };
 
         #region regex
         // Match any tag that includes "tool" and contains a well-formed JSON block
@@ -87,15 +82,18 @@ namespace Agenty.LLMCore.ToolHandling
                 .OrderBy(m => m.Index)
                 .ToList();
 
-            string fallback = matches.Any() ? content[..matches[0].Index].Trim() : content.Trim();
+            string fallback = matches.Any()
+                ? content.Substring(0, matches[0].Index).Trim()
+                : content.Trim();
+
             var toolCalls = new List<ToolCall>();
-            string? assistantMessage = null;
+            string assistantMessage = null;
 
             foreach (var match in matches)
             {
                 string jsonStr = match.Groups["json"].Value.Trim();
-                JsonObject? node = null;
-                try { node = JsonNode.Parse(jsonStr)?.AsObject(); }
+                JObject node = null;
+                try { node = JObject.Parse(jsonStr); }
                 catch
                 {
                     if (strict)
@@ -110,10 +108,8 @@ namespace Agenty.LLMCore.ToolHandling
 
                 if (hasName && hasArgs)
                 {
-                    var name = node[ToolJsonNameTag]!.ToString();
-                    var args = node[ToolJsonArgumentsTag] is JsonObject argObj
-                        ? JsonNode.Parse(argObj.ToJsonString())!.AsObject()
-                        : new JsonObject();
+                    var name = node[ToolJsonNameTag]?.ToString();
+                    var args = node[ToolJsonArgumentsTag] as JObject ?? new JObject();
                     var message = node[ToolJsonAssistantMessageTag]?.ToString();
 
                     if (string.IsNullOrEmpty(name))
@@ -124,207 +120,193 @@ namespace Agenty.LLMCore.ToolHandling
                             $"Tool `{name}` not registered. Available: {string.Join(", ", registry.RegisteredTools.Select(t => t.Name))}",
                             null);
 
-                    var id = node.ContainsKey("id") ? node["id"]?.ToString() ?? Guid.NewGuid().ToString() : Guid.NewGuid().ToString();
+                    var id = node.ContainsKey("id")
+                        ? node["id"]?.ToString() ?? Guid.NewGuid().ToString()
+                        : Guid.NewGuid().ToString();
+
                     toolCalls.Add(new ToolCall(id, name, args, ParseToolParams(registry, name, args), message));
                     continue;
                 }
 
                 if (!hasName && !hasArgs && hasMessage)
                 {
-                    toolCalls.Add(new(node[ToolJsonAssistantMessageTag]?.ToString() ?? fallback));
+                    toolCalls.Add(new ToolCall(node[ToolJsonAssistantMessageTag]?.ToString() ?? fallback));
                     return new ToolCallResponse(toolCalls, assistantMessage, null);
                 }
 
                 if (strict)
                 {
                     if (!hasName && hasArgs)
-                        toolCalls.Add(new("Tool call has arguments but no 'name'."));
+                        toolCalls.Add(new ToolCall("Tool call has arguments but no 'name'."));
                     if (hasName && !hasArgs)
-                        toolCalls.Add(new($"Tool `{node[ToolJsonNameTag]}` missing 'arguments'."));
+                        toolCalls.Add(new ToolCall($"Tool `{node[ToolJsonNameTag]}` missing 'arguments'."));
                 }
             }
 
             if (toolCalls.Count == 0 && strict)
-                toolCalls.Add(new("No valid tool call structure found."));
+                toolCalls.Add(new ToolCall("No valid tool call structure found."));
 
             if (!string.IsNullOrWhiteSpace(fallback))
                 assistantMessage = fallback;
 
             return new ToolCallResponse(toolCalls, assistantMessage, null);
         }
-        public object?[] ParseToolParams(IToolRegistry registry, string toolName, JsonObject arguments)
+
+        public object[] ParseToolParams(IToolRegistry registry, string toolName, JObject arguments)
         {
             var tool = registry.Get(toolName);
-            if (tool?.Function == null)
+            if (tool == null || tool.Function == null)
                 throw new InvalidOperationException($"Tool '{toolName}' not registered or has no function.");
 
             var method = tool.Function.Method;
             var methodParams = method.GetParameters();
             var argsObj = arguments ?? throw new ArgumentException("Arguments null");
 
-            // wrap single complex param if needed
+            // Wrap single complex param if needed
             if (methodParams.Length == 1 &&
                 !methodParams[0].ParameterType.IsSimpleType() &&
-                !argsObj.ContainsKey(methodParams[0].Name!))
+                !argsObj.ContainsKey(methodParams[0].Name))
             {
-                argsObj = new JsonObject { [methodParams[0].Name!] = argsObj };
+                argsObj = new JObject { [methodParams[0].Name] = argsObj };
             }
 
-            var paramValues = new object?[methodParams.Length];
+            var paramValues = new object[methodParams.Length];
             for (int i = 0; i < methodParams.Length; i++)
             {
                 var p = methodParams[i];
+                var node = argsObj[p.Name];
 
-                // check required
-                if (!argsObj.TryGetPropertyValue(p.Name!, out var node) || node == null)
+                if (node == null)
                 {
                     if (p.HasDefaultValue)
                         paramValues[i] = p.DefaultValue;
                     else if (!p.ParameterType.IsValueType || Nullable.GetUnderlyingType(p.ParameterType) != null)
                         paramValues[i] = null;
                     else
-                        throw new ToolValidationException(p.Name!, "Missing required parameter.");
+                        throw new ToolValidationException(p.Name, "Missing required parameter.");
                     continue;
                 }
 
-                // validate against schema
+                // Validate against schema
                 var schema = p.ParameterType.GetSchemaForType();
-                var errors = ValidateAgainstSchema(node, schema, p.Name!);
+                var errors = ValidateAgainstSchema(node, schema, p.Name);
                 if (errors.Any())
                     throw new ToolValidationAggregateException(errors);
 
-                // try deserialization (with coercion attempt)
                 try
                 {
-                    paramValues[i] = JsonSerializer.Deserialize(node.ToJsonString(), p.ParameterType, JsonOptions);
+                    paramValues[i] = node.ToObject(p.ParameterType);
                 }
                 catch (Exception ex)
                 {
-                    throw new ToolValidationException(p.Name!, $"Invalid type for parameter. {ex.Message}");
+                    throw new ToolValidationException(p.Name, $"Invalid type for parameter. {ex.Message}");
                 }
             }
 
             return paramValues;
         }
 
-        // === new helper ===
-        public List<ToolValidationError> ValidateAgainstSchema(JsonNode? node, JsonObject schema, string path = "")
+        public List<ToolValidationError> ValidateAgainstSchema(JToken? node, JObject schema, string path = "")
         {
             var errors = new List<ToolValidationError>();
 
             if (node == null)
             {
-                if (schema.TryGetPropertyValue("required", out var req) && req is JsonArray arr && arr.Count > 0)
-                {
+                if (schema["required"] is JArray arr && arr.Count > 0)
                     errors.Add(new ToolValidationError(path, path, "Value required but missing.", "missing"));
-                }
                 return errors;
             }
 
-            if (schema.TryGetPropertyValue("type", out var typeNode))
+            var type = schema["type"]?.ToString();
+            switch (type)
             {
-                var type = typeNode?.ToString();
-                switch (type)
-                {
-                    case "string":
-                        if (node is not JsonValue sVal || sVal.GetValue<string>() == null)
-                            errors.Add(new ToolValidationError(path, path, "Expected string", "type_error"));
-                        break;
-
-                    case "integer":
-                        if (node is not JsonValue iVal || !int.TryParse(iVal.ToString(), out _))
-                            errors.Add(new ToolValidationError(path, path, "Expected integer", "type_error"));
-                        break;
-
-                    case "number":
-                        if (node is not JsonValue nVal || !double.TryParse(nVal.ToString(), out _))
-                            errors.Add(new ToolValidationError(path, path, "Expected number", "type_error"));
-                        break;
-
-                    case "boolean":
-                        if (node is not JsonValue bVal || !bool.TryParse(bVal.ToString(), out _))
-                            errors.Add(new ToolValidationError(path, path, "Expected boolean", "type_error"));
-                        break;
-
-                    case "array":
-                        if (node is not JsonArray arrNode)
+                case "string":
+                    if (node.Type != JTokenType.String)
+                        errors.Add(new ToolValidationError(path, path, "Expected string", "type_error"));
+                    break;
+                case "integer":
+                    if (node.Type != JTokenType.Integer)
+                        errors.Add(new ToolValidationError(path, path, "Expected integer", "type_error"));
+                    break;
+                case "number":
+                    if (node.Type != JTokenType.Float && node.Type != JTokenType.Integer)
+                        errors.Add(new ToolValidationError(path, path, "Expected number", "type_error"));
+                    break;
+                case "boolean":
+                    if (node.Type != JTokenType.Boolean)
+                        errors.Add(new ToolValidationError(path, path, "Expected boolean", "type_error"));
+                    break;
+                case "array":
+                    if (node.Type != JTokenType.Array)
+                    {
+                        errors.Add(new ToolValidationError(path, path, "Expected array", "type_error"));
+                    }
+                    else if (schema["items"] is JObject itemSchema)
+                    {
+                        var arrNode = (JArray)node;
+                        for (int idx = 0; idx < arrNode.Count; idx++)
+                            errors.AddRange(ValidateAgainstSchema(arrNode[idx], itemSchema, $"{path}[{idx}]"));
+                    }
+                    break;
+                case "object":
+                    if (node.Type != JTokenType.Object)
+                    {
+                        errors.Add(new ToolValidationError(path, path, "Expected object", "type_error"));
+                    }
+                    else if (schema["properties"] is JObject propSchemas)
+                    {
+                        var objNode = (JObject)node;
+                        foreach (var kvp in propSchemas)
                         {
-                            errors.Add(new ToolValidationError(path, path, "Expected array", "type_error"));
-                        }
-                        else if (schema.TryGetPropertyValue("items", out var itemsSchema) && itemsSchema is JsonObject itemSchema)
-                        {
-                            for (int idx = 0; idx < arrNode.Count; idx++)
+                            var key = kvp.Key;
+                            var propSchema = kvp.Value as JObject;
+                            if (propSchema == null) continue;
+
+                            if (!objNode.ContainsKey(key))
                             {
-                                errors.AddRange(ValidateAgainstSchema(arrNode[idx], itemSchema, $"{path}[{idx}]"));
+                                if (schema["required"] is JArray reqArr && reqArr.Any(r => r?.ToString() == key))
+                                    errors.Add(new ToolValidationError(key, $"{path}.{key}".Trim('.'), $"Missing required field '{key}'", "missing"));
+                            }
+                            else
+                            {
+                                errors.AddRange(ValidateAgainstSchema(objNode[key], propSchema, $"{path}.{key}".Trim('.')));
                             }
                         }
-                        break;
-
-                    case "object":
-                        if (node is not JsonObject objNode)
-                        {
-                            errors.Add(new ToolValidationError(path, path, "Expected object", "type_error"));
-                        }
-                        else if (schema.TryGetPropertyValue("properties", out var props) && props is JsonObject propSchemas)
-                        {
-                            foreach (var kvp in propSchemas)
-                            {
-                                var key = kvp.Key;
-                                var propSchema = kvp.Value?.AsObject();
-                                if (propSchema == null) continue;
-
-                                if (!objNode.TryGetPropertyValue(key, out var child))
-                                {
-                                    if (schema.TryGetPropertyValue("required", out var reqNode) && reqNode is JsonArray reqArr && reqArr.Any(r => r?.ToString() == key))
-                                    {
-                                        errors.Add(new ToolValidationError(key, $"{path}.{key}".Trim('.'), $"Missing required field '{key}'", "missing"));
-                                    }
-                                }
-                                else
-                                {
-                                    errors.AddRange(ValidateAgainstSchema(child, propSchema, $"{path}.{key}".Trim('.')));
-                                }
-                            }
-                        }
-                        break;
-                }
+                    }
+                    break;
             }
-
-            // constraints
-            if (schema.TryGetPropertyValue("minLength", out var minNode) && node?.ToString()?.Length < minNode!.GetValue<int>())
-                errors.Add(new ToolValidationError(path, path, $"String shorter than {minNode}", "too_short"));
-
-            if (schema.TryGetPropertyValue("maxLength", out var maxNode) && node?.ToString()?.Length > maxNode!.GetValue<int>())
-                errors.Add(new ToolValidationError(path, path, $"String longer than {maxNode}", "too_long"));
-
-            if (schema.TryGetPropertyValue("pattern", out var patternNode) && !Regex.IsMatch(node?.ToString() ?? "", patternNode!.ToString()))
-                errors.Add(new ToolValidationError(path, path, $"Value does not match regex {patternNode}", "pattern_mismatch"));
-
-            if (schema.TryGetPropertyValue("enum", out var enumNode) && enumNode is JsonArray enumArr && !enumArr.Any(e => e?.ToString() == node?.ToString()))
-                errors.Add(new ToolValidationError(path, path, $"Value '{node}' not in allowed enum", "enum_mismatch"));
 
             return errors;
         }
     }
-    public sealed record ToolValidationError(
-    string Param,
-    string? Path,
-    string Message,
-    string ErrorType
-    );
+}
 
-    public sealed class ToolValidationAggregateException : Exception
+public sealed class ToolValidationError
+{
+    public string Param { get; }
+    public string? Path { get; }
+    public string Message { get; }
+    public string ErrorType { get; }
+
+    public ToolValidationError(string param, string? path, string message, string errorType)
     {
-        public IReadOnlyList<ToolValidationError> Errors { get; }
-        public ToolValidationAggregateException(IEnumerable<ToolValidationError> errors)
-            : base("Tool validation failed") => Errors = errors.ToList();
+        Param = param;
+        Path = path;
+        Message = message;
+        ErrorType = errorType;
     }
+}
 
-    public sealed class ToolValidationException : Exception
-    {
-        public string ParamName { get; }
-        public ToolValidationException(string param, string msg)
-            : base($"Validation failed for '{param}': {msg}") => ParamName = param;
-    }
+public sealed class ToolValidationAggregateException : Exception
+{
+    public IReadOnlyList<ToolValidationError> Errors { get; }
+    public ToolValidationAggregateException(IEnumerable<ToolValidationError> errors)
+        : base("Tool validation failed") => Errors = errors.ToList();
+}
 
+public sealed class ToolValidationException : Exception
+{
+    public string ParamName { get; }
+    public ToolValidationException(string param, string msg)
+        : base($"Validation failed for '{param}': {msg}") => ParamName = param;
 }

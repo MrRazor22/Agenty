@@ -1,49 +1,60 @@
-﻿using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
+﻿using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using System;
+using System.Linq;
 
 namespace Agenty.LLMCore.Messages
 {
     public interface IMessageContent { }
-    public sealed record TextContent(string Text) : IMessageContent
+
+    public sealed class TextContent : IMessageContent
     {
-        public static implicit operator TextContent(string text) => new(text);
+        public string Text { get; }
+
+        public TextContent(string text) => Text = text;
+
+        public static implicit operator TextContent(string text) => new TextContent(text);
     }
+
     public class ToolCall : IMessageContent
     {
-        [JsonConstructor] // 👈 tells serializer to use this
-        public ToolCall(string id, string name, JsonObject arguments)
+        [JsonConstructor]
+        public ToolCall(string id, string name, JObject arguments)
         {
             Id = id;
             Name = name;
-            Arguments = arguments;
+            Arguments = arguments ?? new JObject();
         }
 
-        public ToolCall(string id, string name, JsonObject arguments, object?[]? parameters = null, string? message = null)
+        public ToolCall(string id, string name, JObject arguments, object[] parameters, string message = null)
             : this(id, name, arguments)
         {
             Parameters = parameters;
             Message = message;
         }
 
-        [JsonPropertyName("id")]
+        [JsonProperty("id")]
         public string Id { get; set; }
 
-        [JsonPropertyName("name")]
+        [JsonProperty("name")]
         public string Name { get; private set; }
 
-        [JsonPropertyName("arguments")]
-        public JsonObject Arguments { get; private set; }
+        [JsonProperty("arguments")]
+        public JObject Arguments { get; private set; }
 
         [JsonIgnore]
-        public object?[]? Parameters { get; private set; }
+        public object[] Parameters { get; private set; } = Array.Empty<object>();
 
         [JsonIgnore]
-        public string? Message { get; set; }
+        public string Message { get; set; }
 
-        // message-only ctor stays fine
-        public ToolCall(string message) : this("", "", new JsonObject()) => Message = message;
+        // message-only ctor
+        public ToolCall(string message) : this(Guid.NewGuid().ToString(), "", new JObject())
+        {
+            Message = message;
+        }
 
-        public static ToolCall Empty { get; } = new("", "", new JsonObject());
+        public static ToolCall Empty { get; } = new ToolCall(Guid.NewGuid().ToString(), "", new JObject());
 
         public bool IsEmpty =>
             string.IsNullOrWhiteSpace(Name) &&
@@ -51,12 +62,25 @@ namespace Agenty.LLMCore.Messages
 
         public override string ToString()
         {
-            var argsStr = Arguments is { Count: > 0 }
-                ? string.Join(", ", Arguments.Select(kvp => $"{kvp.Key}: {kvp.Value?.ToJsonString()}"))
+            var argsStr = (Arguments != null && Arguments.Count > 0)
+                ? string.Join(", ", Arguments.Properties().Select(p => $"{p.Name}: {p.Value}"))
                 : "none";
 
             return $"Name: '{Name}' (id: {Id}) with Arguments: [{argsStr}]";
         }
     }
-    public sealed record ToolCallResult(ToolCall Call, object? Result, Exception? Error) : IMessageContent;
+
+    public sealed class ToolCallResult : IMessageContent
+    {
+        public ToolCallResult(ToolCall call, object result, Exception error)
+        {
+            Call = call;
+            Result = result;
+            Error = error;
+        }
+
+        public ToolCall Call { get; }
+        public object Result { get; }
+        public Exception Error { get; }
+    }
 }
