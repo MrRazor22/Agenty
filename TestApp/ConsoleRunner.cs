@@ -3,13 +3,9 @@ using Agenty.AgentCore.TokenHandling;
 using Agenty.BuiltInTools;
 using Agenty.LLMCore.BuiltInTools;
 using Agenty.LLMCore.Logging;
-using Agenty.RAG.Embeddings.Providers.OpenAI;
-using Agenty.RAG.IO;
-using Agenty.RAG.Stores;
 using Microsoft.Extensions.Logging;
-using System;
-using System.IO;
-using System.Threading.Tasks;
+using RAGSharp.Embeddings.Providers;
+using RAGSharp.IO;
 
 namespace Agenty.Test
 {
@@ -50,7 +46,7 @@ namespace Agenty.Test
             agent.WithTools(new RAGTools(kb));
 
             // Load docs into KB
-            var docs = await DocumentLoader.LoadDirectoryAsync(docsPath);
+            var docs = await new DirectoryLoader(searchPattern: "*.txt").LoadAsync(docsPath);
             await kb!.AddDocumentsAsync(docs, batchSize: 16, maxParallel: 4);
 
             Console.WriteLine("🤖 Agent ready. Type 'exit' to quit.");

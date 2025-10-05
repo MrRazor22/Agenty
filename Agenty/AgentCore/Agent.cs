@@ -4,13 +4,14 @@ using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.ToolHandling;
-using Agenty.RAG;
-using Agenty.RAG.Embeddings;
-using Agenty.RAG.Embeddings.Providers.OpenAI;
-using Agenty.RAG.Stores;
 using Microsoft.Extensions.Logging;
+using RAGSharp.Embeddings;
+using RAGSharp.Embeddings.Providers;
+using RAGSharp.RAG;
+using RAGSharp.Stores;
 using System;
 using System.Threading.Tasks;
+using ITokenizer = Agenty.AgentCore.TokenHandling.ITokenizer;
 
 namespace Agenty.AgentCore
 {
@@ -81,9 +82,7 @@ namespace Agenty.AgentCore
             // default ephemeral/session store
             _ctx.SessionStore = new RagRetriever(
                 new OpenAIEmbeddingClient("http://127.0.0.1:1234/v1", "lmstudio", "publisherme/bge/bge-large-en-v1.5-q4_k_m.gguf"),
-                new InMemoryVectorStore(),
-                _ctx.TokenManager.Tokenizer,
-                _ctx.Logger
+                new InMemoryVectorStore()
             );
         }
 
@@ -143,7 +142,7 @@ namespace Agenty.AgentCore
         public Agent WithRAG(IEmbeddingClient embeddings, IVectorStore store)
         {
             var tok = _ctx.TokenManager.Tokenizer;
-            _ctx.KnowledgeBase = new RagRetriever(embeddings, store, tok, _ctx.Logger);
+            _ctx.KnowledgeBase = new RagRetriever(embeddings, store);
             return this;
         }
 
@@ -160,7 +159,7 @@ namespace Agenty.AgentCore
             var store = new InMemoryVectorStore();
             var tok = _ctx.TokenManager.Tokenizer;
 
-            _ctx.SessionStore = new RagRetriever(embeddings, store, tok, _ctx.Logger);
+            _ctx.SessionStore = new RagRetriever(embeddings, store);
             return this;
         }
 
@@ -169,7 +168,7 @@ namespace Agenty.AgentCore
             var embeddings = new OpenAIEmbeddingClient(baseUrl, apiKey, embeddingModel);
             var store = new FileVectorStore();
             var tok = _ctx.TokenManager.Tokenizer;
-            _ctx.KnowledgeBase = new RagRetriever(embeddings, store, tok, _ctx.Logger);
+            _ctx.KnowledgeBase = new RagRetriever(embeddings, store);
             return this;
         }
 

@@ -1,11 +1,7 @@
-﻿using Agenty.RAG;
-using Agenty.RAG.IO;
-using Agenty.RAG.Stores;
-using System;
-using System.Collections.Generic;
+﻿using RAGSharp.IO;
+using RAGSharp.RAG;
+using RAGSharp.Stores;
 using System.ComponentModel;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace Agenty.BuiltInTools
 {
@@ -34,8 +30,8 @@ namespace Agenty.BuiltInTools
         [Description("Search web for relevant information.")]
         public async Task<IReadOnlyList<SearchResult>> SearchWeb(string query)
         {
-            var docs = await WebSearchLoader.SearchAsync(query, _defaultTopK);
-            await _retriever.AddDocumentsAsync(docs.Select(d => new Document(d.Doc, d.Source ?? _defaultSource)));
+            var docs = await new WebSearchLoader().LoadAsync(query);
+            await _retriever.AddDocumentsAsync(docs.Select(d => new Document(d.Content, d.Source ?? _defaultSource)));
 
             var results = await _retriever.Search(query, _defaultTopK);
             return results.Where(r => r.Score >= _minScore).ToList();

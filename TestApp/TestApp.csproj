@@ -9,10 +9,17 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.9" />
+    <PackageReference Include="RAGSharp" Version="1.0.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Agenty\Agenty.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="RAGSharp">
+      <HintPath>..\..\RAGSharp\RAGSharp\bin\Debug\netstandard2.0\RAGSharp.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>
