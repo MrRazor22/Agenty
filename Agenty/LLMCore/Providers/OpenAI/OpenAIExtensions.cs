@@ -82,23 +82,23 @@ namespace Agenty.LLMCore.Providers.OpenAI
             }
         }
 
-        public static void ApplyLLMMode(this ChatCompletionOptions options, LLMMode mode)
+        public static void ApplyLLMMode(this ChatCompletionOptions options, ReasoningMode mode)
         {
             switch (mode)
             {
-                case LLMMode.Deterministic:
+                case ReasoningMode.Deterministic:
                     options.Temperature = 0f;
                     options.TopP = 1f;
                     break;
-                case LLMMode.Planning:
+                case ReasoningMode.Planning:
                     options.Temperature = 0.3f;
                     options.TopP = 1f;
                     break;
-                case LLMMode.Balanced:
+                case ReasoningMode.Balanced:
                     options.Temperature = 0.5f;
                     options.TopP = 0.9f;
                     break;
-                case LLMMode.Creative:
+                case ReasoningMode.Creative:
                     options.Temperature = 0.9f;
                     options.TopP = 1f;
                     break;

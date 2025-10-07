@@ -1,84 +1,79 @@
 ﻿using Agenty.AgentCore;
-using Agenty.AgentCore.TokenHandling;
-using Agenty.BuiltInTools;
+using Agenty.AgentCore.Flows;
+using Agenty.AgentCore.Runtime;
+using Agenty.LLMCore;
 using Agenty.LLMCore.BuiltInTools;
 using Agenty.LLMCore.Logging;
+using Agenty.LLMCore.Providers.OpenAI;
+using Agenty.LLMCore.ToolHandling;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using RAGSharp.Embeddings.Providers;
-using RAGSharp.IO;
 
-namespace Agenty.Test
+namespace TestApp
 {
-
     public static class ConsoleRunner
     {
         public static async Task RunAsync()
         {
-            var solutionRoot = Path.GetFullPath(
-                    Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..")
-                );
-            var docsPath = Path.Combine(solutionRoot, "Agenty", "Test", "ExampleDocumentation");
-            var embeddings = new OpenAIEmbeddingClient(
-                    "http://127.0.0.1:1234/v1",
-                    "lmstudio",
-                    "publisherme/bge/bge-large-en-v1.5-q4_k_m.gguf"
-                );
+            // === 1. Setup DI ===
+            var services = new ServiceCollection();
 
-            var tokenizer = new SharpTokenTokenizer("gpt-3.5-turbo");
-            ILogger logger = new ConsoleLogger("Agent", LogLevel.Trace);
+            // typed logging (ILogger<T>)
+            services.AddSingleton(typeof(ILogger<>), typeof(ConsoleLogger<>));
 
-            var agent = Agent.Create()
-                .WithSystemPrompt("You are a helpful assistant.")
-                .WithLLM("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m") //.WithLLM("http://localhost:11434/v1", "ollama", "qwen-local")
-                .WithLogger(logger)
-                .WithSessionRAG("lmstudio", "http://127.0.0.1:1234/v1", "publisherme/bge/bge-base-en-v1.5-q4_k_m.gguf")
-                .WithKnowledgeBaseRAG("lmstudio", "http://127.0.0.1:1234/v1", "publisherme/bge/bge-large-en-v1.5-q4_k_m.gguf")
-                .WithTools<GeoTools>()
-                .WithTools<WeatherTool>()
-                .WithTools<ConversionTools>()
-                .WithTools<MathTools>()
-                .WithFlow(new ToolCallingStep());
-            //.WithExecutor(new RagToolCallingExecutor(maxRounds: 50));
-            //.WithExecutor(new PlanningExecutor(maxRounds: 50)); 
+            // register LLM client
+            services.AddSingleton<ILLMClient>(sp =>
+            {
+                var client = new OpenAILLMClient();
+                client.Initialize("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m");
+                return client;
+            });
 
+            // register coordinator
+            services.AddSingleton<ILLMCoordinator>(sp =>
+            {
+                var llmClient = sp.GetRequiredService<ILLMClient>();
+                var registry = new ToolRegistry();
+                var runtime = new ToolRuntime(registry);
+                var parser = new ToolCallParser();
+                var retry = new DefaultRetryPolicy();
+                return new LLMCoordinator(llmClient, registry, runtime, parser, retry);
+            });
 
-            var kb = agent.Context.Memory.KnowledgeBase;
-            agent.WithTools(new RAGTools(kb));
-
-            // Load docs into KB
-            var docs = await new DirectoryLoader(searchPattern: "*.txt").LoadAsync(docsPath);
-            await kb!.AddDocumentsAsync(docs, batchSize: 16, maxParallel: 4);
-
-            Console.WriteLine("🤖 Agent ready. Type 'exit' to quit.");
-            Console.WriteLine();
+            // === 2. Build Agent ===
+            var agent = Agent.Create(services)
+            .WithFlow(
+                new AgentPipelineBuilder()
+                    .Use<PlanningStep>()
+                    .Use(() => new ToolCallingStep(ToolCallMode.Auto, ReasoningMode.Balanced))
+                    .Use<ReflectionStep>()
+                    .Use<FinalizationStep>()
+                    .Build()
+            )
+            .WithTools<GeoTools>()
+            .WithTools<WeatherTool>()
+            .WithTools<ConversionTools>()
+            .WithTools<MathTools>()
+            .WithSystemPrompt("You are a helpful assistant that answers concisely.");
 
             while (true)
             {
-                Console.Write("You: ");
-                var input = Console.ReadLine();
+                // === 3. Run Goal ===
+                Console.WriteLine("Enter your goal: ");
+                var goal = Console.ReadLine();
 
-                if (string.IsNullOrWhiteSpace(input) || input.Equals("exit", StringComparison.OrdinalIgnoreCase))
-                    break;
-
-                Console.WriteLine(new string('=', 60));
-
-                try
+                if (string.IsNullOrWhiteSpace(goal))
                 {
-                    var answer = await agent.ExecuteAsync(input);
+                    Console.WriteLine("No goal entered. Exiting.");
+                    return;
+                }
 
-                    Console.WriteLine("\n🤖 Agent Response:");
-                    Console.WriteLine(new string('-', 40));
-                    Console.WriteLine(answer);
-                    Console.WriteLine(new string('=', 60));
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"\n❌ Error: {ex.Message}");
-                    Console.WriteLine(new string('=', 60));
-                }
+                var result = await agent.ExecuteAsync(goal);
+
+                // === 4. Print result ===
+                Console.WriteLine("=== Agent Result ===");
+                Console.WriteLine(result.Message ?? "(no answer)");
             }
-
-            Console.WriteLine("\n👋 Exiting.");
         }
     }
 }

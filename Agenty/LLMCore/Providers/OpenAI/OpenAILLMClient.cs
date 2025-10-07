@@ -33,7 +33,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
                 throw new InvalidOperationException("Client not initialized. Call Initialize() first.");
         }
 
-        public async Task<LLMResponse> GetResponse(Conversation prompt, LLMMode mode = LLMMode.Balanced)
+        public async Task<LLMResponse> GetResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced)
         {
             EnsureInitialized();
             ChatCompletionOptions options = new ChatCompletionOptions() { ToolChoice = ChatToolChoice.CreateNoneChoice() };
@@ -48,7 +48,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             );
         }
 
-        public async IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt, LLMMode mode = LLMMode.Balanced)
+        public async IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced)
         {
             EnsureInitialized();
             ChatCompletionOptions options = new ChatCompletionOptions();
@@ -65,7 +65,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
     Conversation prompt,
     IEnumerable<Tool> tools,
     ToolCallMode toolCallMode = ToolCallMode.Auto,
-    LLMMode mode = LLMMode.Deterministic)
+    ReasoningMode mode = ReasoningMode.Deterministic)
         {
             EnsureInitialized();
 
@@ -115,7 +115,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
         public async Task<LLMResponse> GetStructuredResponse(
     Conversation prompt,
     JObject responseFormat,
-    LLMMode mode = LLMMode.Deterministic)
+    ReasoningMode mode = ReasoningMode.Deterministic)
         {
             EnsureInitialized();
 

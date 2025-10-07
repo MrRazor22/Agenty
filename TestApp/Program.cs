@@ -1,10 +1,9 @@
-﻿// File: Program.cs
-using Agenty.Test;
+﻿// File: Program.cs 
 using System;
 using System.IO;
 using System.Threading.Tasks;
 
-namespace Agenty
+namespace TestApp
 {
     public class Program
     {

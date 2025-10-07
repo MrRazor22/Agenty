@@ -1,46 +1,45 @@
 ﻿using Agenty.LLMCore.ChatHandling;
 using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Agenty.AgentCore.TokenHandling
 {
-    /// <summary>
-    /// Sliding Window policy:
-    /// - Keep all System messages (never trimmed)
-    /// - Drop Tool messages first
-    /// - Then apply sliding window on User/Assistant
-    /// </summary> 
     public sealed class SlidingWindowTokenManager : ITokenManager
     {
         public ITokenizer Tokenizer { get; }
         public int MaxTokens { get; }
-
+        private readonly double _safetyMargin;
         private int _lastDropped = 0;
 
-        public SlidingWindowTokenManager(ITokenizer tokenizer, int maxTokens = 4000)
+        public SlidingWindowTokenManager(
+            ITokenizer? tokenizer = null,
+            int maxTokens = 4000,
+            double safetyMargin = 0.9)
         {
-            Tokenizer = tokenizer ?? throw new ArgumentNullException(nameof(tokenizer));
+            Tokenizer = tokenizer ?? new SharpTokenTokenizer(); // default
             MaxTokens = maxTokens;
+            _safetyMargin = safetyMargin;
         }
 
-        public void Trim(Conversation convo, int? maxTokens = null)
+        public void Trim(Conversation convo)
         {
-            int limit = maxTokens ?? MaxTokens;
+            if (convo == null) throw new ArgumentNullException(nameof(convo));
+
+            int limit = (int)(MaxTokens * _safetyMargin);
             _lastDropped = 0;
 
-            int count = CountTokens(convo.ToJson(ChatFilter.All));
+            int count = CountTokens(convo);
             if (count <= limit) return;
 
-            // Keep System messages
+            // Always keep system messages
             var system = convo.Where(c => c.Role == Role.System).ToList();
 
             // Drop Tool messages first
             int before = convo.Count;
             convo.RemoveAll(c => c.Role == Role.Tool);
             _lastDropped += before - convo.Count;
+
+            count = CountTokens(convo);
             if (count <= limit) return;
 
             // Sliding window on User + Assistant
@@ -51,10 +50,10 @@ namespace Agenty.AgentCore.TokenHandling
                 convo.Remove(oldest);
                 core.RemoveAt(0);
                 _lastDropped++;
-                count = CountTokens(convo.ToJson(ChatFilter.All));
+                count = CountTokens(convo);
             }
 
-            // Reinsert system if lost
+            // Restore system at the top if lost
             foreach (var msg in system)
             {
                 if (!convo.Contains(msg))
@@ -62,26 +61,11 @@ namespace Agenty.AgentCore.TokenHandling
             }
         }
 
-        public TokenUsageReport Report(Conversation convo, int? maxTokens = null)
+        public int CountTokens(Conversation convo)
         {
-            int limit = maxTokens ?? MaxTokens;
-
-            int totalTokens = CountTokens(convo.ToJson(ChatFilter.All));
-            var roleCounts = convo
-                .GroupBy(c => c.Role)
-                .ToDictionary(g => g.Key, g => g.Count());
-
-            bool wasTrimmed = totalTokens > limit;
-
-            return new TokenUsageReport(
-                 totalTokens,
-                 limit,
-                 roleCounts,
-                 _lastDropped,
-                 wasTrimmed
-             ); 
+            if (convo == null) throw new ArgumentNullException(nameof(convo));
+            var json = convo.ToJson(ChatFilter.All);
+            return Tokenizer.Encode(json).Count;
         }
-
-        public int CountTokens(string text) => Tokenizer.Encode(text).Count;
     }
 }

@@ -11,17 +11,17 @@ namespace Agenty.LLMCore
     {
         void Initialize(string url, string apiKey, string modelName);
 
-        Task<LLMResponse> GetResponse(Conversation prompt, LLMMode mode = LLMMode.Balanced);
-        IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt, LLMMode mode = LLMMode.Balanced);
+        Task<LLMResponse> GetResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced);
+        IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced);
         Task<LLMResponse> GetToolCallResponse(
             Conversation prompt,
             IEnumerable<Tool> tools,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
-            LLMMode mode = LLMMode.Balanced);
+            ReasoningMode mode = ReasoningMode.Balanced);
         Task<LLMResponse> GetStructuredResponse(
             Conversation prompt,
             JObject responseFormat,
-            LLMMode mode = LLMMode.Balanced);
+            ReasoningMode mode = ReasoningMode.Balanced);
     }
 
     public enum ToolCallMode
@@ -31,7 +31,7 @@ namespace Agenty.LLMCore
         Required  // force tool call
     }
 
-    public enum LLMMode
+    public enum ReasoningMode
     {
         Deterministic,  // gates, routing, grading
         Planning,       // structured step-by-step planning

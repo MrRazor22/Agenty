@@ -33,17 +33,17 @@ namespace Agenty.AgentCore.Runtime
     public interface ILLMCoordinator
     {
         // Plain response (text only, convenience)
-        Task<string?> GetResponse(Conversation prompt, LLMMode mode = LLMMode.Balanced);
+        Task<string?> GetResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced);
 
         // Structured JSON response (T must be a reference type)
-        Task<T?> GetStructured<T>(Conversation prompt, LLMMode mode = LLMMode.Balanced)
+        Task<T?> GetStructured<T>(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced)
             where T : class;
 
         // Tool calls (returns only what agent devs care about)
         Task<ToolCallResponse> GetToolCallResponse(
             Conversation prompt,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
-            LLMMode mode = LLMMode.Balanced,
+            ReasoningMode mode = ReasoningMode.Balanced,
             params Tool[] tools);
 
         // Tool execution
@@ -51,7 +51,7 @@ namespace Agenty.AgentCore.Runtime
     }
 
 
-    internal sealed class LLMCoordinator : ILLMCoordinator
+    public sealed class LLMCoordinator : ILLMCoordinator
     {
         private readonly ILLMClient _llm;
         private readonly IToolRegistry _registry;
@@ -73,13 +73,13 @@ namespace Agenty.AgentCore.Runtime
             _retryPolicy = retryPolicy;
         }
 
-        public async Task<string?> GetResponse(Conversation prompt, LLMMode mode = LLMMode.Balanced)
+        public async Task<string?> GetResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced)
         {
             var resp = await _llm.GetResponse(prompt, mode);
             return resp.AssistantMessage;
         }
 
-        public async Task<T?> GetStructured<T>(Conversation prompt, LLMMode mode = LLMMode.Deterministic) where T : class
+        public async Task<T?> GetStructured<T>(Conversation prompt, ReasoningMode mode = ReasoningMode.Deterministic) where T : class
         {
 #if DEBUG
             return await RunStructuredOnce<T>(prompt, mode); // no retry, easy to step through
@@ -88,7 +88,7 @@ namespace Agenty.AgentCore.Runtime
 #endif
         }
 
-        private async Task<T?> RunStructuredOnce<T>(Conversation intPrompt, LLMMode mode) where T : class
+        private async Task<T?> RunStructuredOnce<T>(Conversation intPrompt, ReasoningMode mode) where T : class
         {
             // build schema with Newtonsoft
             var schema = JsonSchemaExtensions.GetSchemaFor<T>(); // JObject
@@ -119,7 +119,7 @@ namespace Agenty.AgentCore.Runtime
         public async Task<ToolCallResponse> GetToolCallResponse(
     Conversation prompt,
     ToolCallMode toolCallMode = ToolCallMode.Auto,
-    LLMMode mode = LLMMode.Balanced,
+    ReasoningMode mode = ReasoningMode.Balanced,
     params Tool[] tools)
         {
             tools = tools?.Any() == true ? tools : _registry.RegisteredTools.ToArray();
@@ -138,7 +138,7 @@ namespace Agenty.AgentCore.Runtime
         private async Task<ToolCallResponse> RunToolCallOnce(
             Conversation intPrompt,
             ToolCallMode toolCallMode,
-            LLMMode mode,
+            ReasoningMode mode,
             Tool[] tools)
         {
             var response = await _llm.GetToolCallResponse(intPrompt, tools, toolCallMode, mode);

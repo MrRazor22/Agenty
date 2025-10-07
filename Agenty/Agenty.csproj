@@ -8,10 +8,9 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.9" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
 		<PackageReference Include="OpenAI" Version="2.5.0" />
-		<PackageReference Include="RAGSharp" Version="1.0.0" />
 		<PackageReference Include="SharpToken" Version="2.0.4" />
 		<PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
 		<PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="9.0.9" />

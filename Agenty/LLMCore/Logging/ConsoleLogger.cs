@@ -3,6 +3,7 @@ using System;
 
 namespace Agenty.LLMCore.Logging
 {
+    // Base console logger (non-generic)
     public class ConsoleLogger : ILogger
     {
         private readonly string _category;
@@ -14,15 +15,9 @@ namespace Agenty.LLMCore.Logging
             _minLevel = minLevel;
         }
 
-        public IDisposable BeginScope<TState>(TState state)
-        {
-            return NullScope.Instance;
-        }
+        public IDisposable BeginScope<TState>(TState state) => NullScope.Instance;
 
-        public bool IsEnabled(LogLevel logLevel)
-        {
-            return logLevel >= _minLevel;
-        }
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= _minLevel;
 
         public void Log<TState>(
             LogLevel logLevel,
@@ -39,7 +34,7 @@ namespace Agenty.LLMCore.Logging
             var originalColor = Console.ForegroundColor;
             Console.ForegroundColor = GetColor(logLevel, _category);
 
-            Console.WriteLine("[" + logLevel + "] [" + _category + "] " + message);
+            Console.WriteLine($"[{logLevel}] [{_category}] {message}");
 
             if (exception != null)
             {
@@ -54,23 +49,15 @@ namespace Agenty.LLMCore.Logging
         {
             int hash = Math.Abs(source.GetHashCode());
 
-            // Replaced switch expression with classic switch
             switch (level)
             {
-                case LogLevel.Trace:
-                    return (hash % 2 == 0 ? ConsoleColor.DarkGray : ConsoleColor.Gray);
-                case LogLevel.Debug:
-                    return (hash % 2 == 0 ? ConsoleColor.DarkCyan : ConsoleColor.Cyan);
-                case LogLevel.Information:
-                    return (hash % 2 == 0 ? ConsoleColor.DarkGreen : ConsoleColor.Green);
-                case LogLevel.Warning:
-                    return (hash % 2 == 0 ? ConsoleColor.DarkYellow : ConsoleColor.Yellow);
-                case LogLevel.Error:
-                    return (hash % 2 == 0 ? ConsoleColor.DarkRed : ConsoleColor.Red);
-                case LogLevel.Critical:
-                    return (hash % 2 == 0 ? ConsoleColor.DarkMagenta : ConsoleColor.Magenta);
-                default:
-                    return ConsoleColor.Gray;
+                case LogLevel.Trace: return (hash % 2 == 0 ? ConsoleColor.DarkGray : ConsoleColor.Gray);
+                case LogLevel.Debug: return (hash % 2 == 0 ? ConsoleColor.DarkCyan : ConsoleColor.Cyan);
+                case LogLevel.Information: return (hash % 2 == 0 ? ConsoleColor.DarkGreen : ConsoleColor.Green);
+                case LogLevel.Warning: return (hash % 2 == 0 ? ConsoleColor.DarkYellow : ConsoleColor.Yellow);
+                case LogLevel.Error: return (hash % 2 == 0 ? ConsoleColor.DarkRed : ConsoleColor.Red);
+                case LogLevel.Critical: return (hash % 2 == 0 ? ConsoleColor.DarkMagenta : ConsoleColor.Magenta);
+                default: return ConsoleColor.Gray;
             }
         }
 
@@ -78,6 +65,15 @@ namespace Agenty.LLMCore.Logging
         {
             public static readonly NullScope Instance = new NullScope();
             public void Dispose() { }
+        }
+    }
+
+    // Generic version (just delegates to base but names category after T)
+    public class ConsoleLogger<T> : ConsoleLogger, ILogger<T>
+    {
+        public ConsoleLogger(LogLevel minLevel = LogLevel.Information)
+            : base(typeof(T).Name, minLevel)
+        {
         }
     }
 }
