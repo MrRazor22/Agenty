@@ -41,14 +41,6 @@ namespace Agenty.LLMCore.ChatHandling
             return this;
         }
 
-        public static Conversation Clone(Conversation original)
-        {
-            var copy = new Conversation();
-            foreach (var message in original)
-                copy.Add(message.Role, message.Content);
-            return copy;
-        }
-
         public Conversation Append(Conversation other, ChatFilter filter = ChatFilter.All)
         {
             foreach (var chat in other)

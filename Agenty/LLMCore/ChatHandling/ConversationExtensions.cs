@@ -23,6 +23,13 @@ namespace Agenty.LLMCore.ChatHandling
 
     public static class ConversationExtensions
     {
+        public static Conversation CloneFrom(this Conversation target, Conversation source)
+        {
+            target.Clear();
+            foreach (var message in source)
+                target.Add(message.Role, message.Content);
+            return target;
+        }
         public static string ToJson(this Conversation chat, ChatFilter filter = ChatFilter.All)
         {
             var items = new List<object>();
@@ -125,7 +132,10 @@ namespace Agenty.LLMCore.ChatHandling
         public static Conversation AppendToolResults(this Conversation chat, IEnumerable<ToolCallResult> results)
         {
             foreach (var r in results)
+            {
+                chat.Add(Role.Assistant, r.Call);
                 chat.Add(Role.Tool, r);
+            }
             return chat;
         }
 
