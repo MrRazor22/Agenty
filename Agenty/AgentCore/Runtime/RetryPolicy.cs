@@ -40,7 +40,7 @@ namespace Agenty.AgentCore.Runtime
             Conversation prompt)
             where T : class
         {
-            var intPrompt = Conversation.Clone(prompt);
+            var intPrompt = new Conversation().CloneFrom(prompt);
 
             for (int attempt = 0; attempt <= _maxRetries; attempt++)
             {
