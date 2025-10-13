@@ -1,57 +1,40 @@
 ﻿using Agenty.AgentCore.Runtime;
+using Agenty.AgentCore.TokenHandling;
+using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
+using Agenty.LLMCore.Logging;
+using Agenty.LLMCore.Providers.OpenAI;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 
-
 namespace Agenty.AgentCore
 {
-    /// <summary>
-    /// Execution context for an agent run.
-    /// </summary>
+    // === 1. Context (like HttpContext) ===
     public interface IAgentContext
     {
-        // Agent state
-        IToolRegistry Tools { get; }
         Conversation Chat { get; }
-        string? Goal { get; set; } // must be settable per run
-
-        // Result of the run (always present)
-        IAgentResult Result { get; }
-
-        // Extensibility / DI
+        string? Goal { get; set; }
+        AgentResult Result { get; }
         IServiceProvider Services { get; }
-
-        // Scratchpad
         IDictionary<string, object?> Items { get; }
-
-        // Cancellation for long-running steps
         CancellationToken CancellationToken { get; }
-
-        // Controlled mutation of the result
-        void SetResult(string? message = null, object? payload = null);
     }
 
-    /// <summary>
-    /// Output of an agent run.
-    /// </summary>
-    public interface IAgentResult
-    {
-        string? Message { get; }
-        object? Payload { get; }
-    }
-
-    internal sealed class AgentResult : IAgentResult
+    public sealed class AgentResult
     {
         public string? Message { get; private set; }
         public object? Payload { get; private set; }
+        public TimeSpan Duration { get; internal set; }
+        public int TokensUsed { get; internal set; }
 
-        internal void Update(string? message, object? payload)
+        internal void Set(string? message, object? payload)
         {
             Message = message;
             Payload = payload;
@@ -66,91 +49,181 @@ namespace Agenty.AgentCore
         {
             Services = services;
             CancellationToken = cancellationToken;
+            Chat = new Conversation();
+            Items = new Dictionary<string, object?>();
         }
 
-        public IToolRegistry Tools { get; } = new ToolRegistry();
-        public Conversation Chat { get; } = new Conversation();
+        public Conversation Chat { get; }
         public string? Goal { get; set; }
-
-        public IAgentResult Result => _result;
+        public AgentResult Result => _result;
         public IServiceProvider Services { get; }
-        public IDictionary<string, object?> Items { get; } = new Dictionary<string, object?>();
+        public IDictionary<string, object?> Items { get; }
         public CancellationToken CancellationToken { get; }
-
-        public void SetResult(string? message = null, object? payload = null)
-            => _result.Update(message, payload);
+        public void SetResult(string? message, object? payload) => _result.Set(message, payload);
     }
 
-
-    public interface IAgent
+    // === 2. AgentBuilder (like WebApplicationBuilder) ===
+    public sealed class AgentBuilder
     {
-        IAgentContext Context { get; }
-        Task<IAgentResult> ExecuteAsync(string goal);
-    }
+        public IServiceCollection Services { get; } = new ServiceCollection();
 
-    public sealed class Agent : IAgent
-    {
-        private readonly AgentContext _ctx;
-        private AgentStepDelegate? _rootPipeline;
-
-        public IAgentContext Context => _ctx;
-
-        private Agent(IServiceProvider provider)
+        public AgentBuilder()
         {
-            _ctx = new AgentContext(provider);
+            Services.AddSingleton<IConversationStore, FileConversationStore>();
+            Services.AddLogging(builder => builder.AddConsole());
+            Services.AddSingleton<IToolRegistry, ToolRegistry>();
+            Services.AddSingleton<IToolRuntime, ToolRuntime>();
+            Services.AddSingleton<ITokenManager, SlidingWindowTokenManager>();
         }
 
-        public static Agent Create(IServiceCollection services)
+        public Agent Build()
         {
-            var provider = services.BuildServiceProvider();
+            var provider = Services.BuildServiceProvider(validateScopes: true);
+
+            // LLM parts are optional unless pipeline needs them
+            var hasLLM = provider.GetService<ILLMClient>() != null
+                      && provider.GetService<ILLMCoordinator>() != null;
+            if (!hasLLM)
+                Console.WriteLine("[Warning] No LLM client/coordinator registered. Tool calls or planning may fail.");
+
             return new Agent(provider);
         }
+    }
 
-        // === Fluent config ===
+    // === 3. Agent (like WebApplication) ===
+    public sealed class Agent : IAgent
+    {
+        private readonly IServiceProvider _services;
+        private readonly Conversation _history = new Conversation();
+        private readonly IConversationStore? _store;
+        private AgentStepDelegate _pipeline = ctx => Task.CompletedTask;
+
+        internal Agent(IServiceProvider services)
+        {
+            _services = services;
+            _store = services.GetService<IConversationStore>();
+        }
+
+        // Configure runtime (like app.MapXyz / app.UseXyz)
         public Agent WithTools<T>(params string[] tags)
         {
-            _ctx.Tools.RegisterAll<T>(tags);
+            _services.GetRequiredService<IToolRegistry>().RegisterAll<T>(tags);
             return this;
         }
 
         public Agent WithTools<T>(T instance, params string[] tags)
         {
-            _ctx.Tools.RegisterAll<T>(instance, tags);
+            _services.GetRequiredService<IToolRegistry>().RegisterAll(instance, tags);
             return this;
         }
 
         public Agent WithSystemPrompt(string prompt)
         {
-            _ctx.Chat.Add(Role.System, prompt);
+            _history.Add(Role.System, prompt);
             return this;
         }
 
-        // CHANGED: takes delegate not IAgentStep
-        public Agent WithFlow(AgentStepDelegate pipeline)
+        // === Load/save conversation history explicitly ===
+        public async Task LoadHistoryAsync(string sessionId)
         {
-            _rootPipeline = pipeline;
+            if (_store == null) return;
+            var past = await _store.LoadAsync(sessionId);
+            if (past != null)
+                _history.CloneFrom(past);
+        }
+
+        public async Task SaveHistoryAsync(string sessionId)
+        {
+            if (_store == null) return;
+            await _store.SaveAsync(sessionId, _history);
+        }
+
+        // app.Use(...)
+        public Agent Use(Func<IAgentContext, AgentStepDelegate, Task> middleware)
+        {
+            var next = _pipeline;
+            _pipeline = ctx => middleware(ctx, next);
             return this;
         }
 
-        // === Run ===
-        public async Task<IAgentResult> ExecuteAsync(string goal)
+        public Agent Use<TStep>() where TStep : IAgentStep, new()
+            => Use((ctx, next) => new TStep().InvokeAsync(ctx, next));
+
+        public Agent Use<TStep>(Func<TStep> factory) where TStep : IAgentStep
+            => Use((ctx, next) => factory().InvokeAsync(ctx, next));
+
+        // run
+        public async Task<AgentResult> ExecuteAsync(string goal, CancellationToken ct = default)
         {
-            if (_rootPipeline == null)
-                throw new InvalidOperationException("Pipeline not set. Call WithFlow().");
+            using var scope = _services.CreateScope();
+            var ctx = new AgentContext(scope.ServiceProvider, ct) { Goal = goal };
 
-            // set the execution goal in context
-            _ctx.Goal = goal;
-            _ctx.Chat.Add(Role.User, goal);
+            try
+            {
+                ctx.Chat.CloneFrom(_history);
+                ctx.Chat.Add(Role.User, goal);
 
-            var logger = _ctx.Services.GetService<ILogger<Agent>>();
-            logger?.LogInformation("Starting agent run with goal: {Goal}", goal);
+                var sw = Stopwatch.StartNew();
+                await _pipeline(ctx);
+                sw.Stop();
+                ctx.Result.Duration = sw.Elapsed;
 
-            await _rootPipeline(_ctx);  // just invoke the delegate
+                var tokenMgr = ctx.Services.GetService<ITokenManager>();
+                ctx.Result.TokensUsed = tokenMgr?.CountTokens(ctx.Chat) ?? 0;
 
-            logger?.LogInformation("Agent run complete");
+                if (!string.IsNullOrWhiteSpace(ctx.Result.Message))
+                    _history.Add(Role.Assistant, ctx.Result.Message);
+            }
+            catch (Exception ex)
+            {
+                ctx.Services.GetService<ILogger<Agent>>()?.LogError(ex, "Agent execution failed");
+                ctx.SetResult($"Error: {ex.Message}", null);
+            }
 
-            return _ctx.Result;
+            return ctx.Result;
         }
+
+        public static AgentBuilder CreateBuilder() => new AgentBuilder();
     }
 
+    public interface IAgent
+    {
+        Task<AgentResult> ExecuteAsync(string goal, CancellationToken cancellationToken = default);
+    }
+
+
+    public sealed class OpenAIOptions
+    {
+        public string BaseUrl { get; set; } = "http://127.0.0.1:1234/v1";
+        public string ApiKey { get; set; } = "lmstudio";
+        public string Model { get; set; } = "qwen@q5_k_m";
+    }
+
+    public static class AgentServiceCollectionExtensions
+    {
+        public static AgentBuilder AddOpenAI(this AgentBuilder builder, Action<OpenAIOptions> configure)
+        {
+            var options = new OpenAIOptions();
+            configure(options);
+
+            builder.Services.AddSingleton<ILLMClient>(sp =>
+            {
+                var client = new OpenAILLMClient();
+                client.Initialize(options.BaseUrl, options.ApiKey, options.Model);
+                return client;
+            });
+
+            builder.Services.AddSingleton<ILLMCoordinator>(sp =>
+            {
+                var llmClient = sp.GetRequiredService<ILLMClient>();
+                var registry = sp.GetRequiredService<IToolRegistry>();
+                var runtime = sp.GetRequiredService<IToolRuntime>();
+                var parser = new ToolCallParser();
+                var retry = new DefaultRetryPolicy();
+                return new LLMCoordinator(llmClient, registry, runtime, parser, retry);
+            });
+
+            return builder;
+        }
+    }
 }

@@ -11,68 +11,60 @@ using Microsoft.Extensions.Logging;
 
 namespace TestApp
 {
-    public static class ConsoleRunner
+    public static class Program
     {
-        public static async Task RunAsync()
+        public static async Task Main()
         {
-            // === 1. Setup DI ===
-            var services = new ServiceCollection();
-
-            // typed logging (ILogger<T>)
-            services.AddSingleton(typeof(ILogger<>), typeof(ConsoleLogger<>));
-
-            // register LLM client
-            services.AddSingleton<ILLMClient>(sp =>
+            Agent app = null;
+            try
             {
-                var client = new OpenAILLMClient();
-                client.Initialize("http://127.0.0.1:1234/v1", "lmstudio", "qwen@q5_k_m");
-                return client;
-            });
+                // === 1. Create builder (ASP.NET: WebApplication.CreateBuilder) ===
+                var builder = Agent.CreateBuilder();
 
-            // register coordinator
-            services.AddSingleton<ILLMCoordinator>(sp =>
-            {
-                var llmClient = sp.GetRequiredService<ILLMClient>();
-                var registry = new ToolRegistry();
-                var runtime = new ToolRuntime(registry);
-                var parser = new ToolCallParser();
-                var retry = new DefaultRetryPolicy();
-                return new LLMCoordinator(llmClient, registry, runtime, parser, retry);
-            });
+                builder.AddOpenAI(opts =>
+                {
+                    opts.BaseUrl = "http://127.0.0.1:1234/v1";
+                    opts.ApiKey = "lmstudio";
+                    opts.Model = "qwen@q5_k_m";
+                });
 
-            // === 2. Build Agent ===
-            var agent = Agent.Create(services)
-            .WithFlow(
-                new AgentPipelineBuilder()
+                // === 4. Build app (ASP.NET: var app = builder.Build()) ===
+                app = builder.Build();
+
+                await app.LoadHistoryAsync("default");
+
+                app.WithSystemPrompt("You are a helpful assistant that answers concisely.")
+                    .WithTools<GeoTools>()
+                    .WithTools<WeatherTool>()
+                    .WithTools<ConversionTools>()
+                    .WithTools<MathTools>()
                     .Use<PlanningStep>()
                     .Use(() => new ToolCallingStep(ToolCallMode.Auto, ReasoningMode.Balanced))
                     .Use<ReflectionStep>()
-                    .Use<FinalizationStep>()
-                    .Build()
-            )
-            .WithTools<GeoTools>()
-            .WithTools<WeatherTool>()
-            .WithTools<ConversionTools>()
-            .WithTools<MathTools>()
-            .WithSystemPrompt("You are a helpful assistant that answers concisely.");
+                    .Use<FinalSummaryStep>();
 
-            while (true)
-            {
-                // === 3. Run Goal ===
-                Console.WriteLine("Enter your goal: ");
-                var goal = Console.ReadLine();
-
-                if (string.IsNullOrWhiteSpace(goal))
+                // === 5. Run (ASP.NET: app.Run()) ===
+                while (true)
                 {
-                    Console.WriteLine("No goal entered. Exiting.");
-                    return;
+                    Console.WriteLine("Enter your goal: ");
+                    var goal = Console.ReadLine();
+
+                    if (string.IsNullOrWhiteSpace(goal))
+                    {
+                        Console.WriteLine("No goal entered. Exiting.");
+                        return;
+                    }
+
+                    var result = await app.ExecuteAsync(goal);
+                    Console.WriteLine("\n=== Agent Result ===");
+                    Console.WriteLine("Response: " + result.Message);
+                    Console.WriteLine("Time: " + result.Duration);
+                    Console.WriteLine("Tokens: " + result.TokensUsed);
                 }
-
-                var result = await agent.ExecuteAsync(goal);
-
-                // === 4. Print result ===
-                Console.WriteLine("=== Agent Result ===");
-                Console.WriteLine(result.Message ?? "(no answer)");
+            }
+            finally
+            {
+                await app.SaveHistoryAsync("default");
             }
         }
     }

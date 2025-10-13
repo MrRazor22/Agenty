@@ -16,6 +16,11 @@ namespace Agenty.LLMCore.ChatHandling
             Role = role;
             Content = content;
         }
+        public Chat(Role role, string content)
+        {
+            Role = role;
+            Content = new TextContent(content);
+        }
     }
 
     public class Conversation : List<Chat>
@@ -27,6 +32,7 @@ namespace Agenty.LLMCore.ChatHandling
         }
 
         public event Action<Chat>? OnChat;
+        public Conversation Add(Role role, string text) => Add(role, new TextContent(text));
 
         public Conversation Add(Role role, TextContent text) => Add(role, (IMessageContent)text);
 

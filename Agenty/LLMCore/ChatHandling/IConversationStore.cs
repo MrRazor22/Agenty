@@ -11,7 +11,6 @@ namespace Agenty.LLMCore.ChatHandling
     {
         Task SaveAsync(string sessionId, Conversation conversation);
         Task<Conversation?> LoadAsync(string sessionId);
-        Task AppendAsync(string sessionId, Chat chat);
     }
 
     public sealed class FileConversationStore : IConversationStore
@@ -53,13 +52,6 @@ namespace Agenty.LLMCore.ChatHandling
 
             var json = await Task.Run(() => File.ReadAllText(file));
             return JsonConvert.DeserializeObject<Conversation>(json);
-        }
-
-        public async Task AppendAsync(string sessionId, Chat chat)
-        {
-            var conv = await LoadAsync(sessionId) ?? new Conversation();
-            conv.Add(chat.Role, chat.Content);
-            await SaveAsync(sessionId, conv);
         }
     }
 }

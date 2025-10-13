@@ -2,9 +2,11 @@
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.Messages;
+using Agenty.LLMCore.Providers.OpenAI;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -125,22 +127,48 @@ namespace Agenty.AgentCore.Flows
         }
     }
 
-    public sealed class FinalizationStep : IAgentStep
+    /// <summary>
+    /// Final step — summarizes the entire chat and streams the assistant’s final message.
+    /// </summary>
+    public sealed class FinalSummaryStep : IAgentStep
     {
-        public Task InvokeAsync(IAgentContext ctx, AgentStepDelegate next)
+        public async Task InvokeAsync(IAgentContext ctx, AgentStepDelegate next)
         {
-            var lastAssistant = ctx.Chat.LastOrDefault(m => m.Role == Role.Assistant);
-            var message = (lastAssistant?.Content as TextContent)?.Text;
+            var logger = ctx.Services.GetService<ILogger<FinalSummaryStep>>();
+            var llmClient = ctx.Services.GetRequiredService<ILLMClient>();
+            string summaryPrompt =
+                "Summarize the entire conversation so far into a single clear, complete, and concise answer to the user's goal.";
 
-            if (string.IsNullOrWhiteSpace(message))
-                message = "No answer was produced.";
+            ctx.Chat.Add(Role.System, summaryPrompt);
 
-            ctx.SetResult(message);
+            // Check if the client supports streaming
+            var supportsStreaming = llmClient is OpenAILLMClient; // you can abstract this later
 
-            ctx.Services.GetService<ILogger<FinalizationStep>>()?
-                .LogInformation("Final result: {Result}", message);
+            if (supportsStreaming)
+            {
+                logger?.LogInformation("FinalSummaryStep: streaming response...");
+                var buffer = "";
 
-            return Task.CompletedTask;
+                await foreach (var chunk in llmClient.GetStreamingResponse(ctx.Chat, ReasoningMode.Balanced))
+                {
+                    Console.Write(chunk);
+                    buffer += chunk;
+                }
+
+                Console.WriteLine(); // newline after stream end
+                ctx.SetResult(buffer);
+            }
+            else
+            {
+                logger?.LogInformation("FinalSummaryStep: non-streaming fallback...");
+                var coordinator = ctx.Services.GetRequiredService<ILLMCoordinator>();
+                var response = await coordinator.GetResponse(ctx.Chat, ReasoningMode.Balanced);
+                ctx.SetResult(response);
+            }
+
+            // Optional: continue pipeline
+            if (next != null)
+                await next(ctx);
         }
     }
 }
