@@ -88,7 +88,7 @@ namespace Agenty.AgentCore.Flows
                 // Ask model to evaluate last answer via structured schema
                 innerChat.Add(Role.User, $"Evaluate the last assistant answer for request [{ctx.Goal}] Return your verdict.");
 
-                var verdict = await llm.GetStructured<Verdict>(ctx.Chat, ReasoningMode.Deterministic);
+                var verdict = await llm.GetStructured<Verdict>(evalPrompt, _mode, _model);
 
                 if (verdict != null)
                 {
