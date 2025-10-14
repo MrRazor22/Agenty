@@ -83,9 +83,7 @@ namespace Agenty.LLMCore.ChatHandling
                 var result = c.Content as ToolCallResult;
                 if (result != null && (filter & ChatFilter.ToolResults) != 0)
                 {
-                    obj["tool_result"] = result.Error != null
-                        ? $"Tool execution error: {result.Error.Message}"
-                        : (result.Result != null ? result.Result.ToString() : null);
+                    obj["tool_result"] = result.Result;
                     obj["tool_id"] = result.Call.Id;
                     obj["tool_name"] = result.Call.Name;
                 }
@@ -139,9 +137,7 @@ namespace Agenty.LLMCore.ChatHandling
             var result = lastResult.Content as ToolCallResult;
             if (result == null) return null;
 
-            return result.Error != null
-                ? "Tool execution error: " + result.Error.Message
-                : (result.Result != null ? result.Result.ToString() : null);
+            return result.Result;
         }
 
         public static Conversation AppendToolResults(this Conversation chat, IEnumerable<ToolCallResult> results)

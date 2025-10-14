@@ -83,7 +83,7 @@ namespace Agenty.AgentCore.Runtime
 
         public async Task<string?> GetResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced, string? model = null)
         {
-            var resp = await _llm.GetResponse(prompt, mode);
+            var resp = await _llm.GetResponse(prompt, mode, model);
             _tokenManager.Record(resp.InputTokens ?? 0, resp.OutputTokens ?? 0);
             return resp.AssistantMessage;
         }
@@ -154,6 +154,7 @@ namespace Agenty.AgentCore.Runtime
         {
             var response = await _llm.GetToolCallResponse(intPrompt, tools, toolCallMode, mode, model);
             _tokenManager.Record(response.InputTokens ?? 0, response.OutputTokens ?? 0);
+            var hadCalls = response.ToolCalls?.Count > 0;
             var valid = new List<ToolCall>();
             foreach (var call in response.ToolCalls)
             {
@@ -184,9 +185,13 @@ namespace Agenty.AgentCore.Runtime
                         "You just gave the same assistant message. Don’t repeat — refine or add new info.");
                     return null!;
                 }
-                var inline = _parser.TryExtractInlineToolCall(_tools, response.AssistantMessage);
-                if (inline != null)
-                    valid.AddRange(inline.Calls);
+                if (!hadCalls)
+                {
+                    // no tool calls at all — check for inline calls
+                    var inline = _parser.TryExtractInlineToolCall(_tools, response.AssistantMessage);
+                    if (inline != null)
+                        valid.AddRange(inline.Calls);
+                }
             }
 
             return new ToolCallResponse(

@@ -70,9 +70,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
                     case Role.Tool when msg.Content is ToolCallResult result:
                         yield return ChatMessage.CreateToolMessage(
                             result.Call.Id,
-                            result.Error != null
-                                ? $"Tool execution error: {result.Error.Message}"
-                                : result.Result?.ToString() ?? "");
+                            result.Result);
                         break;
 
                     default:

@@ -300,13 +300,22 @@ public sealed class ToolValidationError
 public sealed class ToolValidationAggregateException : Exception
 {
     public IReadOnlyList<ToolValidationError> Errors { get; }
+
     public ToolValidationAggregateException(IEnumerable<ToolValidationError> errors)
         : base("Tool validation failed") => Errors = errors.ToList();
+
+    public override string ToString()
+        => $"Validation failed for the following {Errors.Count} parameters:\n" +
+        $" {string.Join(", ", Errors.Select(e => e.ToString()))}";
 }
 
 public sealed class ToolValidationException : Exception
 {
     public string ParamName { get; }
+
     public ToolValidationException(string param, string msg)
-        : base($"Validation failed for '{param}': {msg}") => ParamName = param;
+        : base($"Validation failed for parameter '{param}'. Details: '{msg}'") => ParamName = param;
+
+    public override string ToString()
+        => $"[{ParamName}] => {Message}";
 }

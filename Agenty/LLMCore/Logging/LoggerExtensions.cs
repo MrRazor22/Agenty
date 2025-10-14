@@ -27,7 +27,7 @@ public static class LoggerExtensions
             {
                 Role.User => LogLevel.Information,
                 Role.Assistant => LogLevel.Information,
-                Role.Tool => LogLevel.Debug,
+                Role.Tool => LogLevel.Information,
                 _ => LogLevel.Debug
             };
 

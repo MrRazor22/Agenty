@@ -80,23 +80,22 @@ namespace Agenty.LLMCore.ToolHandling
             {
                 if (string.IsNullOrWhiteSpace(call.Name) && !string.IsNullOrWhiteSpace(call.Message))
                 {
-                    results.Add(new ToolCallResult(call, null, null));
-                    continue;
+                    results.Add(new ToolCallResult(call, null));
                 }
 
                 try
                 {
                     var result = await InvokeAsync(call);
-                    results.Add(new ToolCallResult(call, result, null));
+                    results.Add(new ToolCallResult(call, result));
                 }
                 catch (ToolValidationAggregateException vex)
                 {
                     // Structured validation failure
-                    results.Add(new ToolCallResult(call, null, vex));
+                    results.Add(new ToolCallResult(call, vex));
                 }
                 catch (ToolExecutionException tex)
                 {
-                    results.Add(new ToolCallResult(call, null, tex));
+                    results.Add(new ToolCallResult(call, tex));
                 }
             }
 
@@ -109,7 +108,11 @@ namespace Agenty.LLMCore.ToolHandling
     public sealed class ToolExecutionException : Exception
     {
         public string ToolName { get; }
+
         public ToolExecutionException(string toolName, string message, Exception inner)
             : base(message, inner) => ToolName = toolName;
+
+        public override string ToString()
+            => $"Tool '{ToolName}' failed. Reason: '{Message}'";
     }
 }

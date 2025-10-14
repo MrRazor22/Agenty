@@ -38,10 +38,11 @@ namespace TestApp
                     .WithTools<WeatherTool>()
                     .WithTools<ConversionTools>()
                     .WithTools<MathTools>()
-                    .Use<ReflectionStep>()
-                    .Use<FinalSummaryStep>()
-                    .Use<ToolCallingStep>()
-                    .Use<PlanningStep>();
+                    .WithTools<SearchTools>()
+                    .Use(() => new ReflectionStep("publisherme/llama/llama-3.2-3b-instruct-q4_k_m.gguf"))
+                    .Use(() => new FinalSummaryStep())
+                    .Use(() => new ToolCallingStep())
+                    .Use(() => new PlanningStep("phi"));
 
                 // === 5. Run (ASP.NET: app.Run()) ===
                 while (true)

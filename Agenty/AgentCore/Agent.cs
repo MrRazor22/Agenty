@@ -20,14 +20,14 @@ namespace Agenty.AgentCore
     public interface IAgentContext
     {
         Conversation Chat { get; }
-        string? Goal { get; set; }
-        AgentResult Result { get; }
+        string? UserRequest { get; set; }
+        AgentResponse Response { get; }
         IServiceProvider Services { get; }
         IDictionary<string, object?> Items { get; }
         CancellationToken CancellationToken { get; }
     }
 
-    public sealed class AgentResult
+    public sealed class AgentResponse
     {
         public string? Message { get; private set; }
         public object? Payload { get; private set; }
@@ -43,7 +43,7 @@ namespace Agenty.AgentCore
 
     internal sealed class AgentContext : IAgentContext
     {
-        private readonly AgentResult _result = new AgentResult();
+        private readonly AgentResponse _reponse = new AgentResponse();
 
         public AgentContext(IServiceProvider services, CancellationToken cancellationToken = default)
         {
@@ -54,12 +54,12 @@ namespace Agenty.AgentCore
         }
 
         public Conversation Chat { get; }
-        public string? Goal { get; set; }
-        public AgentResult Result => _result;
+        public string? UserRequest { get; set; }
+        public AgentResponse Response => _reponse;
         public IServiceProvider Services { get; }
         public IDictionary<string, object?> Items { get; }
         public CancellationToken CancellationToken { get; }
-        public void SetResult(string? message, object? payload) => _result.Set(message, payload);
+        public void SetResult(string? message, object? payload) => _reponse.Set(message, payload);
     }
 
     // === 2. AgentBuilder (like WebApplicationBuilder) ===
@@ -149,7 +149,6 @@ namespace Agenty.AgentCore
             if (_store == null) return;
             await _store.SaveAsync(sessionId, _history);
         }
-
         // app.Use(...)
         public Agent Use(Func<IAgentContext, AgentStepDelegate, Task> middleware)
         {
@@ -158,17 +157,29 @@ namespace Agenty.AgentCore
             return this;
         }
 
-        public Agent Use<TStep>() where TStep : IAgentStep, new()
-            => Use((ctx, next) => new TStep().InvokeAsync(ctx, next));
+        // default overload — supports DI and optional constructors
+        public Agent Use<TStep>() where TStep : IAgentStep
+        {
+            return Use((ctx, next) =>
+            {
+                // create step via DI if possible (uses ctx.Services scope)
+                var step = (TStep)ActivatorUtilities.CreateInstance(ctx.Services, typeof(TStep));
+                return step.InvokeAsync(ctx, next);
+            });
+        }
 
+        // user-supplied factory (explicit constructor)
         public Agent Use<TStep>(Func<TStep> factory) where TStep : IAgentStep
-            => Use((ctx, next) => factory().InvokeAsync(ctx, next));
+        {
+            return Use((ctx, next) => factory().InvokeAsync(ctx, next));
+        }
+
 
         // run
-        public async Task<AgentResult> ExecuteAsync(string goal, CancellationToken ct = default)
+        public async Task<AgentResponse> ExecuteAsync(string goal, CancellationToken ct = default)
         {
             using var scope = _services.CreateScope();
-            var ctx = new AgentContext(scope.ServiceProvider, ct) { Goal = goal };
+            var ctx = new AgentContext(scope.ServiceProvider, ct) { UserRequest = goal };
 
             try
             {
@@ -188,13 +199,13 @@ namespace Agenty.AgentCore
                 await _pipeline(ctx);
                 sw.Stop();
 
-                ctx.Result.Duration = sw.Elapsed;
+                ctx.Response.Duration = sw.Elapsed;
 
                 var tokenMgr = ctx.Services.GetService<ITokenManager>();
-                ctx.Result.TokensUsed = tokenMgr?.GetTotals().Total ?? 0;
+                ctx.Response.TokensUsed = tokenMgr?.GetTotals().Total ?? 0;
 
-                if (!string.IsNullOrWhiteSpace(ctx.Result.Message))
-                    _history.AddAssistant(ctx.Result.Message!);
+                if (!string.IsNullOrWhiteSpace(ctx.Response.Message))
+                    _history.AddAssistant(ctx.Response.Message!);
             }
             catch (Exception ex)
             {
@@ -202,7 +213,7 @@ namespace Agenty.AgentCore
                 ctx.SetResult($"Error: {ex.Message}", null);
             }
 
-            return ctx.Result;
+            return ctx.Response;
         }
 
         public static AgentBuilder CreateBuilder() => new AgentBuilder();
@@ -210,7 +221,7 @@ namespace Agenty.AgentCore
 
     public interface IAgent
     {
-        Task<AgentResult> ExecuteAsync(string goal, CancellationToken cancellationToken = default);
+        Task<AgentResponse> ExecuteAsync(string goal, CancellationToken cancellationToken = default);
     }
 
 

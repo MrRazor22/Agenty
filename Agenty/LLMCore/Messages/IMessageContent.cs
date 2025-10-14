@@ -72,15 +72,13 @@ namespace Agenty.LLMCore.Messages
 
     public sealed class ToolCallResult : IMessageContent
     {
-        public ToolCallResult(ToolCall call, object result, Exception error)
+        public ToolCall Call { get; }
+        public string Result { get; }
+
+        public ToolCallResult(ToolCall call, object? result)
         {
             Call = call;
-            Result = result;
-            Error = error;
+            Result = result?.ToPrettyJson() ?? "null";
         }
-
-        public ToolCall Call { get; }
-        public object? Result { get; }
-        public Exception? Error { get; }
     }
 }
