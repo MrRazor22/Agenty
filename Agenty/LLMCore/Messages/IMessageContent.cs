@@ -80,7 +80,7 @@ namespace Agenty.LLMCore.Messages
         }
 
         public ToolCall Call { get; }
-        public object Result { get; }
-        public Exception Error { get; }
+        public object? Result { get; }
+        public Exception? Error { get; }
     }
 }

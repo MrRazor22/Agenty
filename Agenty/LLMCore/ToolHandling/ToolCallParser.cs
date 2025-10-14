@@ -11,8 +11,8 @@ namespace Agenty.LLMCore.ToolHandling
 {
     public interface IToolCallParser
     {
-        ToolCallResponse TryExtractInlineToolCall(IToolRegistry registry, string content, bool strict = false);
-        object[] ParseToolParams(IToolRegistry registry, string toolName, JObject arguments);
+        ToolCallResponse TryExtractInlineToolCall(IToolCatalog tools, string content, bool strict = false);
+        object[] ParseToolParams(IToolCatalog tools, string toolName, JObject arguments);
         List<ToolValidationError> ValidateAgainstSchema(JToken? node, JObject schema, string path = "");
     }
 
@@ -74,7 +74,7 @@ namespace Agenty.LLMCore.ToolHandling
         );
         #endregion
 
-        public ToolCallResponse TryExtractInlineToolCall(IToolRegistry registry, string content, bool strict = false)
+        public ToolCallResponse TryExtractInlineToolCall(IToolCatalog tools, string content, bool strict = false)
         {
             var matches = ToolTagPattern.Matches(content).Cast<Match>()
                 .Concat(LooseToolJsonPattern.Matches(content).Cast<Match>())
@@ -115,16 +115,16 @@ namespace Agenty.LLMCore.ToolHandling
                     if (string.IsNullOrEmpty(name))
                         return new ToolCallResponse(Array.Empty<ToolCall>(), "Tool call missing 'name'.", null);
 
-                    if (!registry.Contains(name))
+                    if (!tools.Contains(name))
                         return new ToolCallResponse(Array.Empty<ToolCall>(),
-                            $"Tool `{name}` not registered. Available: {string.Join(", ", registry.RegisteredTools.Select(t => t.Name))}",
+                            $"Tool `{name}` not registered. Available: {string.Join(", ", tools.RegisteredTools.Select(t => t.Name))}",
                             null);
 
                     var id = node.ContainsKey("id")
                         ? node["id"]?.ToString() ?? Guid.NewGuid().ToString()
                         : Guid.NewGuid().ToString();
 
-                    toolCalls.Add(new ToolCall(id, name, args, ParseToolParams(registry, name, args), message));
+                    toolCalls.Add(new ToolCall(id, name, args, ParseToolParams(tools, name, args), message));
                     continue;
                 }
 
@@ -152,9 +152,9 @@ namespace Agenty.LLMCore.ToolHandling
             return new ToolCallResponse(toolCalls, assistantMessage, null);
         }
 
-        public object[] ParseToolParams(IToolRegistry registry, string toolName, JObject arguments)
+        public object[] ParseToolParams(IToolCatalog tools, string toolName, JObject arguments)
         {
-            var tool = registry.Get(toolName);
+            var tool = tools.Get(toolName);
             if (tool == null || tool.Function == null)
                 throw new InvalidOperationException($"Tool '{toolName}' not registered or has no function.");
 

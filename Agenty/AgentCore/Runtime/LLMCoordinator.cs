@@ -1,4 +1,5 @@
-﻿using Agenty.LLMCore;
+﻿using Agenty.AgentCore.TokenHandling;
+using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Messages;
@@ -32,71 +33,79 @@ namespace Agenty.AgentCore.Runtime
 
     public interface ILLMCoordinator
     {
-        // Plain response (text only, convenience)
-        Task<string?> GetResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced);
+        Task<string?> GetResponse(
+            Conversation prompt,
+            ReasoningMode mode = ReasoningMode.Balanced,
+            string? model = null);
 
-        // Structured JSON response (T must be a reference type)
-        Task<T?> GetStructured<T>(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced)
+        Task<T?> GetStructured<T>(
+            Conversation prompt,
+            ReasoningMode mode = ReasoningMode.Balanced,
+            string? model = null)
             where T : class;
 
-        // Tool calls (returns only what agent devs care about)
         Task<ToolCallResponse> GetToolCallResponse(
             Conversation prompt,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
             ReasoningMode mode = ReasoningMode.Balanced,
+            string? model = null,
             params Tool[] tools);
 
-        // Tool execution
         Task<IReadOnlyList<ToolCallResult>> RunToolCalls(List<ToolCall> toolCalls);
     }
 
 
-    public sealed class LLMCoordinator : ILLMCoordinator
+
+    internal sealed class LLMCoordinator : ILLMCoordinator
     {
         private readonly ILLMClient _llm;
-        private readonly IToolRegistry _registry;
+        private readonly IToolCatalog _tools;
         private readonly IToolRuntime _Runtime;
         private readonly IToolCallParser _parser;
+        private readonly ITokenManager _tokenManager;
         private readonly IRetryPolicy _retryPolicy;
 
         public LLMCoordinator(
             ILLMClient llm,
-            IToolRegistry registry,
+            IToolCatalog registry,
             IToolRuntime Runtime,
             IToolCallParser parser,
+            ITokenManager tokenManager,
             IRetryPolicy retryPolicy)
         {
             _llm = llm;
-            _registry = registry;
+            _tools = registry;
             _Runtime = Runtime;
             _parser = parser;
+            _tokenManager = tokenManager;
             _retryPolicy = retryPolicy;
         }
 
-        public async Task<string?> GetResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced)
+        public async Task<string?> GetResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced, string? model = null)
         {
             var resp = await _llm.GetResponse(prompt, mode);
+            _tokenManager.Record(resp.InputTokens ?? 0, resp.OutputTokens ?? 0);
             return resp.AssistantMessage;
         }
 
-        public async Task<T?> GetStructured<T>(Conversation prompt, ReasoningMode mode = ReasoningMode.Deterministic) where T : class
+        public async Task<T?> GetStructured<T>(Conversation prompt, ReasoningMode mode = ReasoningMode.Deterministic, string? model = null) where T : class
         {
 #if DEBUG
-            return await RunStructuredOnce<T>(prompt, mode); // no retry, easy to step through
+            return await RunStructuredOnce<T>(prompt, mode, model); // no retry, easy to step through
 #else
     return await _retryPolicy.ExecuteAsync(intPrompt => RunOnce<T>(intPrompt, mode), prompt);
 #endif
         }
 
-        private async Task<T?> RunStructuredOnce<T>(Conversation intPrompt, ReasoningMode mode) where T : class
+        private async Task<T?> RunStructuredOnce<T>(Conversation intPrompt, ReasoningMode mode, string? model = null) where T : class
         {
             // build schema with Newtonsoft
             var schema = JsonSchemaExtensions.GetSchemaFor<T>(); // JObject
-            var response = await _llm.GetStructuredResponse(intPrompt, schema, mode);
-
+            var response = await _llm.GetStructuredResponse(intPrompt, schema, mode, model);
+            _tokenManager.Record(response.InputTokens ?? 0, response.OutputTokens ?? 0);
             if (response?.StructuredResult == null)
             {
-                intPrompt.Add(Role.Assistant, $"Empty/invalid. Return valid JSON for {typeof(T).Name}.");
+                intPrompt.AddAssistant($"Empty/invalid. Return valid JSON for {typeof(T).Name}.");
                 return default;
             }
 
@@ -106,7 +115,7 @@ namespace Agenty.AgentCore.Runtime
             if (errors.Any())
             {
                 var msg = string.Join("; ", errors.Select(e => $"{e.Path}: {e.Message}"));
-                intPrompt.Add(Role.Assistant, $"Validation failed: {msg}. Return valid JSON for {typeof(T).Name}.");
+                intPrompt.AddAssistant($"Validation failed: {msg}. Return valid JSON for {typeof(T).Name}.");
                 return default;
             }
 
@@ -120,13 +129,14 @@ namespace Agenty.AgentCore.Runtime
     Conversation prompt,
     ToolCallMode toolCallMode = ToolCallMode.Auto,
     ReasoningMode mode = ReasoningMode.Balanced,
+    string? model = null,
     params Tool[] tools)
         {
-            tools = tools?.Any() == true ? tools : _registry.RegisteredTools.ToArray();
+            tools = tools?.Any() == true ? tools : _tools.RegisteredTools.ToArray();
             if (tools.Length == 0) throw new ArgumentException("No tools registered.", nameof(tools));
 
 #if DEBUG
-            return await RunToolCallOnce(prompt, toolCallMode, mode, tools);
+            return await RunToolCallOnce(prompt, toolCallMode, mode, tools, model);
 #else
     var resp = await _retryPolicy.ExecuteAsync(
         intPrompt => RunToolCallOnce(intPrompt, toolCallMode, mode, tools),
@@ -139,19 +149,20 @@ namespace Agenty.AgentCore.Runtime
             Conversation intPrompt,
             ToolCallMode toolCallMode,
             ReasoningMode mode,
-            Tool[] tools)
+            Tool[] tools,
+            string? model = null)
         {
-            var response = await _llm.GetToolCallResponse(intPrompt, tools, toolCallMode, mode);
-
+            var response = await _llm.GetToolCallResponse(intPrompt, tools, toolCallMode, mode, model);
+            _tokenManager.Record(response.InputTokens ?? 0, response.OutputTokens ?? 0);
             var valid = new List<ToolCall>();
             foreach (var call in response.ToolCalls)
             {
-                if (_registry.Contains(call.Name))
+                if (_tools.Contains(call.Name))
                 {
                     if (intPrompt.IsToolAlreadyCalled(call))
                     {
                         string lastResult = intPrompt.GetLastToolCallResult(call);
-                        intPrompt.Add(Role.User,
+                        intPrompt.AddUser(
                             $"Tool `{call.Name}` was already called with the same arguments. " +
                             $"The result was: {lastResult}. ");
                         continue;
@@ -160,7 +171,7 @@ namespace Agenty.AgentCore.Runtime
                         call.Id ?? Guid.NewGuid().ToString(),
                         call.Name,
                         call.Arguments,
-                        _parser.ParseToolParams(_registry, call.Name, call.Arguments)
+                        _parser.ParseToolParams(_tools, call.Name, call.Arguments)
                     ));
                 }
             }
@@ -169,11 +180,11 @@ namespace Agenty.AgentCore.Runtime
             {
                 if (intPrompt.IsLastAssistantMessageSame(response.AssistantMessage))
                 {
-                    intPrompt.Add(Role.User,
+                    intPrompt.AddUser(
                         "You just gave the same assistant message. Don’t repeat — refine or add new info.");
                     return null!;
                 }
-                var inline = _parser.TryExtractInlineToolCall(_registry, response.AssistantMessage);
+                var inline = _parser.TryExtractInlineToolCall(_tools, response.AssistantMessage);
                 if (inline != null)
                     valid.AddRange(inline.Calls);
             }

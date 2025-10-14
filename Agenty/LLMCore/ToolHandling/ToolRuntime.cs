@@ -17,18 +17,18 @@ namespace Agenty.LLMCore.ToolHandling
 
     public sealed class ToolRuntime : IToolRuntime
     {
-        private readonly IToolRegistry _registry;
+        private readonly IToolCatalog _tools;
 
-        public ToolRuntime(IToolRegistry registry)
+        public ToolRuntime(IToolCatalog registry)
         {
-            _registry = registry ?? throw new ArgumentNullException(nameof(registry));
+            _tools = registry ?? throw new ArgumentNullException(nameof(registry));
         }
 
         public async Task<object?> InvokeAsync(ToolCall toolCall)
         {
             if (toolCall == null) throw new ArgumentNullException(nameof(toolCall));
 
-            var tool = _registry.Get(toolCall.Name);
+            var tool = _tools.Get(toolCall.Name);
             if (tool?.Function == null)
                 throw new ToolExecutionException(
                     toolCall.Name,

@@ -9,17 +9,9 @@ using System.Reflection;
 
 namespace Agenty.LLMCore.ToolHandling
 {
-    public interface IToolRegistry
+    public interface IToolCatalog
     {
         IReadOnlyList<Tool> RegisteredTools { get; }
-
-        void Register(params Delegate[] funcs);
-        void Register(Delegate func, params string[] tags);
-
-        void RegisterAll<T>(params string[] tags);
-        void RegisterAll<T>(T instance, params string[] tags);
-
-
         Tool Get(Delegate func);   // return null if not found
         Tool Get(string toolName); // return null if not found
 
@@ -29,20 +21,29 @@ namespace Agenty.LLMCore.ToolHandling
         bool Contains(string toolName);
     }
 
-    public class ToolRegistry : IToolRegistry
+    internal interface IToolRegistry
+    {
+        void Register(params Delegate[] funcs);
+        void Register(Delegate func, params string[] tags);
+
+        void RegisterAll<T>(params string[] tags);
+        void RegisterAll<T>(T instance, params string[] tags);
+    }
+
+    internal class ToolRegistryCatalog : IToolRegistry, IToolCatalog
     {
         private readonly List<Tool> _registeredTools;
 
-        public ToolRegistry(IEnumerable<Tool> tools = null)
+        public ToolRegistryCatalog(IEnumerable<Tool> tools = null)
         {
             _registeredTools = tools != null ? new List<Tool>(tools) : new List<Tool>();
         }
 
         public IReadOnlyList<Tool> RegisteredTools => _registeredTools;
 
-        public static implicit operator ToolRegistry(List<Tool> tools)
+        public static implicit operator ToolRegistryCatalog(List<Tool> tools)
         {
-            return new ToolRegistry(tools);
+            return new ToolRegistryCatalog(tools);
         }
 
         public void Register(params Delegate[] funcs)

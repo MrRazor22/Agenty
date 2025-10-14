@@ -11,9 +11,9 @@ using Microsoft.Extensions.Logging;
 
 namespace TestApp
 {
-    public static class Program
+    public static class ConsoleRunner
     {
-        public static async Task Main()
+        public static async Task RunAsync()
         {
             Agent app = null;
             try
@@ -33,15 +33,15 @@ namespace TestApp
 
                 await app.LoadHistoryAsync("default");
 
-                app.WithSystemPrompt("You are a helpful assistant that answers concisely.")
+                app.WithSystemPrompt("You are a helpful assistant that executes user requests.")
                     .WithTools<GeoTools>()
                     .WithTools<WeatherTool>()
                     .WithTools<ConversionTools>()
                     .WithTools<MathTools>()
-                    .Use<PlanningStep>()
-                    .Use(() => new ToolCallingStep(ToolCallMode.Auto, ReasoningMode.Balanced))
                     .Use<ReflectionStep>()
-                    .Use<FinalSummaryStep>();
+                    .Use<FinalSummaryStep>()
+                    .Use<ToolCallingStep>()
+                    .Use<PlanningStep>();
 
                 // === 5. Run (ASP.NET: app.Run()) ===
                 while (true)

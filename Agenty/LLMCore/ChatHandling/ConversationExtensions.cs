@@ -1,4 +1,5 @@
-﻿using Agenty.LLMCore.JsonSchema;
+﻿using Agenty.AgentCore.TokenHandling;
+using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
 using Newtonsoft.Json;
@@ -23,6 +24,20 @@ namespace Agenty.LLMCore.ChatHandling
 
     public static class ConversationExtensions
     {
+        public static Conversation AddUser(this Conversation convo, string text)
+       => convo.Add(Role.User, new TextContent(text));
+
+        public static Conversation AddSystem(this Conversation convo, string text)
+            => convo.Add(Role.System, new TextContent(text));
+
+        public static Conversation AddAssistant(this Conversation convo, string text)
+            => convo.Add(Role.Assistant, new TextContent(text));
+
+        public static Conversation AddToolCall(this Conversation convo, ToolCall call)
+            => convo.Add(Role.Assistant, call);
+
+        public static Conversation AddToolResult(this Conversation convo, ToolCallResult result)
+            => convo.Add(Role.Tool, result);
         public static Conversation CloneFrom(this Conversation target, Conversation source)
         {
             target.Clear();
@@ -69,7 +84,7 @@ namespace Agenty.LLMCore.ChatHandling
                 if (result != null && (filter & ChatFilter.ToolResults) != 0)
                 {
                     obj["tool_result"] = result.Error != null
-                        ? "Tool execution error: " + result.Error.Message
+                        ? $"Tool execution error: {result.Error.Message}"
                         : (result.Result != null ? result.Result.ToString() : null);
                     obj["tool_id"] = result.Call.Id;
                     obj["tool_name"] = result.Call.Name;
@@ -109,7 +124,7 @@ namespace Agenty.LLMCore.ChatHandling
                 ((ToolCall)m.Content).Arguments.NormalizeArgs() == argKey);
         }
 
-        public static string GetLastToolCallResult(this Conversation chat, ToolCall toolCall)
+        public static string? GetLastToolCallResult(this Conversation chat, ToolCall toolCall)
         {
             var argKey = toolCall.Arguments != null ? toolCall.Arguments.NormalizeArgs() : "";
 
@@ -133,13 +148,13 @@ namespace Agenty.LLMCore.ChatHandling
         {
             foreach (var r in results)
             {
-                chat.Add(Role.Assistant, r.Call);
-                chat.Add(Role.Tool, r);
+                chat.AddToolCall(r.Call);
+                chat.AddToolResult(r);
             }
             return chat;
         }
 
-        public static string GetCurrentUserRequest(this Conversation chat)
+        public static string? GetCurrentUserRequest(this Conversation chat)
         {
             var lastUser = chat.LastOrDefault(m => m.Role == Role.User);
             var text = lastUser != null ? lastUser.Content as TextContent : null;

@@ -6,55 +6,73 @@ using OpenAI;
 using OpenAI.Chat;
 using System;
 using System.ClientModel;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
 namespace Agenty.LLMCore.Providers.OpenAI
 {
-    public class OpenAILLMClient : ILLMClient
+    internal sealed class OpenAILLMClient : ILLMClient
     {
         private OpenAIClient? _client;
-        private ChatClient? _chatClient;
+        private readonly ConcurrentDictionary<string, ChatClient> _chatClients =
+            new ConcurrentDictionary<string, ChatClient>(StringComparer.OrdinalIgnoreCase);
 
-        public void Initialize(string baseUrl, string apiKey, string modelName = "any_model")
+        private string? _defaultModel;
+
+        public void Initialize(string baseUrl, string apiKey, string modelName = "gpt-4o")
         {
             _client = new OpenAIClient(
                 credential: new ApiKeyCredential(apiKey),
                 options: new OpenAIClientOptions { Endpoint = new Uri(baseUrl) }
             );
 
-            _chatClient = _client.GetChatClient(modelName);
+            _defaultModel = modelName;
+            _chatClients[modelName] = _client.GetChatClient(modelName);
         }
 
-        private void EnsureInitialized()
+        private ChatClient GetChatClient(string? model = null)
         {
-            if (_client is null || _chatClient is null)
+            if (_client == null)
                 throw new InvalidOperationException("Client not initialized. Call Initialize() first.");
+
+            var key = model ?? _defaultModel ?? throw new InvalidOperationException("Model not specified.");
+            return _chatClients.GetOrAdd(key, m => _client.GetChatClient(m));
         }
 
-        public async Task<LLMResponse> GetResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced)
+        public async Task<LLMResponse> GetResponse(
+            Conversation prompt,
+            ReasoningMode mode = ReasoningMode.Balanced,
+            string? model = null)
         {
-            EnsureInitialized();
-            ChatCompletionOptions options = new ChatCompletionOptions() { ToolChoice = ChatToolChoice.CreateNoneChoice() };
+            var chat = GetChatClient(model);
+            var options = new ChatCompletionOptions { ToolChoice = ChatToolChoice.CreateNoneChoice() };
             options.ApplyLLMMode(mode);
 
-            var response = await _chatClient!.CompleteChatAsync(prompt.ToChatMessages(), options);
+            var response = await chat.CompleteChatAsync(prompt.ToChatMessages(), options);
+            var result = response.Value;
+            var text = string.Join("", result.Content.Select(c => c.Text));
 
-            string? text = string.Join("", response.Value.Content.Select(part => part.Text));
             return new LLMResponse(
                 assistantMessage: string.IsNullOrWhiteSpace(text) ? null : text,
-                finishReason: response.Value.FinishReason.ToString()
-            );
+                finishReason: result.FinishReason.ToString())
+            {
+                InputTokens = result.Usage?.InputTokenCount,
+                OutputTokens = result.Usage?.OutputTokenCount
+            };
         }
 
-        public async IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced)
+        public async IAsyncEnumerable<string> GetStreamingResponse(
+            Conversation prompt,
+            ReasoningMode mode = ReasoningMode.Balanced,
+            string? model = null)
         {
-            EnsureInitialized();
-            ChatCompletionOptions options = new ChatCompletionOptions();
+            var chat = GetChatClient(model);
+            var options = new ChatCompletionOptions();
             options.ApplyLLMMode(mode);
 
-            await foreach (var update in _chatClient!.CompleteChatStreamingAsync(prompt.ToChatMessages(), options))
+            await foreach (var update in chat.CompleteChatStreamingAsync(prompt.ToChatMessages(), options))
             {
                 foreach (var part in update.ContentUpdate)
                     yield return part.Text;
@@ -62,63 +80,54 @@ namespace Agenty.LLMCore.Providers.OpenAI
         }
 
         public async Task<LLMResponse> GetToolCallResponse(
-    Conversation prompt,
-    IEnumerable<Tool> tools,
-    ToolCallMode toolCallMode = ToolCallMode.Auto,
-    ReasoningMode mode = ReasoningMode.Deterministic)
+            Conversation prompt,
+            IEnumerable<Tool> tools,
+            ToolCallMode toolCallMode = ToolCallMode.Auto,
+            ReasoningMode mode = ReasoningMode.Deterministic,
+            string? model = null)
         {
-            EnsureInitialized();
-
-            var options = new ChatCompletionOptions
-            {
-                ToolChoice = toolCallMode.ToChatToolChoice()
-            };
+            var chat = GetChatClient(model);
+            var options = new ChatCompletionOptions { ToolChoice = toolCallMode.ToChatToolChoice() };
             options.ApplyLLMMode(mode);
 
             foreach (var t in tools.ToChatTools())
                 options.Tools.Add(t);
 
-            var response = await _chatClient!.CompleteChatAsync(prompt.ToChatMessages(), options);
+            var response = await chat.CompleteChatAsync(prompt.ToChatMessages(), options);
             var result = response.Value;
 
             var toolCalls = new List<ToolCall>();
-            if (result.ToolCalls != null && result.ToolCalls.Count > 0)
+            if (result.ToolCalls != null)
             {
-                foreach (var chatToolCall in result.ToolCalls)
+                foreach (var call in result.ToolCalls)
                 {
-                    var name = chatToolCall.FunctionName;
-                    var args = chatToolCall.FunctionArguments != null
-    ? JObject.Parse(chatToolCall.FunctionArguments.ToString())
-    : new JObject();
+                    var args = call.FunctionArguments != null
+                        ? JObject.Parse(call.FunctionArguments.ToString())
+                        : new JObject();
 
-                    toolCalls.Add(new ToolCall(
-                        chatToolCall.Id ?? Guid.NewGuid().ToString(),
-                        name,
-                        args
-                    ));
+                    toolCalls.Add(new ToolCall(call.Id ?? Guid.NewGuid().ToString(), call.FunctionName, args));
                 }
-
             }
 
-            string? content = (result.Content != null && result.Content.Count > 0)
-                ? result.Content[0].Text
-                : null;
+            var content = result.Content?.FirstOrDefault()?.Text;
 
             return new LLMResponse(
                 assistantMessage: string.IsNullOrWhiteSpace(content) ? null : content,
                 toolCalls: toolCalls,
-                finishReason: result != null ? result.FinishReason.ToString() : null
-            );
+                finishReason: result.FinishReason.ToString())
+            {
+                InputTokens = result.Usage?.InputTokenCount,
+                OutputTokens = result.Usage?.OutputTokenCount
+            };
         }
 
-
         public async Task<LLMResponse> GetStructuredResponse(
-    Conversation prompt,
-    JObject responseFormat,
-    ReasoningMode mode = ReasoningMode.Deterministic)
+            Conversation prompt,
+            JObject responseFormat,
+            ReasoningMode mode = ReasoningMode.Deterministic,
+            string? model = null)
         {
-            EnsureInitialized();
-
+            var chat = GetChatClient(model);
             var options = new ChatCompletionOptions
             {
                 ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
@@ -128,17 +137,19 @@ namespace Agenty.LLMCore.Providers.OpenAI
             };
             options.ApplyLLMMode(mode);
 
-            var response = await _chatClient!.CompleteChatAsync(prompt.ToChatMessages(), options);
+            var response = await chat.CompleteChatAsync(prompt.ToChatMessages(), options);
             var result = response.Value;
 
             var text = result.Content[0].Text;
-
-            JObject structured = JObject.Parse(text);
+            var structured = JObject.Parse(text);
 
             return new LLMResponse(
                 structuredResult: structured,
-                finishReason: result?.FinishReason.ToString()
-            );
+                finishReason: result.FinishReason.ToString())
+            {
+                InputTokens = result.Usage?.InputTokenCount,
+                OutputTokens = result.Usage?.OutputTokenCount
+            };
         }
     }
 }

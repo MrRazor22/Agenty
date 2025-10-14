@@ -11,17 +11,18 @@ namespace Agenty.LLMCore
     {
         void Initialize(string url, string apiKey, string modelName);
 
-        Task<LLMResponse> GetResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced);
-        IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced);
+        Task<LLMResponse> GetResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced, string? model = null);
+        IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced, string? model = null);
         Task<LLMResponse> GetToolCallResponse(
             Conversation prompt,
             IEnumerable<Tool> tools,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
-            ReasoningMode mode = ReasoningMode.Balanced);
+            ReasoningMode mode = ReasoningMode.Balanced,
+            string? model = null);
         Task<LLMResponse> GetStructuredResponse(
             Conversation prompt,
             JObject responseFormat,
-            ReasoningMode mode = ReasoningMode.Balanced);
+            ReasoningMode mode = ReasoningMode.Balanced, string? model = null);
     }
 
     public enum ToolCallMode
@@ -45,6 +46,9 @@ namespace Agenty.LLMCore
         public JObject? StructuredResult { get; set; }   // <-- Newtonsoft JObject
         public List<ToolCall> ToolCalls { get; set; } = new List<ToolCall>();
         public string? FinishReason { get; set; }
+        public int? InputTokens { get; set; }
+        public int? OutputTokens { get; set; }
+        public int? TotalTokens => (InputTokens ?? 0) + (OutputTokens ?? 0);
 
         public LLMResponse() { }
 

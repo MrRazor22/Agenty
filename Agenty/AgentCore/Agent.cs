@@ -34,7 +34,7 @@ namespace Agenty.AgentCore
         public TimeSpan Duration { get; internal set; }
         public int TokensUsed { get; internal set; }
 
-        internal void Set(string? message, object? payload)
+        internal void Set(string? message = null, object? payload = null)
         {
             Message = message;
             Payload = payload;
@@ -70,10 +70,14 @@ namespace Agenty.AgentCore
         public AgentBuilder()
         {
             Services.AddSingleton<IConversationStore, FileConversationStore>();
-            Services.AddLogging(builder => builder.AddConsole());
-            Services.AddSingleton<IToolRegistry, ToolRegistry>();
+            Services.AddSingleton<ITokenizer, SharpTokenTokenizer>();
+            Services.AddSingleton<IContextTrimmer, SlidingWindowTrimmer>();
+            Services.AddSingleton<ToolRegistryCatalog>();
+            Services.AddSingleton<IToolRegistry>(sp => sp.GetRequiredService<ToolRegistryCatalog>());
+            Services.AddSingleton<IToolCatalog>(sp => sp.GetRequiredService<ToolRegistryCatalog>());
             Services.AddSingleton<IToolRuntime, ToolRuntime>();
-            Services.AddSingleton<ITokenManager, SlidingWindowTokenManager>();
+            Services.AddSingleton<ITokenManager, TokenManager>();
+            Services.AddLogging(builder => builder.AddConsole());
         }
 
         public Agent Build()
@@ -96,6 +100,8 @@ namespace Agenty.AgentCore
         private readonly IServiceProvider _services;
         private readonly Conversation _history = new Conversation();
         private readonly IConversationStore? _store;
+
+        private int _maxContextTokens = 8000;
         private AgentStepDelegate _pipeline = ctx => Task.CompletedTask;
 
         internal Agent(IServiceProvider services)
@@ -119,7 +125,13 @@ namespace Agenty.AgentCore
 
         public Agent WithSystemPrompt(string prompt)
         {
-            _history.Add(Role.System, prompt);
+            _history.AddSystem(prompt);
+            return this;
+        }
+
+        public Agent WithMaxContextWindow(int maxTokens)
+        {
+            _maxContextTokens = maxTokens;
             return this;
         }
 
@@ -161,18 +173,28 @@ namespace Agenty.AgentCore
             try
             {
                 ctx.Chat.CloneFrom(_history);
-                ctx.Chat.Add(Role.User, goal);
+                ctx.Chat.AddUser(goal);
+
+                // attach logger once per run
+                var logger = ctx.Services.GetService<ILogger<Agent>>();
+                logger?.AttachTo(ctx.Chat, "Agent");
+
+                // Trim before execution
+                var ctxTrimmer = ctx.Services.GetService<IContextTrimmer>();
+                var usable = (int)(_maxContextTokens * 0.6); // keep 40% for headroom
+                ctxTrimmer?.Trim(ctx.Chat, usable);
 
                 var sw = Stopwatch.StartNew();
                 await _pipeline(ctx);
                 sw.Stop();
+
                 ctx.Result.Duration = sw.Elapsed;
 
                 var tokenMgr = ctx.Services.GetService<ITokenManager>();
-                ctx.Result.TokensUsed = tokenMgr?.CountTokens(ctx.Chat) ?? 0;
+                ctx.Result.TokensUsed = tokenMgr?.GetTotals().Total ?? 0;
 
                 if (!string.IsNullOrWhiteSpace(ctx.Result.Message))
-                    _history.Add(Role.Assistant, ctx.Result.Message);
+                    _history.AddAssistant(ctx.Result.Message!);
             }
             catch (Exception ex)
             {
@@ -216,11 +238,12 @@ namespace Agenty.AgentCore
             builder.Services.AddSingleton<ILLMCoordinator>(sp =>
             {
                 var llmClient = sp.GetRequiredService<ILLMClient>();
-                var registry = sp.GetRequiredService<IToolRegistry>();
+                var registry = sp.GetRequiredService<IToolCatalog>();
                 var runtime = sp.GetRequiredService<IToolRuntime>();
+                var tokenManager = sp.GetRequiredService<ITokenManager>();
                 var parser = new ToolCallParser();
                 var retry = new DefaultRetryPolicy();
-                return new LLMCoordinator(llmClient, registry, runtime, parser, retry);
+                return new LLMCoordinator(llmClient, registry, runtime, parser, tokenManager, retry);
             });
 
             return builder;

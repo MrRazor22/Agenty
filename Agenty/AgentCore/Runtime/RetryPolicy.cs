@@ -53,7 +53,7 @@ namespace Agenty.AgentCore.Runtime
                     if (attempt == _maxRetries)
                         throw;
 
-                    intPrompt.Add(Role.Assistant,
+                    intPrompt.AddAssistant(
                         $"The last response failed with [{ex.Message}]. Please retry.");
 
                     var delay = TimeSpan.FromMilliseconds(
@@ -62,7 +62,7 @@ namespace Agenty.AgentCore.Runtime
                     await Task.Delay(delay);
                 }
 
-                intPrompt.Add(Role.Assistant, "Invalid or empty output. Please try again.");
+                intPrompt.AddAssistant("Invalid or empty output. Please try again.");
             }
 
             return default;
