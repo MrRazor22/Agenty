@@ -1,4 +1,5 @@
 ﻿using Agenty.LLMCore.ChatHandling;
+using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
 using OpenAI;
@@ -70,7 +71,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
                     case Role.Tool when msg.Content is ToolCallResult result:
                         yield return ChatMessage.CreateToolMessage(
                             result.Call.Id,
-                            result.Result);
+                            result.Result.AsJsonString());
                         break;
 
                     default:

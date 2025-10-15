@@ -35,7 +35,7 @@ namespace Agenty.LLMCore.JsonSchema
             }
         }
 
-        public static string AsJSONString(this object? obj)
+        public static string AsJsonString(this object? obj)
         {
             if (obj == null) return "<null>";
             return obj is string s ? s : JsonConvert.SerializeObject(obj);

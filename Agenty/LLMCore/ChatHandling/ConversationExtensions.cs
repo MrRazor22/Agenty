@@ -125,7 +125,7 @@ namespace Agenty.LLMCore.ChatHandling
                 ((ToolCall)m.Content).Arguments.NormalizeArgs() == argKey);
         }
 
-        public static string? GetLastToolCallResult(this Conversation chat, ToolCall toolCall)
+        public static object? GetLastToolCallResult(this Conversation chat, ToolCall toolCall)
         {
             var argKey = toolCall.Arguments != null ? toolCall.Arguments.NormalizeArgs() : "";
 

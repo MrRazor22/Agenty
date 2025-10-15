@@ -157,10 +157,10 @@ namespace Agenty.AgentCore.Runtime
                 {
                     if (intPrompt.IsToolAlreadyCalled(call))
                     {
-                        string lastResult = intPrompt.GetLastToolCallResult(call)!;
+                        var lastResult = intPrompt.GetLastToolCallResult(call)!;
                         intPrompt.AddUser(
                             $"Tool `{call.Name}` was already called with the same arguments. " +
-                            $"The result was: {lastResult}. ");
+                            $"The result was: {lastResult?.AsPrettyJson()}. ");
                         continue;
                     }
                     valid.Add(new ToolCall(

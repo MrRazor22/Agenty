@@ -22,7 +22,7 @@ namespace Agenty
                 : "<empty>";
         }
 
-        public static string ToPrettyJson(this object obj)
+        public static string AsPrettyJson(this object obj)
         {
             if (obj == null)
                 return "null";
