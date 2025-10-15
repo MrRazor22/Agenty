@@ -1,13 +1,6 @@
 ﻿using Agenty.AgentCore;
 using Agenty.AgentCore.Flows;
-using Agenty.AgentCore.Runtime;
-using Agenty.LLMCore;
 using Agenty.LLMCore.BuiltInTools;
-using Agenty.LLMCore.Logging;
-using Agenty.LLMCore.Providers.OpenAI;
-using Agenty.LLMCore.ToolHandling;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace TestApp
 {
@@ -15,7 +8,7 @@ namespace TestApp
     {
         public static async Task RunAsync()
         {
-            Agent app = null;
+            Agent? app = null;
             try
             {
                 // === 1. Create builder (ASP.NET: WebApplication.CreateBuilder) ===
@@ -33,7 +26,7 @@ namespace TestApp
 
                 await app.LoadHistoryAsync("default");
 
-                app.WithSystemPrompt("You are a helpful assistant that executes user requests.")
+                app.WithSystemPrompt("You are a helpful assistant that executes user requests. Answer in a user friendly way. You can't run code, dont generate or suggest code.")
                     .WithTools<GeoTools>()
                     .WithTools<WeatherTool>()
                     .WithTools<ConversionTools>()
@@ -57,15 +50,29 @@ namespace TestApp
                     }
 
                     var result = await app.ExecuteAsync(goal);
+
+                    // Simple
                     Console.WriteLine("\n=== Agent Result ===");
-                    Console.WriteLine("Response: " + result.Message);
-                    Console.WriteLine("Time: " + result.Duration);
-                    Console.WriteLine("Tokens: " + result.TokensUsed);
+                    Console.WriteLine(result.Message);
+
+                    // Diagnostics - flat access
+                    Console.WriteLine("Duration: " + result.Diagnostics.Duration.TotalSeconds + "s");
+                    Console.WriteLine("Total: " + result.Diagnostics.TotalTokens.Total + " tokens");
+                    Console.WriteLine("Input: " + result.Diagnostics.TotalTokens.InputTokens);
+                    Console.WriteLine("Output: " + result.Diagnostics.TotalTokens.OutputTokens);
+
+                    // Breakdown
+                    foreach (var kvp in result.Diagnostics.TokensBySource)
+                    {
+                        var step = kvp.Key;
+                        var usage = kvp.Value;
+                        Console.WriteLine("  " + step + ": " + usage.Total + " tokens");
+                    }
                 }
             }
             finally
             {
-                await app.SaveHistoryAsync("default");
+                await app?.SaveHistoryAsync("default");
             }
         }
     }

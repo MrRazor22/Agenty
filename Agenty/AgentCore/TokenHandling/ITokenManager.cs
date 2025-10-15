@@ -1,14 +1,13 @@
-﻿using Agenty.LLMCore.ChatHandling;
-using SharpToken;
-using System.Threading;
+﻿using System;
+using System.Collections.Generic;
 
 namespace Agenty.AgentCore.TokenHandling
 {
-
-    public struct TokenUsage
+    public readonly struct TokenUsage
     {
-        public int InputTokens;
-        public int OutputTokens;
+        public int InputTokens { get; }
+        public int OutputTokens { get; }
+        public int Total => InputTokens + OutputTokens;
 
         public TokenUsage(int input, int output)
         {
@@ -16,32 +15,65 @@ namespace Agenty.AgentCore.TokenHandling
             OutputTokens = output;
         }
 
-        public int Total { get { return InputTokens + OutputTokens; } }
+        public static TokenUsage operator -(TokenUsage a, TokenUsage b)
+            => new TokenUsage(a.InputTokens - b.InputTokens, a.OutputTokens - b.OutputTokens);
+
         public static readonly TokenUsage Empty = new TokenUsage(0, 0);
     }
 
     public interface ITokenManager
     {
-        void Record(int inputTokens, int outputTokens);
+        /// <summary>
+        /// Record token usage. If source is null, uses current step from StepContext.
+        /// </summary>
+        void Record(int inputTokens, int outputTokens, string? source = null);
+
+        /// <summary>
+        /// Get total tokens used across all calls.
+        /// </summary>
         TokenUsage GetTotals();
+
+        /// <summary>
+        /// Get token usage broken down by source (step name, etc).
+        /// </summary>
+        IReadOnlyDictionary<string, TokenUsage> GetBySource();
     }
 
-    internal sealed class TokenManager : ITokenManager
+    public sealed class TokenManager : ITokenManager
     {
-        private long _input;
-        private long _output;
+        private int _input;
+        private int _output;
+        private readonly Dictionary<string, TokenUsage> _sources = new Dictionary<string, TokenUsage>();
+        private readonly object _lock = new object();
 
-        public void Record(int inputTokens, int outputTokens)
+        public void Record(int inputTokens, int outputTokens, string? source = null)
         {
-            Interlocked.Add(ref _input, inputTokens);
-            Interlocked.Add(ref _output, outputTokens);
+            lock (_lock)
+            {
+                // Always update global totals
+                _input += inputTokens;
+                _output += outputTokens;
+
+                // Determine source: explicit > AsyncLocal > "Unknown"
+                var actualSource = source
+                    ?? StepContext.Current.Value
+                    ?? "Unknown";
+
+                // Track by source
+                var usage = _sources.TryGetValue(actualSource, out var existing)
+                    ? existing
+                    : TokenUsage.Empty;
+
+                usage = new TokenUsage(
+                    usage.InputTokens + inputTokens,
+                    usage.OutputTokens + outputTokens);
+
+                _sources[actualSource] = usage;
+            }
         }
 
-        public TokenUsage GetTotals()
-        {
-            var input = Interlocked.Read(ref _input);
-            var output = Interlocked.Read(ref _output);
-            return new TokenUsage((int)input, (int)output);
-        }
+        public TokenUsage GetTotals() => new TokenUsage(_input, _output);
+
+        public IReadOnlyDictionary<string, TokenUsage> GetBySource() => _sources;
     }
 }

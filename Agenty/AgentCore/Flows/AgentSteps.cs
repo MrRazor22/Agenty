@@ -30,7 +30,8 @@ namespace Agenty.AgentCore.Flows
 
             var plan = await llm.GetResponse(new Conversation().CloneFrom(ctx.Chat)
                 .AddSystem("You are a planning assistant, Give a short brief concise plan for the given request in to executable tasks" +
-                $"Assume that you can use these tools for the request: [{tools.RegisteredTools}].")
+                $"Assume that you can use these tools for the request: [{tools.RegisteredTools}]." +
+                $"But if request is simple enough, just deciding on what to respond directly is the plan")
                 .AddUser($"Give me a plan for the request [{ctx.UserRequest}]."),
                 _mode, _model);
 
@@ -48,11 +49,13 @@ namespace Agenty.AgentCore.Flows
     {
         private readonly string? _model;
         private readonly ReasoningMode _mode;
-
-        public ToolCallingStep(string? model = null, ReasoningMode mode = ReasoningMode.Balanced)
+        int maxIteratios;
+        int iterations = 0;
+        public ToolCallingStep(string? model = null, ReasoningMode mode = ReasoningMode.Balanced, int maxIterations = 50)
         {
             _model = model;
             _mode = mode;
+            maxIteratios = maxIterations;
         }
 
         public async Task InvokeAsync(IAgentContext ctx, AgentStepDelegate next)
@@ -60,11 +63,12 @@ namespace Agenty.AgentCore.Flows
             var llm = ctx.Services.GetRequiredService<ILLMCoordinator>();
 
             var resp = await llm.GetToolCallResponse(ctx.Chat, ToolCallMode.Auto, _mode, _model);
-            while (resp.Calls.Count > 0)
+            while (resp.Calls.Count > 0 && iterations < maxIteratios)
             {
                 var results = await llm.RunToolCalls(resp.Calls.ToList());
                 ctx.Chat.AppendToolResults(results);
                 resp = await llm.GetToolCallResponse(ctx.Chat, ToolCallMode.Auto, _mode, _model);
+                iterations++;
             }
 
             if (!string.IsNullOrWhiteSpace(resp.AssistantMessage))
@@ -89,14 +93,17 @@ namespace Agenty.AgentCore.Flows
         {
             var llm = ctx.Services.GetRequiredService<ILLMCoordinator>();
 
-            var response = await llm.GetResponse(new Conversation()
-                .AddSystem("Summarize the entire conversation so far into a single clear, complete, and concise answer to the user's request. Make sure to include all key details.")
-                .AddUser($"Here is the user's request [{ctx.UserRequest}], and here is the entire conversation so far: [{ctx.Chat.ToJson(ChatFilter.All & ~(ChatFilter.System))}]"),
-                 _mode, _model);
+            var summaryChat = new Conversation()
+                .CloneFrom(ctx.Chat) // Keep the structured messages
+                .AddUser("Summarize the key points concisely.");
+
+            var response = await llm.GetResponse(
+                summaryChat,
+                _mode, _model);
 
             ctx.Response.Set(response, null);
             var logger = ctx.Services.GetService<ILogger<FinalSummaryStep>>();
-            logger.LogInformation($"Final summary: {ctx.Response.Message}");
+            logger?.LogInformation($"Final summary: {ctx.Response.Message}");
             await next(ctx);
         }
     }

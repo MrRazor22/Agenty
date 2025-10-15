@@ -2,7 +2,6 @@
 using Agenty.AgentCore.TokenHandling;
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
-using Agenty.LLMCore.Logging;
 using Agenty.LLMCore.Providers.OpenAI;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,15 +25,40 @@ namespace Agenty.AgentCore
         IDictionary<string, object?> Items { get; }
         CancellationToken CancellationToken { get; }
     }
+    public sealed class AgentDiagnostics
+    {
+        public TimeSpan Duration { get; }
+        public TokenUsage TotalTokens { get; }
+        public IReadOnlyDictionary<string, TokenUsage> TokensBySource { get; }
 
+        public AgentDiagnostics(
+            TimeSpan duration,
+            TokenUsage totalTokens,
+            IReadOnlyDictionary<string, TokenUsage> tokensBySource)
+        {
+            Duration = duration;
+            TotalTokens = totalTokens;
+            TokensBySource = tokensBySource;
+        }
+
+        public static readonly AgentDiagnostics Empty = new AgentDiagnostics(
+            TimeSpan.Zero,
+            TokenUsage.Empty,
+            new Dictionary<string, TokenUsage>()
+        );
+    }
     public sealed class AgentResponse
     {
-        public string? Message { get; private set; }
-        public object? Payload { get; private set; }
-        public TimeSpan Duration { get; internal set; }
-        public int TokensUsed { get; internal set; }
+        public string Message { get; private set; }
+        public object Payload { get; private set; }
+        public AgentDiagnostics Diagnostics { get; internal set; }
 
-        internal void Set(string? message = null, object? payload = null)
+        internal AgentResponse()
+        {
+            Diagnostics = AgentDiagnostics.Empty;
+        }
+
+        internal void Set(string message = null, object payload = null)
         {
             Message = message;
             Payload = payload;
@@ -77,7 +101,16 @@ namespace Agenty.AgentCore
             Services.AddSingleton<IToolCatalog>(sp => sp.GetRequiredService<ToolRegistryCatalog>());
             Services.AddSingleton<IToolRuntime, ToolRuntime>();
             Services.AddSingleton<ITokenManager, TokenManager>();
-            Services.AddLogging(builder => builder.AddConsole());
+            Services.AddLogging(builder =>
+            {
+                builder.AddSimpleConsole(options =>
+                {
+                    options.SingleLine = false;
+                    options.TimestampFormat = "hh:mm:ss ";
+                    options.UseUtcTimestamp = false;
+                    options.IncludeScopes = false;
+                });
+            });
         }
 
         public Agent Build()
@@ -157,63 +190,95 @@ namespace Agenty.AgentCore
             return this;
         }
 
-        // default overload — supports DI and optional constructors
-        public Agent Use<TStep>() where TStep : IAgentStep
+        // default overload — supports DI and optional constructors 
+        // unified Use<TStep> — handles both DI and factory forms
+        public Agent Use<TStep>(Func<TStep>? factory = null) where TStep : IAgentStep
         {
-            return Use((ctx, next) =>
+            return Use(async (ctx, next) =>
             {
-                // create step via DI if possible (uses ctx.Services scope)
-                var step = (TStep)ActivatorUtilities.CreateInstance(ctx.Services, typeof(TStep));
-                return step.InvokeAsync(ctx, next);
+                var logger = ctx.Services.GetService<ILogger<Agent>>();
+                var tokenMgr = ctx.Services.GetService<ITokenManager>();
+                var stepName = typeof(TStep).Name;
+
+                var before = tokenMgr?.GetTotals() ?? TokenUsage.Empty;
+                var sw = Stopwatch.StartNew();
+
+                var prev = StepContext.Current.Value;
+                StepContext.Current.Value = stepName;
+
+                try
+                {
+                    var step = factory != null
+                        ? factory()
+                        : (TStep)ActivatorUtilities.CreateInstance(ctx.Services, typeof(TStep));
+
+                    await step.InvokeAsync(ctx, next);
+                }
+                finally
+                {
+                    StepContext.Current.Value = prev;
+                }
+
+                sw.Stop();
+                var after = tokenMgr?.GetTotals() ?? TokenUsage.Empty;
+                var delta = after - before;
+
+                logger?.LogDebug(
+                    "│ Step: {Step,-20} │ Time: {Ms,6} ms │ Tokens: {Tokens,6} │ Total: {Total,6} │",
+                    stepName, sw.ElapsedMilliseconds, delta.Total, after.Total);
             });
         }
-
-        // user-supplied factory (explicit constructor)
-        public Agent Use<TStep>(Func<TStep> factory) where TStep : IAgentStep
-        {
-            return Use((ctx, next) => factory().InvokeAsync(ctx, next));
-        }
-
 
         // run
         public async Task<AgentResponse> ExecuteAsync(string goal, CancellationToken ct = default)
         {
-            using var scope = _services.CreateScope();
-            var ctx = new AgentContext(scope.ServiceProvider, ct) { UserRequest = goal };
-
-            try
+            using (var scope = _services.CreateScope())
             {
-                ctx.Chat.CloneFrom(_history);
-                ctx.Chat.AddUser(goal);
+                var ctx = new AgentContext(scope.ServiceProvider, ct) { UserRequest = goal };
 
-                // attach logger once per run
-                var logger = ctx.Services.GetService<ILogger<Agent>>();
-                logger?.AttachTo(ctx.Chat, "Agent");
+                try
+                {
+                    ctx.Chat.CloneFrom(_history);
+                    ctx.Chat.AddUser(goal);
 
-                // Trim before execution
-                var ctxTrimmer = ctx.Services.GetService<IContextTrimmer>();
-                var usable = (int)(_maxContextTokens * 0.6); // keep 40% for headroom
-                ctxTrimmer?.Trim(ctx.Chat, usable);
+                    var logger = ctx.Services.GetService<ILogger<Agent>>();
+                    logger.AttachTo(ctx.Chat);
 
-                var sw = Stopwatch.StartNew();
-                await _pipeline(ctx);
-                sw.Stop();
+                    var ctxTrimmer = ctx.Services.GetService<IContextTrimmer>();
+                    if (ctxTrimmer != null)
+                    {
+                        var usable = (int)(_maxContextTokens * 0.6);
+                        ctxTrimmer.Trim(ctx.Chat, usable);
+                    }
 
-                ctx.Response.Duration = sw.Elapsed;
+                    var sw = Stopwatch.StartNew();
+                    await _pipeline(ctx);
+                    sw.Stop();
 
-                var tokenMgr = ctx.Services.GetService<ITokenManager>();
-                ctx.Response.TokensUsed = tokenMgr?.GetTotals().Total ?? 0;
+                    // Create diagnostics from TokenManager
+                    var tokenMgr = ctx.Services.GetService<ITokenManager>();
+                    ctx.Response.Diagnostics = tokenMgr != null
+                     ? new AgentDiagnostics(
+                         sw.Elapsed,
+                         tokenMgr.GetTotals(),
+                         tokenMgr.GetBySource()
+                       )
+                     : AgentDiagnostics.Empty;
 
-                if (!string.IsNullOrWhiteSpace(ctx.Response.Message))
-                    _history.AddAssistant(ctx.Response.Message!);
+                    if (!string.IsNullOrWhiteSpace(ctx.Response.Message))
+                        _history.AddAssistant(ctx.Response.Message);
+                }
+                catch (Exception ex)
+                {
+                    var logger = ctx.Services.GetService<ILogger<Agent>>();
+                    if (logger != null)
+                        logger.LogError(ex, "Agent execution failed");
+
+                    ctx.SetResult("Error: " + ex.Message, null);
+                }
+
+                return ctx.Response;
             }
-            catch (Exception ex)
-            {
-                ctx.Services.GetService<ILogger<Agent>>()?.LogError(ex, "Agent execution failed");
-                ctx.SetResult($"Error: {ex.Message}", null);
-            }
-
-            return ctx.Response;
         }
 
         public static AgentBuilder CreateBuilder() => new AgentBuilder();
@@ -259,5 +324,14 @@ namespace Agenty.AgentCore
 
             return builder;
         }
+    }
+
+    /// <summary>
+    /// Tracks the current step name using AsyncLocal for implicit context flow.
+    /// Similar to how ASP.NET tracks HttpContext.
+    /// </summary>
+    public static class StepContext
+    {
+        public static readonly AsyncLocal<string?> Current = new AsyncLocal<string?>();
     }
 }
