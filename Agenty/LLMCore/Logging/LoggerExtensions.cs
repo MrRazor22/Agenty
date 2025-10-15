@@ -46,11 +46,7 @@ public static class LoggerExtensions
         // if JSON, pretty print it
         try
         {
-            var json = content.AsPrettyJson();
-            var parsed = JsonConvert.DeserializeObject(json);
-            if (parsed != null)
-                return JsonConvert.SerializeObject(parsed, Formatting.Indented);
-            return json;
+            return content.AsPrettyJson();
         }
         catch
         {

@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json;
+﻿using Agenty.LLMCore.Messages;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using System;
 using System.Collections.Generic;
@@ -22,9 +23,9 @@ namespace Agenty
                 : "<empty>";
         }
 
-        public static string AsPrettyJson(this object obj)
+        public static string AsPrettyJson(this object? obj)
         {
-            if (obj == null)
+            if (obj is null)
                 return "null";
 
             var settings = new JsonSerializerSettings
@@ -33,7 +34,13 @@ namespace Agenty
                 NullValueHandling = NullValueHandling.Ignore,
                 Converters = { new StringEnumConverter() }
             };
+
+            // flatten ToolCallResult for cleaner logs
+            if (obj is ToolCallResult t)
+                obj = new { CallId = t.Call.Id, t.Result };
+
             return JsonConvert.SerializeObject(obj, settings);
         }
+
     }
 }
