@@ -24,15 +24,18 @@ namespace Agenty.AgentCore.Runtime
         private readonly int _maxRetries;
         private readonly TimeSpan _initialDelay;
         private readonly double _backoffFactor;
+        private readonly TimeSpan _timeout;
 
         public DefaultRetryPolicy(
             int maxRetries = 3,
             TimeSpan? initialDelay = null,
-            double backoffFactor = 2.0)
+            double backoffFactor = 2.0,
+            TimeSpan? timeout = null)
         {
             _maxRetries = maxRetries;
             _initialDelay = initialDelay ?? TimeSpan.FromMilliseconds(500);
             _backoffFactor = backoffFactor;
+            _timeout = timeout ?? TimeSpan.FromSeconds(30);
         }
 
         public async Task<T?> ExecuteAsync<T>(
@@ -46,23 +49,23 @@ namespace Agenty.AgentCore.Runtime
             {
                 try
                 {
-                    return await action(intPrompt);
+                    var task = action(intPrompt);
+                    var completed = await Task.WhenAny(task, Task.Delay(_timeout));
+                    if (completed != task)
+                        throw new TimeoutException($"LLM call timed out after {_timeout.TotalSeconds}s");
+
+                    return await task;
                 }
                 catch (Exception ex)
                 {
                     if (attempt == _maxRetries)
                         throw;
 
-                    intPrompt.AddAssistant(
-                        $"The last response failed with [{ex.Message}]. Please retry.");
-
+                    intPrompt.AddAssistant($"Attempt {attempt + 1} failed: {ex.Message}. Retrying...");
                     var delay = TimeSpan.FromMilliseconds(
                         _initialDelay.TotalMilliseconds * Math.Pow(_backoffFactor, attempt));
-
                     await Task.Delay(delay);
                 }
-
-                intPrompt.AddAssistant("Invalid or empty output. Please try again.");
             }
 
             return default;

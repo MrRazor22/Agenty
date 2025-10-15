@@ -90,11 +90,7 @@ namespace Agenty.AgentCore.Runtime
 
         public async Task<T?> GetStructured<T>(Conversation prompt, ReasoningMode mode = ReasoningMode.Deterministic, string? model = null) where T : class
         {
-#if DEBUG
-            return await RunStructuredOnce<T>(prompt, mode, model); // no retry, easy to step through
-#else
-    return await _retryPolicy.ExecuteAsync(intPrompt => RunOnce<T>(intPrompt, mode), prompt);
-#endif
+            return await _retryPolicy.ExecuteAsync(intPrompt => RunStructuredOnce<T>(intPrompt, mode, model), prompt);
         }
 
         private async Task<T?> RunStructuredOnce<T>(Conversation intPrompt, ReasoningMode mode, string? model = null) where T : class
@@ -133,17 +129,16 @@ namespace Agenty.AgentCore.Runtime
     params Tool[] tools)
         {
             tools = tools?.Any() == true ? tools : _tools.RegisteredTools.ToArray();
-            if (tools.Length == 0) throw new ArgumentException("No tools registered.", nameof(tools));
+            if (tools.Length == 0)
+                throw new ArgumentException("No tools registered.", nameof(tools));
 
-#if DEBUG
-            return await RunToolCallOnce(prompt, toolCallMode, mode, tools, model);
-#else
-    var resp = await _retryPolicy.ExecuteAsync(
-        intPrompt => RunToolCallOnce(intPrompt, toolCallMode, mode, tools),
-        prompt);
-    return resp ?? new ToolCallResponse(Array.Empty<ToolCall>(), "No tool call produced.", null);
-#endif
+            var resp = await _retryPolicy.ExecuteAsync(
+                async intPrompt => await RunToolCallOnce(intPrompt, toolCallMode, mode, tools, model),
+                prompt);
+
+            return resp ?? new ToolCallResponse(Array.Empty<ToolCall>(), "No tool call produced.", null);
         }
+
 
         private async Task<ToolCallResponse> RunToolCallOnce(
             Conversation intPrompt,
@@ -154,15 +149,15 @@ namespace Agenty.AgentCore.Runtime
         {
             var response = await _llm.GetToolCallResponse(intPrompt, tools, toolCallMode, mode, model);
             _tokenManager.Record(response.InputTokens ?? 0, response.OutputTokens ?? 0);
-            var hadCalls = response.ToolCalls?.Count > 0;
             var valid = new List<ToolCall>();
-            foreach (var call in response.ToolCalls)
+            var hadCalls = (response.ToolCalls?.Count ?? 0) > 0;
+            foreach (var call in response.ToolCalls ?? Enumerable.Empty<ToolCall>())
             {
                 if (_tools.Contains(call.Name))
                 {
                     if (intPrompt.IsToolAlreadyCalled(call))
                     {
-                        string lastResult = intPrompt.GetLastToolCallResult(call);
+                        string lastResult = intPrompt.GetLastToolCallResult(call)!;
                         intPrompt.AddUser(
                             $"Tool `{call.Name}` was already called with the same arguments. " +
                             $"The result was: {lastResult}. ");
@@ -179,7 +174,7 @@ namespace Agenty.AgentCore.Runtime
 
             if (valid.Count == 0 && !string.IsNullOrWhiteSpace(response.AssistantMessage))
             {
-                if (intPrompt.IsLastAssistantMessageSame(response.AssistantMessage))
+                if (intPrompt.IsLastAssistantMessageSame(response.AssistantMessage!))
                 {
                     intPrompt.AddUser(
                         "You just gave the same assistant message. Don’t repeat — refine or add new info.");

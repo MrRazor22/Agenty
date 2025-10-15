@@ -38,24 +38,27 @@ namespace Agenty.LLMCore.ChatHandling
 
         public static Conversation AddToolResult(this Conversation convo, ToolCallResult result)
             => convo.Add(Role.Tool, result);
-        public static Conversation CloneFrom(this Conversation target, Conversation source)
+        public static Conversation CloneFrom(this Conversation target, Conversation source, ChatFilter filter = ChatFilter.All)
         {
             target.Clear();
+
             foreach (var message in source)
+            {
+                if (!ShouldInclude(message, filter)) continue;
                 target.Add(message.Role, message.Content);
+            }
+
             return target;
         }
+
         public static string ToJson(this Conversation chat, ChatFilter filter = ChatFilter.All)
         {
             var items = new List<object>();
 
             foreach (var c in chat)
             {
-                // filter by role
-                if (c.Role == Role.System && (filter & ChatFilter.System) == 0) continue;
-                if (c.Role == Role.User && (filter & ChatFilter.User) == 0) continue;
-                if (c.Role == Role.Assistant && (filter & ChatFilter.Assistant) == 0 && (filter & ChatFilter.ToolCalls) == 0) continue;
-                if (c.Role == Role.Tool && (filter & ChatFilter.ToolResults) == 0) continue;
+                if (!ShouldInclude(c, filter))
+                    continue;
 
                 var obj = new Dictionary<string, object>();
                 obj["role"] = c.Role.ToString().ToLowerInvariant();
@@ -167,5 +170,22 @@ namespace Agenty.LLMCore.ChatHandling
                 chat.Skip(lastUserIndex).Where(m => m.Role != Role.System)
             );
         }
+        private static bool ShouldInclude(Chat chat, ChatFilter filter)
+        {
+            return chat.Role switch
+            {
+                Role.System => (filter & ChatFilter.System) != 0,
+                Role.User => (filter & ChatFilter.User) != 0,
+                Role.Tool => (filter & ChatFilter.ToolResults) != 0,
+                Role.Assistant => chat.Content switch
+                {
+                    ToolCall _ => (filter & ChatFilter.ToolCalls) != 0,
+                    TextContent _ => (filter & ChatFilter.Assistant) != 0,
+                    _ => false
+                },
+                _ => false
+            };
+        }
+
     }
 }

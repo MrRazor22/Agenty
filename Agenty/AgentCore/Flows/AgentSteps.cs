@@ -29,10 +29,8 @@ namespace Agenty.AgentCore.Flows
             var tools = ctx.Services.GetRequiredService<IToolCatalog>();
 
             var plan = await llm.GetResponse(new Conversation().CloneFrom(ctx.Chat)
-                .AddSystem("You are a planning assistant, Give a short brief concise plan for the given request in to executable tasks" +
-                $"Assume that you can use these tools for the request: [{tools.RegisteredTools}]." +
-                $"But if request is simple enough, just deciding on what to respond directly is the plan")
-                .AddUser($"Give me a plan for the request [{ctx.UserRequest}]."),
+                .AddSystem("Plan the steps to handle the user’s request using the available tools. Keep it short, clear, and action-focused.")
+                .AddUser($"Plan for: {ctx.UserRequest}"),
                 _mode, _model);
 
             if (!string.IsNullOrWhiteSpace(plan))
@@ -94,8 +92,8 @@ namespace Agenty.AgentCore.Flows
             var llm = ctx.Services.GetRequiredService<ILLMCoordinator>();
 
             var summaryChat = new Conversation()
-                .CloneFrom(ctx.Chat) // Keep the structured messages
-                .AddUser("Summarize the key points concisely.");
+                .CloneFrom(ctx.Chat, ChatFilter.All & ~ChatFilter.System)  // Keep the structured messages
+                .AddUser("Summarize the conversation into one short, clear answer to the user’s request.");
 
             var response = await llm.GetResponse(
                 summaryChat,
