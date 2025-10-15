@@ -49,8 +49,8 @@ namespace Agenty.AgentCore
     }
     public sealed class AgentResponse
     {
-        public string Message { get; private set; }
-        public object Payload { get; private set; }
+        public string? Message { get; private set; }
+        public object? Payload { get; private set; }
         public AgentDiagnostics Diagnostics { get; internal set; }
 
         internal AgentResponse()
@@ -58,7 +58,7 @@ namespace Agenty.AgentCore
             Diagnostics = AgentDiagnostics.Empty;
         }
 
-        internal void Set(string message = null, object payload = null)
+        internal void Set(string? message = null, object? payload = null)
         {
             Message = message;
             Payload = payload;

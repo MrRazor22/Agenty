@@ -70,7 +70,7 @@ namespace Agenty.AgentCore.Flows
             }
 
             if (!string.IsNullOrWhiteSpace(resp.AssistantMessage))
-                ctx.Chat.AddAssistant(resp.AssistantMessage);
+                ctx.Chat.AddAssistant(resp.AssistantMessage!);
 
             await next(ctx);
         }
@@ -146,8 +146,8 @@ namespace Agenty.AgentCore.Flows
                         }
                     }
 
-                    ctx.Chat.Add(Role.Assistant, response);
-                    ctx.Response.Set(response, null);
+                    ctx.Chat.Add(Role.Assistant, response!);
+                    ctx.Response.Set(response!, null);
                 }
             }
 
