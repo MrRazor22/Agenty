@@ -135,11 +135,23 @@ namespace Agenty.LLMCore.ChatHandling
             var argKey = toolCall.Arguments != null ? toolCall.Arguments.NormalizeArgs() : "";
 
             return chat.Any(m =>
-                m.Role == Role.Assistant &&
                 m.Content is ToolCall &&
                 ((ToolCall)m.Content).Name == toolCall.Name &&
                 ((ToolCall)m.Content).Arguments.NormalizeArgs() == argKey);
         }
+        public static bool ExistsIn(this ToolCall call, Conversation chat, IEnumerable<ToolCall>? also = null)
+        {
+            var key = call.Arguments?.NormalizeArgs() ?? "";
+
+            return (also?.Any(c =>
+                        c.Name == call.Name &&
+                        (c.Arguments?.NormalizeArgs() ?? "") == key) ?? false)
+                   || chat.Any(m =>
+                        m.Content is ToolCall t &&
+                        t.Name == call.Name &&
+                        (t.Arguments?.NormalizeArgs() ?? "") == key);
+        }
+
 
         public static object? GetLastToolCallResult(this Conversation chat, ToolCall toolCall)
         {

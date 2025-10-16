@@ -63,6 +63,7 @@ namespace Agenty.AgentCore.Flows
             var resp = await llm.GetToolCallResponse(ctx.Chat, ToolCallMode.Auto, _mode, _model);
             while (resp.Calls.Count > 0 && iterations < maxIteratios)
             {
+                ctx.Chat.AddAssistant(resp.AssistantMessage!);
                 var results = await llm.RunToolCalls(resp.Calls.ToList());
                 ctx.Chat.AppendToolCallAndResults(results);
                 resp = await llm.GetToolCallResponse(ctx.Chat, ToolCallMode.Auto, _mode, _model);
@@ -144,7 +145,7 @@ namespace Agenty.AgentCore.Flows
                             if (!string.IsNullOrWhiteSpace(refinement))
                                 response ??= refinement;
                         }
-                    } 
+                    }
                     ctx.Chat.AddAssistant(response);
                     ctx.Response.Set(response);
                 }

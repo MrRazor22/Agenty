@@ -155,7 +155,7 @@ namespace Agenty.AgentCore.Runtime
             {
                 if (_tools.Contains(call.Name))
                 {
-                    if (intPrompt.IsToolAlreadyCalled(call))
+                    if (call.ExistsIn(intPrompt, valid))
                     {
                         var lastResult = intPrompt.GetLastToolCallResult(call)!;
                         intPrompt.AddUser(
