@@ -24,20 +24,36 @@ namespace Agenty.LLMCore.ChatHandling
 
     public static class ConversationExtensions
     {
-        public static Conversation AddUser(this Conversation convo, string text)
-       => convo.Add(Role.User, new TextContent(text));
+        public static Conversation AddUser(this Conversation convo, string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return convo;
+            return convo.Add(Role.User, new TextContent(text!));
+        }
 
-        public static Conversation AddSystem(this Conversation convo, string text)
-            => convo.Add(Role.System, new TextContent(text));
+        public static Conversation AddSystem(this Conversation convo, string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return convo;
+            return convo.Add(Role.System, new TextContent(text!));
+        }
 
-        public static Conversation AddAssistant(this Conversation convo, string text)
-            => convo.Add(Role.Assistant, new TextContent(text));
+        public static Conversation AddAssistant(this Conversation convo, string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return convo;
+            return convo.Add(Role.Assistant, new TextContent(text!));
+        }
 
-        public static Conversation AddToolCall(this Conversation convo, ToolCall call)
-            => convo.Add(Role.Assistant, call);
+        public static Conversation AddToolCall(this Conversation convo, ToolCall? call)
+        {
+            if (call == null) return convo;
+            return convo.Add(Role.Assistant, call);
+        }
 
-        public static Conversation AddToolResult(this Conversation convo, ToolCallResult result)
-            => convo.Add(Role.Tool, result);
+        public static Conversation AddToolResult(this Conversation convo, ToolCallResult? result)
+        {
+            if (result == null) return convo;
+            return convo.Add(Role.Tool, result);
+        }
+
         public static Conversation CloneFrom(this Conversation target, Conversation source, ChatFilter filter = ChatFilter.All)
         {
             target.Clear();
@@ -143,7 +159,7 @@ namespace Agenty.LLMCore.ChatHandling
             return result.Result;
         }
 
-        public static Conversation AppendToolResults(this Conversation chat, IEnumerable<ToolCallResult> results)
+        public static Conversation AppendToolCallAndResults(this Conversation chat, IEnumerable<ToolCallResult> results)
         {
             foreach (var r in results)
             {

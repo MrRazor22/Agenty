@@ -64,13 +64,12 @@ namespace Agenty.AgentCore.Flows
             while (resp.Calls.Count > 0 && iterations < maxIteratios)
             {
                 var results = await llm.RunToolCalls(resp.Calls.ToList());
-                ctx.Chat.AppendToolResults(results);
+                ctx.Chat.AppendToolCallAndResults(results);
                 resp = await llm.GetToolCallResponse(ctx.Chat, ToolCallMode.Auto, _mode, _model);
                 iterations++;
             }
 
-            if (!string.IsNullOrWhiteSpace(resp.AssistantMessage))
-                ctx.Chat.AddAssistant(resp.AssistantMessage!);
+            ctx.Chat.AddAssistant(resp.AssistantMessage!);
 
             await next(ctx);
         }
@@ -93,13 +92,14 @@ namespace Agenty.AgentCore.Flows
 
             var summaryChat = new Conversation()
                 .CloneFrom(ctx.Chat, ChatFilter.All & ~ChatFilter.System)  // Keep the structured messages
-                .AddUser("Summarize the conversation into one short, clear answer to the user’s request.");
+                .AddSystem($"Summarize the conversation into one short, clear detailed answer to the user’s request.")
+                .AddUser($"{ctx.UserRequest}");
 
             var response = await llm.GetResponse(
                 summaryChat,
                 _mode, _model);
 
-            ctx.Response.Set(response, null);
+            ctx.Response.Set(response);
             var logger = ctx.Services.GetService<ILogger<FinalSummaryStep>>();
             logger?.LogInformation($"Final summary: {ctx.Response.Message}");
             await next(ctx);
@@ -125,7 +125,7 @@ namespace Agenty.AgentCore.Flows
             {
                 var innerChat = new Conversation().CloneFrom(ctx.Chat);
                 // Ask model to evaluate last answer via structured schema
-                innerChat.Add(Role.User, $"Evaluate the last assistant answer for request [{ctx.UserRequest}] Return your verdict.");
+                innerChat.AddUser($"Evaluate the last assistant answer for request [{ctx.UserRequest}] Return your verdict.");
 
                 var verdict = await llm.GetStructured<Verdict>(innerChat, ReasoningMode.Deterministic, _model);
 
@@ -142,12 +142,11 @@ namespace Agenty.AgentCore.Flows
                             // let model refine further
                             var refinement = await llm.GetResponse(innerChat, ReasoningMode.Balanced, _model);
                             if (!string.IsNullOrWhiteSpace(refinement))
-                                response = refinement;
+                                response ??= refinement;
                         }
-                    }
-
-                    ctx.Chat.Add(Role.Assistant, response!);
-                    ctx.Response.Set(response!, null);
+                    } 
+                    ctx.Chat.AddAssistant(response);
+                    ctx.Response.Set(response);
                 }
             }
 

@@ -26,7 +26,7 @@ namespace TestApp
 
                 await app.LoadHistoryAsync("default");
 
-                app.WithSystemPrompt("You are a helpful assistant that executes user requests. Answer in a user friendly way. You can't run code, dont generate or suggest code.")
+                app.WithSystemPrompt("You are an execution-oriented assistant. Answer in a user friendly way. You can't run code, dont generate or suggest code. Follow user goals precisely, plan minimal steps, execute tools efficiently, and never repeat identical tool calls.")
                     .WithTools<GeoTools>()
                     .WithTools<WeatherTool>()
                     .WithTools<ConversionTools>()
