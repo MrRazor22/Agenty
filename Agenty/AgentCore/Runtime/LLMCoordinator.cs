@@ -5,7 +5,9 @@ using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -64,6 +66,7 @@ namespace Agenty.AgentCore.Runtime
         private readonly IToolCallParser _parser;
         private readonly ITokenManager _tokenManager;
         private readonly IRetryPolicy _retryPolicy;
+        private static readonly ConcurrentDictionary<string, JObject> _schemaCache = new ConcurrentDictionary<string, JObject>();
 
         public LLMCoordinator(
             ILLMClient llm,
@@ -92,20 +95,25 @@ namespace Agenty.AgentCore.Runtime
         {
             return await _retryPolicy.ExecuteAsync(intPrompt => RunStructuredOnce<T>(intPrompt, mode, model), prompt);
         }
-
-        private async Task<T?> RunStructuredOnce<T>(Conversation intPrompt, ReasoningMode mode, string? model = null) where T : class
+        private async Task<T?> RunStructuredOnce<T>(
+            Conversation intPrompt,
+            ReasoningMode mode,
+            string? model = null)
+            where T : class
         {
-            // build schema with Newtonsoft
-            var schema = JsonSchemaExtensions.GetSchemaFor<T>(); // JObject
+            var typeKey = typeof(T).FullName!;
+            var schema = _schemaCache.GetOrAdd(typeKey, _ => JsonSchemaExtensions.GetSchemaFor<T>());
+
             var response = await _llm.GetStructuredResponse(intPrompt, schema, mode, model);
             _tokenManager.Record(response.InputTokens ?? 0, response.OutputTokens ?? 0);
+
             if (response?.StructuredResult == null)
             {
-                intPrompt.AddAssistant($"Empty/invalid. Return valid JSON for {typeof(T).Name}.");
+                intPrompt.AddAssistant($"Empty or invalid response. Return valid JSON for {typeof(T).Name}.");
                 return default;
             }
 
-            var jsonNode = response.StructuredResult; // should be JToken/JObject
+            var jsonNode = response.StructuredResult;
             var errors = _parser.ValidateAgainstSchema(jsonNode, schema, typeof(T).Name);
 
             if (errors.Any())
