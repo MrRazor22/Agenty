@@ -20,7 +20,7 @@ namespace TestApp
                     opts.ApiKey = "lmstudio";
                     opts.Model = "qwen@q5_k_m";
                 });
-
+                builder.WithLogLevel(Microsoft.Extensions.Logging.LogLevel.Trace);
                 // === 4. Build app (ASP.NET: var app = builder.Build()) ===
                 app = builder.Build();
 
@@ -32,6 +32,7 @@ namespace TestApp
                     .WithTools<ConversionTools>()
                     .WithTools<MathTools>()
                     .WithTools<SearchTools>()
+                    .Use<ErrorHandlingStep>()
                     .Use(() => new ReflectionStep("publisherme/llama/llama-3.2-3b-instruct-q4_k_m.gguf"))
                     .Use(() => new FinalSummaryStep())
                     .Use(() => new ToolCallingStep())

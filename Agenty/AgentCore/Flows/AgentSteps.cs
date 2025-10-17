@@ -12,6 +12,34 @@ using System.Threading.Tasks;
 
 namespace Agenty.AgentCore.Flows
 {
+    public sealed class ErrorHandlingStep : IAgentStep
+    {
+        public async Task InvokeAsync(IAgentContext ctx, AgentStepDelegate next)
+        {
+            try
+            {
+                // --- Code before next(ctx) (INWARD/REQUEST PATH) ---
+                // Pass control to the rest of the agent pipeline (Planning, Tools, etc.)
+                await next(ctx);
+            }
+            catch (Exception ex)
+            {
+                // --- Code after next(ctx) (OUTWARD/REVERSE/RESPONSE PATH) ---
+                // This code runs only if an exception is thrown by a subsequent step 
+                // and bubbles up the chain.
+
+                var logger = ctx.Services.GetService<ILogger<ErrorHandlingStep>>();
+                logger?.LogError(ex, "Agent pipeline failed due to an exception.");
+
+                // 1. Clear the internal state (meaningful action)
+                ctx.Chat.AddAssistant($"An unexpected error occurred: {ex.Message}. I cannot complete your request.");
+
+                // 2. Set a clean, user-facing error response (meaningful action)
+                // This prevents an empty or corrupt response from being returned.
+                ctx.Response.Set("I'm sorry, I encountered a critical error while processing your request. Please try again or rephrase your goal.");
+            }
+        }
+    }
     public sealed class PlanningStep : IAgentStep
     {
         private readonly string? _model;

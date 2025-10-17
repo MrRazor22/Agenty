@@ -101,6 +101,7 @@ namespace Agenty.AgentCore
             Services.AddSingleton<IToolCatalog>(sp => sp.GetRequiredService<ToolRegistryCatalog>());
             Services.AddSingleton<IToolRuntime, ToolRuntime>();
             Services.AddSingleton<ITokenManager, TokenManager>();
+
             Services.AddLogging(builder =>
             {
                 builder.AddSimpleConsole(options =>
@@ -113,13 +114,18 @@ namespace Agenty.AgentCore
             });
         }
 
+        public AgentBuilder WithLogLevel(LogLevel level)
+        {
+            Services.Configure<LoggerFilterOptions>(opts => opts.MinLevel = level);
+            return this;
+        }
+
         public Agent Build()
         {
             var provider = Services.BuildServiceProvider(validateScopes: true);
+            var hasLLM = provider.GetService<ILLMClient>() != null &&
+                         provider.GetService<ILLMCoordinator>() != null;
 
-            // LLM parts are optional unless pipeline needs them
-            var hasLLM = provider.GetService<ILLMClient>() != null
-                      && provider.GetService<ILLMCoordinator>() != null;
             if (!hasLLM)
                 Console.WriteLine("[Warning] No LLM client/coordinator registered. Tool calls or planning may fail.");
 
@@ -313,13 +319,14 @@ namespace Agenty.AgentCore
 
             builder.Services.AddSingleton<ILLMCoordinator>(sp =>
             {
+                var logger = sp.GetRequiredService<ILogger<LLMCoordinator>>();
                 var llmClient = sp.GetRequiredService<ILLMClient>();
                 var registry = sp.GetRequiredService<IToolCatalog>();
                 var runtime = sp.GetRequiredService<IToolRuntime>();
                 var tokenManager = sp.GetRequiredService<ITokenManager>();
                 var parser = new ToolCallParser();
                 var retry = new DefaultRetryPolicy();
-                return new LLMCoordinator(llmClient, registry, runtime, parser, tokenManager, retry);
+                return new LLMCoordinator(llmClient, registry, runtime, parser, tokenManager, retry, logger);
             });
 
             return builder;
