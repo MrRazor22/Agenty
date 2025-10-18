@@ -41,6 +41,7 @@ namespace Agenty.AgentCore.TokenHandling
 
     public sealed class TokenManager : ITokenManager
     {
+        private TokenUsage _lastTotal = TokenUsage.Empty;
         private int _input;
         private int _output;
         private readonly Dictionary<string, TokenUsage> _sources = new Dictionary<string, TokenUsage>();
@@ -50,30 +51,30 @@ namespace Agenty.AgentCore.TokenHandling
         {
             lock (_lock)
             {
-                // Always update global totals
-                _input += inputTokens;
-                _output += outputTokens;
+                // compute deltas automatically — in case caller passes cumulative totals
+                int inDelta = Math.Max(0, inputTokens - _lastTotal.InputTokens);
+                int outDelta = Math.Max(0, outputTokens - _lastTotal.OutputTokens);
 
-                // Determine source: explicit > AsyncLocal > "Unknown"
-                var actualSource = source
-                    ?? StepContext.Current.Value
-                    ?? "Unknown";
+                if (inDelta == 0 && outDelta == 0)
+                    return;
 
-                // Track by source
-                var usage = _sources.TryGetValue(actualSource, out var existing)
-                    ? existing
-                    : TokenUsage.Empty;
+                _input += inDelta;
+                _output += outDelta;
+                _lastTotal = new TokenUsage(inputTokens, outputTokens);
 
-                usage = new TokenUsage(
-                    usage.InputTokens + inputTokens,
-                    usage.OutputTokens + outputTokens);
+                var actualSource = source ?? StepContext.Current.Value ?? "Unknown";
+                if (!_sources.TryGetValue(actualSource, out var existing))
+                    existing = TokenUsage.Empty;
 
-                _sources[actualSource] = usage;
+                _sources[actualSource] = new TokenUsage(
+                    existing.InputTokens + inDelta,
+                    existing.OutputTokens + outDelta
+                );
             }
         }
 
         public TokenUsage GetTotals() => new TokenUsage(_input, _output);
-
         public IReadOnlyDictionary<string, TokenUsage> GetBySource() => _sources;
     }
+
 }

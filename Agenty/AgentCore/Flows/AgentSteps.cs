@@ -6,6 +6,7 @@ using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SharpToken;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -90,8 +91,7 @@ namespace Agenty.AgentCore.Flows
 
             var resp = await llm.GetToolCallResponse(ctx.Chat, ToolCallMode.Auto, _mode, _model);
             while (resp.Calls.Count > 0 && iterations < maxIteratios)
-            {
-                ctx.Chat.AddAssistant(resp.AssistantMessage!);
+            { 
                 var results = await llm.RunToolCalls(resp.Calls.ToList());
                 ctx.Chat.AppendToolCallAndResults(results);
                 resp = await llm.GetToolCallResponse(ctx.Chat, ToolCallMode.Auto, _mode, _model);

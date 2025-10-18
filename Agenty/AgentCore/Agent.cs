@@ -198,6 +198,8 @@ namespace Agenty.AgentCore
 
         // default overload — supports DI and optional constructors 
         // unified Use<TStep> — handles both DI and factory forms
+        private int _runningTotalTokens = 0;
+
         public Agent Use<TStep>(Func<TStep>? factory = null) where TStep : IAgentStep
         {
             return Use(async (ctx, next) =>
@@ -212,28 +214,31 @@ namespace Agenty.AgentCore
                 var prev = StepContext.Current.Value;
                 StepContext.Current.Value = stepName;
 
-                try
+                var step = factory != null
+                    ? factory()
+                    : (TStep)ActivatorUtilities.CreateInstance(ctx.Services, typeof(TStep));
+
+                await step.InvokeAsync(ctx, async innerCtx =>
                 {
-                    var step = factory != null
-                        ? factory()
-                        : (TStep)ActivatorUtilities.CreateInstance(ctx.Services, typeof(TStep));
+                    sw.Stop();
+                    var after = tokenMgr?.GetTotals() ?? TokenUsage.Empty;
+                    var delta = after - before;
+                    logger?.LogDebug(
+    "│ Step: {Step,-20} │ Time: {Ms,6} ms │ In: {In,5} │ Out: {Out,5} │ Δ: {Delta,5} │ Total: {Total,6} │",
+    stepName,
+    sw.ElapsedMilliseconds,
+    delta.InputTokens,
+    delta.OutputTokens,
+    delta.Total,
+    after.Total);
 
-                    await step.InvokeAsync(ctx, next);
-                }
-                finally
-                {
-                    StepContext.Current.Value = prev;
-                }
+                    await next(innerCtx);
+                });
 
-                sw.Stop();
-                var after = tokenMgr?.GetTotals() ?? TokenUsage.Empty;
-                var delta = after - before;
-
-                logger?.LogDebug(
-                    "│ Step: {Step,-20} │ Time: {Ms,6} ms │ Tokens: {Tokens,6} │ Total: {Total,6} │",
-                    stepName, sw.ElapsedMilliseconds, delta.Total, after.Total);
+                StepContext.Current.Value = prev;
             });
         }
+
 
         // run
         public async Task<AgentResponse> ExecuteAsync(string goal, CancellationToken ct = default)
