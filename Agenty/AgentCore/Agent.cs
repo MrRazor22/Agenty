@@ -25,38 +25,10 @@ namespace Agenty.AgentCore
         IDictionary<string, object?> Items { get; }
         CancellationToken CancellationToken { get; }
     }
-    public sealed class AgentDiagnostics
-    {
-        public TimeSpan Duration { get; }
-        public TokenUsage TotalTokens { get; }
-        public IReadOnlyDictionary<string, TokenUsage> TokensBySource { get; }
-
-        public AgentDiagnostics(
-            TimeSpan duration,
-            TokenUsage totalTokens,
-            IReadOnlyDictionary<string, TokenUsage> tokensBySource)
-        {
-            Duration = duration;
-            TotalTokens = totalTokens;
-            TokensBySource = tokensBySource;
-        }
-
-        public static readonly AgentDiagnostics Empty = new AgentDiagnostics(
-            TimeSpan.Zero,
-            TokenUsage.Empty,
-            new Dictionary<string, TokenUsage>()
-        );
-    }
     public sealed class AgentResponse
     {
         public string? Message { get; private set; }
         public object? Payload { get; private set; }
-        public AgentDiagnostics Diagnostics { get; internal set; }
-
-        internal AgentResponse()
-        {
-            Diagnostics = AgentDiagnostics.Empty;
-        }
 
         internal void Set(string? message = null, object? payload = null)
         {
@@ -223,7 +195,7 @@ namespace Agenty.AgentCore
                     sw.Stop();
                     var after = tokenMgr?.GetTotals() ?? TokenUsage.Empty;
                     var delta = after - before;
-                    logger?.LogDebug(
+                    logger?.LogInformation(
     "│ Step: {Step,-20} │ Time: {Ms,6} ms │ In: {In,5} │ Out: {Out,5} │ Δ: {Delta,5} │ Total: {Total,6} │",
     stepName,
     sw.ElapsedMilliseconds,
@@ -249,8 +221,8 @@ namespace Agenty.AgentCore
 
                 try
                 {
+                    _history.AddUser(goal);
                     ctx.Chat.CloneFrom(_history);
-                    ctx.Chat.AddUser(goal);
 
                     var logger = ctx.Services.GetService<ILogger<Agent>>();
                     logger.AttachTo(ctx.Chat);
@@ -259,22 +231,15 @@ namespace Agenty.AgentCore
                     if (ctxTrimmer != null)
                     {
                         var usable = (int)(_maxContextTokens * 0.6);
+                        var beforeCount = ctx.Chat.Count;
                         ctxTrimmer.Trim(ctx.Chat, usable);
+                        var afterCount = ctx.Chat.Count;
+
+                        if (afterCount < beforeCount)
+                            logger?.LogWarning("Context trimmed from {Before} to {After} messages (usable: {Usable} tokens)", beforeCount, afterCount, usable);
                     }
 
-                    var sw = Stopwatch.StartNew();
                     await _pipeline(ctx);
-                    sw.Stop();
-
-                    // Create diagnostics from TokenManager
-                    var tokenMgr = ctx.Services.GetService<ITokenManager>();
-                    ctx.Response.Diagnostics = tokenMgr != null
-                     ? new AgentDiagnostics(
-                         sw.Elapsed,
-                         tokenMgr.GetTotals(),
-                         tokenMgr.GetBySource()
-                       )
-                     : AgentDiagnostics.Empty;
 
                     if (!string.IsNullOrWhiteSpace(ctx.Response.Message))
                         _history.AddAssistant(ctx.Response.Message);

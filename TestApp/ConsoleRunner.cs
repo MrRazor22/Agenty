@@ -18,22 +18,21 @@ namespace TestApp
                 {
                     opts.BaseUrl = "http://127.0.0.1:1234/v1";
                     opts.ApiKey = "lmstudio";
-                    opts.Model = "publisherme/qwen/qwen3-8b-q4_k_m.gguf";
+                    opts.Model = "qwen@q5_k_m";
                 });
-                builder.WithLogLevel(Microsoft.Extensions.Logging.LogLevel.Trace);
+                builder.WithLogLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
                 // === 4. Build app (ASP.NET: var app = builder.Build()) ===
                 app = builder.Build();
 
                 await app.LoadHistoryAsync("default");
 
-                app.WithSystemPrompt("You are an execution-oriented assistant. Answer in a user friendly way. You can't run code, dont generate or suggest code. Follow user goals precisely, plan minimal steps, execute tools efficiently, and never repeat identical tool calls.")
+                app.WithSystemPrompt("You are a helpful assistant.")
                     .WithTools<GeoTools>()
                     .WithTools<WeatherTool>()
                     .WithTools<ConversionTools>()
                     .WithTools<MathTools>()
                     .WithTools<SearchTools>()
                     .Use<ErrorHandlingStep>()
-                    .Use(() => new ReflectionStep())
                     .Use(() => new FinalSummaryStep())
                     .Use(() => new ToolCallingStep())
                     .Use(() => new PlanningStep());
@@ -55,20 +54,6 @@ namespace TestApp
                     // Simple
                     Console.WriteLine("\n=== Agent Result ===");
                     Console.WriteLine(result.Message);
-
-                    // Diagnostics - flat access
-                    Console.WriteLine("Duration: " + result.Diagnostics.Duration.TotalSeconds + "s");
-                    Console.WriteLine("Total: " + result.Diagnostics.TotalTokens.Total + " tokens");
-                    Console.WriteLine("Input: " + result.Diagnostics.TotalTokens.InputTokens);
-                    Console.WriteLine("Output: " + result.Diagnostics.TotalTokens.OutputTokens);
-
-                    // Breakdown
-                    foreach (var kvp in result.Diagnostics.TokensBySource)
-                    {
-                        var step = kvp.Key;
-                        var usage = kvp.Value;
-                        Console.WriteLine("  " + step + ": " + usage.Total + " tokens");
-                    }
                 }
             }
             finally

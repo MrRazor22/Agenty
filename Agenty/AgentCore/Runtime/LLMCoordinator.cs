@@ -72,16 +72,16 @@ namespace Agenty.AgentCore.Runtime
 
         public async Task<string?> GetResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced, string? model = null)
         {
-            _logger.LogInformation("Fetching simple LLM response (Mode={Mode}, Model={Model})", mode, model ?? "default");
+            _logger.LogTrace("Fetching simple LLM response (Mode={Mode}, Model={Model})", mode, model ?? "default");
             var resp = await _llm.GetResponse(prompt, mode, model);
             _tokenManager.Record(resp.InputTokens ?? 0, resp.OutputTokens ?? 0);
-            _logger.LogDebug("Response received. Tokens In={In}, Out={Out}", resp.InputTokens, resp.OutputTokens);
+            _logger.LogTrace("Response received. Tokens In={In}, Out={Out}", resp.InputTokens, resp.OutputTokens);
             return resp.AssistantMessage;
         }
 
         public async Task<T?> GetStructured<T>(Conversation prompt, ReasoningMode mode = ReasoningMode.Deterministic, string? model = null) where T : class
         {
-            _logger.LogInformation("Requesting structured response for {Type}", typeof(T).Name);
+            _logger.LogTrace("Requesting structured response for {Type}", typeof(T).Name);
             return await _retryPolicy.ExecuteAsync(intPrompt => RunStructuredOnce<T>(intPrompt, mode, model), prompt);
         }
 
@@ -90,11 +90,11 @@ namespace Agenty.AgentCore.Runtime
             var typeKey = typeof(T).FullName!;
             var schema = _schemaCache.GetOrAdd(typeKey, _ =>
             {
-                _logger.LogDebug("Schema not cached. Building for {Type}", typeKey);
+                _logger.LogTrace("Schema not cached. Building for {Type}", typeKey);
                 return JsonSchemaExtensions.GetSchemaFor<T>();
             });
 
-            _logger.LogDebug("Running structured call for {Type}", typeKey);
+            _logger.LogTrace("Running structured call for {Type}", typeKey);
             var response = await _llm.GetStructuredResponse(intPrompt, schema, mode, model);
             _tokenManager.Record(response.InputTokens ?? 0, response.OutputTokens ?? 0);
 
@@ -114,7 +114,7 @@ namespace Agenty.AgentCore.Runtime
                 return default;
             }
 
-            _logger.LogDebug("Structured response for {Type} validated successfully", typeKey);
+            _logger.LogTrace("Structured response for {Type} validated successfully", typeKey);
             return response.StructuredResult.ToObject<T>(JsonSerializer.Create(new JsonSerializerSettings
             {
                 Converters = { new Newtonsoft.Json.Converters.StringEnumConverter() }
@@ -132,7 +132,7 @@ namespace Agenty.AgentCore.Runtime
             if (tools.Length == 0)
                 throw new ArgumentException("No tools registered.", nameof(tools));
 
-            _logger.LogInformation("Starting tool call detection (Mode={Mode}, Model={Model}, ToolCount={Count})",
+            _logger.LogTrace("Starting tool call detection (Mode={Mode}, Model={Model}, ToolCount={Count})",
                 mode, model ?? "default", tools.Length);
 
             var resp = await _retryPolicy.ExecuteAsync(
@@ -149,7 +149,7 @@ namespace Agenty.AgentCore.Runtime
             Tool[] tools,
             string? model = null)
         {
-            _logger.LogDebug("Running tool call pass (Mode={Mode}, Tools={Count})", mode, tools.Length);
+            _logger.LogTrace("Running tool call pass (Mode={Mode}, Tools={Count})", mode, tools.Length);
             var response = await _llm.GetToolCallResponse(intPrompt, tools, toolCallMode, mode, model);
             _tokenManager.Record(response.InputTokens ?? 0, response.OutputTokens ?? 0);
 
@@ -205,13 +205,13 @@ namespace Agenty.AgentCore.Runtime
                 }
             }
 
-            _logger.LogInformation("Tool call phase complete. Valid calls={Count}", valid.Count);
+            _logger.LogTrace("Tool call phase complete. Valid calls={Count}", valid.Count);
             return new ToolCallResponse(valid, response.AssistantMessage, response.FinishReason);
         }
 
         public Task<IReadOnlyList<ToolCallResult>> RunToolCalls(List<ToolCall> toolCalls)
         {
-            _logger.LogInformation("Executing {Count} tool calls", toolCalls.Count);
+            _logger.LogTrace("Executing {Count} tool calls", toolCalls.Count);
             return _Runtime.HandleToolCallsAsync(toolCalls);
         }
     }

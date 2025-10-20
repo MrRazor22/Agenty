@@ -5,6 +5,7 @@ using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 using SharpToken;
 using System;
 using System.Collections.Generic;
@@ -55,17 +56,32 @@ namespace Agenty.AgentCore.Flows
         public async Task InvokeAsync(IAgentContext ctx, AgentStepDelegate next)
         {
             var llm = ctx.Services.GetRequiredService<ILLMCoordinator>();
-            var tools = ctx.Services.GetRequiredService<IToolCatalog>();
+            var toolCatalog = ctx.Services.GetRequiredService<IToolCatalog>();
 
-            var plan = await llm.GetResponse(new Conversation().CloneFrom(ctx.Chat)
-                .AddSystem("Plan the steps to handle the user’s request using the available tools. Keep it short, clear, and action-focused.")
-                .AddUser($"Plan for: {ctx.UserRequest}"),
-                _mode, _model);
+            // Build a system prompt with role + instructions
+            var sysPrompt = $@"
+You are the *planner* component of an AI agent.  
+Your task: Break down the user's request into **a clear, ordered list of minimal-steps**.  
+Each step should reference the **available tools** when relevant, and be phrased as an actionable instruction (but you will *not* execute anything right now).
+
+Available tools: {string.Join(", ", toolCatalog.RegisteredTools.Select(t => t.Name))}  
+Constraints:  
+- Use as few steps as needed.  
+- Do not repeat the user request.  
+- Do not execute the steps, only plan them.  
+- If the request is ambiguous, include one clarifying question step.";
+
+            var convo = new Conversation()
+                .CloneFrom(ctx.Chat)
+                .AddSystem(sysPrompt)
+                .AddUser($"User request: {ctx.UserRequest}");
+
+            var plan = await llm.GetResponse(convo, _mode, _model);
 
             if (!string.IsNullOrWhiteSpace(plan))
             {
                 ctx.Items["plan"] = plan;
-                ctx.Chat.AddAssistant($"Planned approach: {plan}");
+                ctx.Chat.AddSystem($"Planned approach:\n{plan}");
             }
 
             await next(ctx);
@@ -91,7 +107,8 @@ namespace Agenty.AgentCore.Flows
 
             var resp = await llm.GetToolCallResponse(ctx.Chat, ToolCallMode.Auto, _mode, _model);
             while (resp.Calls.Count > 0 && iterations < maxIteratios)
-            { 
+            {
+                ctx.Chat.AddAssistant(resp.AssistantMessage);
                 var results = await llm.RunToolCalls(resp.Calls.ToList());
                 ctx.Chat.AppendToolCallAndResults(results);
                 resp = await llm.GetToolCallResponse(ctx.Chat, ToolCallMode.Auto, _mode, _model);
@@ -119,74 +136,22 @@ namespace Agenty.AgentCore.Flows
         {
             var llm = ctx.Services.GetRequiredService<ILLMCoordinator>();
 
-            var summaryChat = new Conversation()
-                .CloneFrom(ctx.Chat, ChatFilter.All & ~ChatFilter.System)  // Keep the structured messages
-                .AddSystem($"Summarize the conversation into one short, clear detailed answer to the user’s request.")
-                .AddUser($"{ctx.UserRequest}");
+            // Feed the whole chat (minus system/meta junk) and tell the model to cleanly conclude it
+            var polishChat = new Conversation()
+                .CloneFrom(ctx.Chat, ChatFilter.All & ~ChatFilter.System)
+                .AddSystem($@"
+Give a single final response that directly answers the user's request.
+Respond naturally and clearly to the user in a user friendy way.
+")
+                .AddUser(@"user's request: ""{ctx.UserRequest}""");
 
-            var response = await llm.GetResponse(
-                summaryChat,
-                _mode, _model);
+            var finalAnswer = await llm.GetResponse(polishChat, _mode, _model);
 
-            ctx.Response.Set(response);
-            var logger = ctx.Services.GetService<ILogger<FinalSummaryStep>>();
-            logger?.LogInformation($"Final summary: {ctx.Response.Message}");
+            ctx.Chat.AddAssistant(finalAnswer);
+            ctx.Response.Set(finalAnswer);
+
             await next(ctx);
         }
     }
 
-    public sealed class ReflectionStep : IAgentStep
-    {
-        private readonly string? _model;
-
-        public ReflectionStep(string? model = null)
-        {
-            _model = model;
-        }
-
-        public async Task InvokeAsync(IAgentContext ctx, AgentStepDelegate next)
-        {
-            var llm = ctx.Services.GetRequiredService<ILLMCoordinator>();
-
-            var response = ctx.Response.Message;
-
-            if (!string.IsNullOrWhiteSpace(response))
-            {
-                var innerChat = new Conversation().CloneFrom(ctx.Chat);
-                // Ask model to evaluate last answer via structured schema
-                innerChat.AddUser($"Evaluate the last assistant answer for request [{ctx.UserRequest}] Return your verdict.");
-
-                var verdict = await llm.GetStructured<Verdict>(innerChat, ReasoningMode.Deterministic, _model);
-
-                if (verdict != null)
-                {
-                    if (verdict.confidence_score == confidence.no ||
-                        verdict.confidence_score == confidence.maybe)
-                    {
-                        if (verdict.confidence_score == confidence.maybe &&
-                            !string.IsNullOrWhiteSpace(verdict.explanation))
-                        {
-                            innerChat.AddAssistant("I think I may not have fully answered the user's request, because " + verdict.explanation + " I shall at least give a user-friendly answer mentioning what I accomplished and also addressing that.");
-
-                            // let model refine further
-                            var refinement = await llm.GetResponse(innerChat, ReasoningMode.Balanced, _model);
-                            if (!string.IsNullOrWhiteSpace(refinement))
-                                response ??= refinement;
-                        }
-                    }
-                    ctx.Chat.AddAssistant(response);
-                    ctx.Response.Set(response);
-                }
-            }
-
-            await next(ctx);
-        }
-        public enum confidence { no, yes, maybe }
-        public sealed class Verdict
-        {
-
-            public confidence confidence_score { get; set; }
-            public string explanation { get; set; }
-        }
-    }
 }
