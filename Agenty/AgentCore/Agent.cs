@@ -114,7 +114,8 @@ namespace Agenty.AgentCore
 
         private int _maxContextTokens = 8000;
         private AgentStepDelegate _pipeline = ctx => Task.CompletedTask;
-
+        public IServiceProvider Services => _services;
+        public Conversation ChatHistory => _history;
         internal Agent(IServiceProvider services)
         {
             _services = services;
@@ -286,6 +287,13 @@ namespace Agenty.AgentCore
                 client.Initialize(options.BaseUrl, options.ApiKey, options.Model);
                 return client;
             });
+            builder.Services.AddSingleton<IToolRuntime>(sp =>
+            {
+                var registry = sp.GetRequiredService<IToolCatalog>();
+                var logger = sp.GetService<ILogger<ToolRuntime>>();
+                return new ToolRuntime(registry, logger);
+            });
+
 
             builder.Services.AddSingleton<ILLMCoordinator>(sp =>
             {

@@ -166,15 +166,6 @@ namespace Agenty.AgentCore.Runtime
                     continue;
                 }
 
-                if (call.ExistsIn(intPrompt, valid))
-                {
-                    _logger.LogWarning("Duplicate tool call detected: {Tool} (ignored)", call.Name);
-                    var lastResult = intPrompt.GetLastToolCallResult(call)!;
-                    intPrompt.AddUser($"Tool `{call.Name}` was already called with the same arguments. " +
-                                      $"The result was: {lastResult?.AsPrettyJson()}.");
-                    continue;
-                }
-
                 _logger.LogDebug("Accepting tool call: {Tool}", call.Name);
                 valid.Add(new ToolCall(
                     call.Id ?? Guid.NewGuid().ToString(),
@@ -186,13 +177,6 @@ namespace Agenty.AgentCore.Runtime
 
             if (valid.Count == 0 && !string.IsNullOrWhiteSpace(response.AssistantMessage))
             {
-                if (intPrompt.IsLastAssistantMessageSame(response.AssistantMessage!))
-                {
-                    _logger.LogWarning("Repeated identical assistant message detected");
-                    intPrompt.AddUser("You just gave the same assistant message. Don’t repeat — refine or add new info.");
-                    return null!;
-                }
-
                 if (!hadCalls)
                 {
                     // no tool calls at all — check for inline calls

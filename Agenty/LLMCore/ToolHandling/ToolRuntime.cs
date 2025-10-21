@@ -1,4 +1,6 @@
 ﻿using Agenty.LLMCore.Messages;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -8,21 +10,22 @@ namespace Agenty.LLMCore.ToolHandling
     public interface IToolRuntime
     {
         Task<object?> InvokeAsync(ToolCall toolCall);
-
-        /// <summary>
-        /// Run tool calls. Always returns results. 
-        /// </summary>
         Task<IReadOnlyList<ToolCallResult>> HandleToolCallsAsync(IEnumerable<ToolCall> toolCalls);
     }
 
     public sealed class ToolRuntime : IToolRuntime
     {
         private readonly IToolCatalog _tools;
+        private readonly ILogger<ToolRuntime>? _logger;
 
-        public ToolRuntime(IToolCatalog registry)
+        public ToolRuntime(IToolCatalog registry, ILogger<ToolRuntime>? logger = null)
         {
             _tools = registry ?? throw new ArgumentNullException(nameof(registry));
+            _logger = logger;
         }
+
+        private static string MakeKey(ToolCall call)
+            => $"{call.Name}:{JsonConvert.SerializeObject(call.Arguments)}";
 
         public async Task<object?> InvokeAsync(ToolCall toolCall)
         {
@@ -33,8 +36,7 @@ namespace Agenty.LLMCore.ToolHandling
                 throw new ToolExecutionException(
                     toolCall.Name,
                     $"Tool '{toolCall.Name}' not registered or has no function.",
-                    new InvalidOperationException()
-                );
+                    new InvalidOperationException());
 
             try
             {
@@ -53,44 +55,47 @@ namespace Agenty.LLMCore.ToolHandling
                         var resultProperty = returnType.GetProperty("Result")!;
                         return resultProperty.GetValue(task);
                     }
-
                     return null;
                 }
-                else
-                {
-                    return func.DynamicInvoke(toolCall.Parameters);
-                }
+                return func.DynamicInvoke(toolCall.Parameters);
             }
             catch (Exception ex)
             {
                 throw new ToolExecutionException(
                     toolCall.Name,
                     $"Failed to invoke tool `{toolCall.Name}`: {ex.Message}",
-                    ex
-                );
+                    ex);
             }
         }
 
-        public async Task<IReadOnlyList<ToolCallResult>> HandleToolCallsAsync(
-            IEnumerable<ToolCall> toolCalls)
+        public async Task<IReadOnlyList<ToolCallResult>> HandleToolCallsAsync(IEnumerable<ToolCall> toolCalls)
         {
             var results = new List<ToolCallResult>();
+            var batchCache = new Dictionary<string, object?>();
 
             foreach (var call in toolCalls)
             {
                 if (string.IsNullOrWhiteSpace(call.Name) && !string.IsNullOrWhiteSpace(call.Message))
                 {
                     results.Add(new ToolCallResult(call, null));
+                    continue;
+                }
+
+                var key = MakeKey(call);
+                if (batchCache.ContainsKey(key))
+                {
+                    _logger?.LogWarning("Duplicate call detected for {Tool}; ignored.", call.Name);
+                    continue; // don't return anything to LLM
                 }
 
                 try
                 {
                     var result = await InvokeAsync(call);
+                    batchCache[key] = result;
                     results.Add(new ToolCallResult(call, result));
                 }
                 catch (ToolValidationAggregateException vex)
                 {
-                    // Structured validation failure
                     results.Add(new ToolCallResult(call, vex));
                 }
                 catch (ToolExecutionException tex)
@@ -101,10 +106,8 @@ namespace Agenty.LLMCore.ToolHandling
 
             return results;
         }
-
     }
 
-    // Custom exception type for clarity
     public sealed class ToolExecutionException : Exception
     {
         public string ToolName { get; }
@@ -112,7 +115,6 @@ namespace Agenty.LLMCore.ToolHandling
         public ToolExecutionException(string toolName, string message, Exception inner)
             : base(message, inner) => ToolName = toolName;
 
-        public override string ToString()
-            => $"Tool '{ToolName}' failed. Reason: '{Message}'";
+        public override string ToString() => $"Tool '{ToolName}' failed. Reason: '{Message}'";
     }
 }

@@ -18,7 +18,7 @@ namespace TestApp
                 {
                     opts.BaseUrl = "http://127.0.0.1:1234/v1";
                     opts.ApiKey = "lmstudio";
-                    opts.Model = "qwen@q5_k_m";
+                    opts.Model = "publisherme/qwen/qwen3-4b-thinking-2507-q4_k_m.gguf";
                 });
                 builder.WithLogLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
                 // === 4. Build app (ASP.NET: var app = builder.Build()) ===
@@ -33,9 +33,7 @@ namespace TestApp
                     .WithTools<MathTools>()
                     .WithTools<SearchTools>()
                     .Use<ErrorHandlingStep>()
-                    .Use(() => new FinalSummaryStep())
-                    .Use(() => new ToolCallingStep())
-                    .Use(() => new PlanningStep());
+                    .Use(() => new ToolCallingStep());
 
                 // === 5. Run (ASP.NET: app.Run()) ===
                 while (true)

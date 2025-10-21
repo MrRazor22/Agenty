@@ -116,6 +116,7 @@ Constraints:
             }
 
             ctx.Chat.AddAssistant(resp.AssistantMessage!);
+            ctx.Response.Set(resp.AssistantMessage!);
 
             await next(ctx);
         }
