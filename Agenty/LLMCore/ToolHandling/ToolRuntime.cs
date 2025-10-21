@@ -1,4 +1,5 @@
-﻿using Agenty.LLMCore.Messages;
+﻿using Agenty.LLMCore.JsonSchema;
+using Agenty.LLMCore.Messages;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System;
@@ -25,7 +26,10 @@ namespace Agenty.LLMCore.ToolHandling
         }
 
         private static string MakeKey(ToolCall call)
-            => $"{call.Name}:{JsonConvert.SerializeObject(call.Arguments)}";
+        {
+            var argsKey = call.Arguments?.NormalizeArgs() ?? "";
+            return $"{call.Name}:{argsKey}";
+        }
 
         public async Task<object?> InvokeAsync(ToolCall toolCall)
         {
