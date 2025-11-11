@@ -38,7 +38,7 @@ namespace Agenty
 
             // flatten ToolCallResult for cleaner logs
             if (obj is ToolCallResult t)
-                obj = new { CallId = t.Call.Id, t.Result };
+                obj = new { CallId = t.Call.Id, Result = t.Result ?? new JObject() };
 
             return JsonConvert.SerializeObject(obj, settings);
         }

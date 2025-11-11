@@ -3,6 +3,7 @@ using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
 using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Agenty.LLMCore
@@ -11,18 +12,19 @@ namespace Agenty.LLMCore
     {
         void Initialize(string url, string apiKey, string modelName);
 
-        Task<LLMResponse> GetResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced, string? model = null);
-        IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced, string? model = null);
+        Task<LLMResponse> GetResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced, string? model = null, CancellationToken ct = default);
+        IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced, string? model = null, CancellationToken ct = default);
         Task<LLMResponse> GetToolCallResponse(
             Conversation prompt,
             IEnumerable<Tool> tools,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
             ReasoningMode mode = ReasoningMode.Balanced,
-            string? model = null);
+            string? model = null,
+            CancellationToken ct = default);
         Task<LLMResponse> GetStructuredResponse(
             Conversation prompt,
             JObject responseFormat,
-            ReasoningMode mode = ReasoningMode.Balanced, string? model = null);
+            ReasoningMode mode = ReasoningMode.Balanced, string? model = null, CancellationToken ct = default);
     }
 
     public enum ToolCallMode

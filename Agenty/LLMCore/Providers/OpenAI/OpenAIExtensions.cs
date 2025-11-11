@@ -69,9 +69,13 @@ namespace Agenty.LLMCore.Providers.OpenAI
                         break;
 
                     case Role.Tool when msg.Content is ToolCallResult result:
+                        var payload = result.Result == null
+                            ? "{}"
+                            : result.Result.AsJsonString(); // keep real output if exists
+
                         yield return ChatMessage.CreateToolMessage(
                             result.Call.Id,
-                            result.Result.AsJsonString());
+                            payload);
                         break;
 
                     default:

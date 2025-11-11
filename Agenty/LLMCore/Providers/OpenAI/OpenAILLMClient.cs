@@ -9,6 +9,7 @@ using System.ClientModel;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Agenty.LLMCore.Providers.OpenAI
@@ -44,13 +45,13 @@ namespace Agenty.LLMCore.Providers.OpenAI
         public async Task<LLMResponse> GetResponse(
             Conversation prompt,
             ReasoningMode mode = ReasoningMode.Balanced,
-            string? model = null)
+            string? model = null, CancellationToken ct = default)
         {
             var chat = GetChatClient(model);
             var options = new ChatCompletionOptions { ToolChoice = ChatToolChoice.CreateNoneChoice() };
             options.ApplyLLMMode(mode);
 
-            var response = await chat.CompleteChatAsync(prompt.ToChatMessages(), options);
+            var response = await chat.CompleteChatAsync(prompt.ToChatMessages(), options, ct);
             var result = response.Value;
             var text = string.Join("", result.Content.Select(c => c.Text));
 
@@ -66,13 +67,13 @@ namespace Agenty.LLMCore.Providers.OpenAI
         public async IAsyncEnumerable<string> GetStreamingResponse(
             Conversation prompt,
             ReasoningMode mode = ReasoningMode.Balanced,
-            string? model = null)
+            string? model = null, CancellationToken ct = default)
         {
             var chat = GetChatClient(model);
             var options = new ChatCompletionOptions();
             options.ApplyLLMMode(mode);
 
-            await foreach (var update in chat.CompleteChatStreamingAsync(prompt.ToChatMessages(), options))
+            await foreach (var update in chat.CompleteChatStreamingAsync(prompt.ToChatMessages(), options, ct))
             {
                 foreach (var part in update.ContentUpdate)
                     yield return part.Text;
@@ -84,7 +85,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             IEnumerable<Tool> tools,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
             ReasoningMode mode = ReasoningMode.Deterministic,
-            string? model = null)
+            string? model = null, CancellationToken ct = default)
         {
             // Use streaming cutoff only for OneTool mode
             if (toolCallMode == ToolCallMode.OneTool)
@@ -99,7 +100,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             foreach (var t in tools.ToChatTools())
                 options.Tools.Add(t);
 
-            var response = await chat.CompleteChatAsync(prompt.ToChatMessages(), options);
+            var response = await chat.CompleteChatAsync(prompt.ToChatMessages(), options, ct);
             var result = response.Value;
 
             var toolCalls = new List<ToolCall>();
@@ -130,7 +131,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
     Conversation prompt,
     IEnumerable<Tool> tools,
     ReasoningMode mode,
-    string? model)
+    string? model, CancellationToken ct = default)
         {
             var chat = GetChatClient(model);
             var options = new ChatCompletionOptions
@@ -143,7 +144,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             foreach (var t in tools.ToChatTools())
                 options.Tools.Add(t);
 
-            var streamingResponse = chat.CompleteChatStreamingAsync(prompt.ToChatMessages(), options);
+            var streamingResponse = chat.CompleteChatStreamingAsync(prompt.ToChatMessages(), options, ct);
 
             string? toolCallId = null;
             string? toolName = null;
@@ -216,7 +217,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             Conversation prompt,
             JObject responseFormat,
             ReasoningMode mode = ReasoningMode.Deterministic,
-            string? model = null)
+            string? model = null, CancellationToken ct = default)
         {
             var chat = GetChatClient(model);
             var options = new ChatCompletionOptions
@@ -228,7 +229,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             };
             options.ApplyLLMMode(mode);
 
-            var response = await chat.CompleteChatAsync(prompt.ToChatMessages(), options);
+            var response = await chat.CompleteChatAsync(prompt.ToChatMessages(), options, ct);
             var result = response.Value;
 
             var text = result.Content[0].Text;

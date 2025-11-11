@@ -35,7 +35,7 @@ namespace Agenty.AgentCore.Runtime
             _maxRetries = maxRetries;
             _initialDelay = initialDelay ?? TimeSpan.FromMilliseconds(500);
             _backoffFactor = backoffFactor;
-            _timeout = timeout ?? TimeSpan.FromSeconds(30);
+            _timeout = timeout ?? TimeSpan.FromSeconds(120);
         }
 
         public async Task<T?> ExecuteAsync<T>(

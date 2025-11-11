@@ -76,7 +76,7 @@ Constraints:
                 .AddSystem(sysPrompt)
                 .AddUser($"User request: {ctx.UserRequest}");
 
-            var plan = await llm.GetResponse(convo, _mode, _model);
+            var plan = await llm.GetResponse(convo, _mode, _model, ctx.CancellationToken);
 
             if (!string.IsNullOrWhiteSpace(plan))
             {
@@ -112,18 +112,26 @@ Constraints:
         {
             var llm = ctx.Services.GetRequiredService<ILLMCoordinator>();
 
-            var resp = await llm.GetToolCallResponse(ctx.Chat, _toolMode, _mode, _model);
+            var resp = await llm.GetToolCallResponse(ctx.Chat, _toolMode, _mode, _model, ctx.CancellationToken);
 
-            while (resp.Calls.Count > 0 && _iterations < _maxIterations)
+            while (!ctx.CancellationToken.IsCancellationRequested &&
+                   resp.Calls.Count > 0 &&
+                   _iterations < _maxIterations)
             {
                 ctx.Chat.AddAssistant(resp.AssistantMessage);
 
-                var results = await llm.RunToolCalls(resp.Calls.ToList());
+                var results = await llm.RunToolCalls(resp.Calls.ToList(), ctx.CancellationToken);
                 ctx.Chat.AppendToolCallAndResults(results);
 
-                resp = await llm.GetToolCallResponse(ctx.Chat, _toolMode, _mode, _model);
+                resp = await llm.GetToolCallResponse(ctx.Chat, _toolMode, _mode, _model, ctx.CancellationToken);
 
                 _iterations++;
+            }
+
+            if (!ctx.CancellationToken.IsCancellationRequested)
+            {
+                ctx.Chat.AddAssistant(resp.AssistantMessage!);
+                ctx.Response.Set(resp.AssistantMessage!);
             }
 
             ctx.Chat.AddAssistant(resp.AssistantMessage!);
@@ -150,14 +158,13 @@ Constraints:
 
             // Feed the whole chat (minus system/meta junk) and tell the model to cleanly conclude it
             var polishChat = new Conversation()
-                .CloneFrom(ctx.Chat, ChatFilter.All & ~ChatFilter.System)
                 .AddSystem($@"
 Give a single final response that directly answers the user's request.
 Respond naturally and clearly to the user in a user friendy way.
 ")
-                .AddUser(@"user's request: ""{ctx.UserRequest}""");
+                .AddUser($"user's request: {ctx.UserRequest}, Converstation So far: {ctx.Chat.ToJson(ChatFilter.All & ~ChatFilter.System)}");
 
-            var finalAnswer = await llm.GetResponse(polishChat, _mode, _model);
+            var finalAnswer = await llm.GetResponse(polishChat, _mode, _model, ctx.CancellationToken);
 
             ctx.Chat.AddAssistant(finalAnswer);
             ctx.Response.Set(finalAnswer);

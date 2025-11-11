@@ -1,17 +1,17 @@
 ﻿using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Messages;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Agenty.LLMCore.ToolHandling
 {
     public interface IToolRuntime
     {
-        Task<object?> InvokeAsync(ToolCall toolCall);
-        Task<IReadOnlyList<ToolCallResult>> HandleToolCallsAsync(IEnumerable<ToolCall> toolCalls);
+        Task<object?> InvokeAsync(ToolCall toolCall, CancellationToken ct = default);
+        Task<IReadOnlyList<ToolCallResult>> HandleToolCallsAsync(IEnumerable<ToolCall> toolCalls, CancellationToken ct = default);
     }
 
     public sealed class ToolRuntime : IToolRuntime
@@ -31,9 +31,10 @@ namespace Agenty.LLMCore.ToolHandling
             return $"{call.Name}:{argsKey}";
         }
 
-        public async Task<object?> InvokeAsync(ToolCall toolCall)
+        public async Task<object?> InvokeAsync(ToolCall toolCall, CancellationToken ct = default)
         {
             if (toolCall == null) throw new ArgumentNullException(nameof(toolCall));
+            ct.ThrowIfCancellationRequested();
 
             var tool = _tools.Get(toolCall.Name);
             if (tool?.Function == null)
@@ -50,6 +51,7 @@ namespace Agenty.LLMCore.ToolHandling
 
                 if (typeof(Task).IsAssignableFrom(returnType))
                 {
+                    ct.ThrowIfCancellationRequested();
                     var task = (Task)func.DynamicInvoke(toolCall.Parameters)!;
                     await task.ConfigureAwait(false);
 
@@ -61,7 +63,12 @@ namespace Agenty.LLMCore.ToolHandling
                     }
                     return null;
                 }
+
                 return func.DynamicInvoke(toolCall.Parameters);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -72,13 +79,15 @@ namespace Agenty.LLMCore.ToolHandling
             }
         }
 
-        public async Task<IReadOnlyList<ToolCallResult>> HandleToolCallsAsync(IEnumerable<ToolCall> toolCalls)
+        public async Task<IReadOnlyList<ToolCallResult>> HandleToolCallsAsync(IEnumerable<ToolCall> toolCalls, CancellationToken ct = default)
         {
             var results = new List<ToolCallResult>();
             var batchCache = new Dictionary<string, object?>();
 
             foreach (var call in toolCalls)
             {
+                ct.ThrowIfCancellationRequested();
+
                 if (string.IsNullOrWhiteSpace(call.Name) && !string.IsNullOrWhiteSpace(call.Message))
                 {
                     results.Add(new ToolCallResult(call, null));
@@ -89,12 +98,12 @@ namespace Agenty.LLMCore.ToolHandling
                 if (batchCache.ContainsKey(key))
                 {
                     _logger?.LogWarning("Duplicate call detected for {Tool}; ignored.", call.Name);
-                    continue; // don't return anything to LLM
+                    continue;
                 }
 
                 try
                 {
-                    var result = await InvokeAsync(call);
+                    var result = await InvokeAsync(call, ct).ConfigureAwait(false);
                     batchCache[key] = result;
                     results.Add(new ToolCallResult(call, result));
                 }
@@ -106,6 +115,10 @@ namespace Agenty.LLMCore.ToolHandling
                 {
                     results.Add(new ToolCallResult(call, tex));
                 }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
             }
 
             return results;
@@ -115,10 +128,8 @@ namespace Agenty.LLMCore.ToolHandling
     public sealed class ToolExecutionException : Exception
     {
         public string ToolName { get; }
-
         public ToolExecutionException(string toolName, string message, Exception inner)
             : base(message, inner) => ToolName = toolName;
-
         public override string ToString() => $"Tool '{ToolName}' failed. Reason: '{Message}'";
     }
 }

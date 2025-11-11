@@ -1,6 +1,8 @@
 ﻿using Agenty.AgentCore;
 using Agenty.AgentCore.Flows;
+using Agenty.LLMCore;
 using Agenty.LLMCore.BuiltInTools;
+using System.Threading;
 
 namespace TestApp
 {
@@ -11,47 +13,78 @@ namespace TestApp
             Agent? app = null;
             try
             {
-                // === 1. Create builder (ASP.NET: WebApplication.CreateBuilder) ===
                 var builder = Agent.CreateBuilder();
 
                 builder.AddOpenAI(opts =>
                 {
                     opts.BaseUrl = "http://127.0.0.1:1234/v1";
                     opts.ApiKey = "lmstudio";
-                    opts.Model = "publisherme/qwen/qwen3-4b-thinking-2507-q4_k_m.gguf";
+                    opts.Model = "qwen@q5_k_m";
                 });
-                builder.WithLogLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
-                // === 4. Build app (ASP.NET: var app = builder.Build()) ===
-                app = builder.Build();
 
+                builder.WithLogLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
+
+                app = builder.Build();
                 await app.LoadHistoryAsync("default");
 
                 app.WithSystemPrompt("You are a helpful assistant.")
-                    .WithTools<GeoTools>()
-                    .WithTools<WeatherTool>()
-                    .WithTools<ConversionTools>()
-                    .WithTools<MathTools>()
-                    .WithTools<SearchTools>()
-                    .Use<ErrorHandlingStep>()
-                    .Use(() => new ToolCallingStep());
+                   .WithTools<GeoTools>()
+                   .WithTools<WeatherTool>()
+                   .WithTools<ConversionTools>()
+                   .WithTools<MathTools>()
+                   .WithTools<SearchTools>()
+                   .Use<ErrorHandlingStep>()
+                   .Use<FinalSummaryStep>()
+                   .Use(() => new ToolCallingStep(toolMode: ToolCallMode.OneTool));
 
-                // === 5. Run (ASP.NET: app.Run()) ===
                 while (true)
                 {
-                    Console.WriteLine("Enter your goal: ");
-                    var goal = Console.ReadLine();
+                    Console.Write("Enter your goal (Ctrl+Q to quit):\n");
 
+                    // normal input -> backspace works
+                    string goal = Console.ReadLine();
                     if (string.IsNullOrWhiteSpace(goal))
+                        continue;
+
+                    using var cts = new CancellationTokenSource();
+
+                    // cancel watcher (does NOT touch input editing)
+                    _ = Task.Run(() =>
                     {
-                        Console.WriteLine("No goal entered. Exiting.");
-                        return;
+                        while (!cts.IsCancellationRequested)
+                        {
+                            var key = Console.ReadKey(intercept: true);
+                            if (key.Key == ConsoleKey.Q && key.Modifiers.HasFlag(ConsoleModifiers.Control))
+                            {
+                                cts.Cancel();
+                                Console.WriteLine("\n-> Cancel requested.");
+                                break;
+                            }
+                        }
+                    });
+
+                    Console.WriteLine("\nProcessing...\n");
+
+                    try
+                    {
+                        var result = await app.ExecuteAsync(goal, cts.Token);
+
+                        var msg = result.Message?.Trim();
+                        if (string.IsNullOrWhiteSpace(msg))
+                        {
+                            Console.WriteLine("[no response]");
+                            continue;
+                        }
+
+                        Console.WriteLine("\n───────── RESULT ─────────\n");
+                        Console.WriteLine(msg);
+                        Console.WriteLine("\n──────────────────────────\n");
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        Console.WriteLine("\n[Cancelled]\n");
                     }
 
-                    var result = await app.ExecuteAsync(goal);
-
-                    // Simple
-                    Console.WriteLine("\n=== Agent Result ===");
-                    Console.WriteLine(result.Message);
                 }
             }
             finally
@@ -59,5 +92,6 @@ namespace TestApp
                 await app?.SaveHistoryAsync("default");
             }
         }
+
     }
 }
