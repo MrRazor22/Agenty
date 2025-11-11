@@ -29,7 +29,8 @@ namespace Agenty.LLMCore
     {
         None,     // expose tools but forbid calls
         Auto,     // allow text or tool calls
-        Required  // force tool call
+        Required,  // force tool call
+        OneTool   // force exactly one tool call
     }
 
     public enum ReasoningMode

@@ -7,10 +7,11 @@ using System.Threading.Tasks;
 
 namespace Agenty.LLMCore.BuiltInTools
 {
+    [Description("Temperature Units")]
     public enum TempUnit
     {
-        [Description("Celsius (°C)")] Celsius,
-        [Description("Fahrenheit (°F)")] Fahrenheit
+        Celsius,
+        Fahrenheit
     }
 
     class WeatherTool

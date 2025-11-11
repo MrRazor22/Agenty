@@ -92,27 +92,38 @@ Constraints:
     {
         private readonly string? _model;
         private readonly ReasoningMode _mode;
-        int maxIteratios;
-        int iterations = 0;
-        public ToolCallingStep(string? model = null, ReasoningMode mode = ReasoningMode.Balanced, int maxIterations = 50)
+        private readonly ToolCallMode _toolMode;
+        private readonly int _maxIterations;
+        private int _iterations = 0;
+
+        public ToolCallingStep(
+            string? model = null,
+            ReasoningMode mode = ReasoningMode.Balanced,
+            ToolCallMode toolMode = ToolCallMode.Auto,
+            int maxIterations = 50)
         {
             _model = model;
             _mode = mode;
-            maxIteratios = maxIterations;
+            _toolMode = toolMode;
+            _maxIterations = maxIterations;
         }
 
         public async Task InvokeAsync(IAgentContext ctx, AgentStepDelegate next)
         {
             var llm = ctx.Services.GetRequiredService<ILLMCoordinator>();
 
-            var resp = await llm.GetToolCallResponse(ctx.Chat, ToolCallMode.Auto, _mode, _model);
-            while (resp.Calls.Count > 0 && iterations < maxIteratios)
+            var resp = await llm.GetToolCallResponse(ctx.Chat, _toolMode, _mode, _model);
+
+            while (resp.Calls.Count > 0 && _iterations < _maxIterations)
             {
                 ctx.Chat.AddAssistant(resp.AssistantMessage);
+
                 var results = await llm.RunToolCalls(resp.Calls.ToList());
                 ctx.Chat.AppendToolCallAndResults(results);
-                resp = await llm.GetToolCallResponse(ctx.Chat, ToolCallMode.Auto, _mode, _model);
-                iterations++;
+
+                resp = await llm.GetToolCallResponse(ctx.Chat, _toolMode, _mode, _model);
+
+                _iterations++;
             }
 
             ctx.Chat.AddAssistant(resp.AssistantMessage!);

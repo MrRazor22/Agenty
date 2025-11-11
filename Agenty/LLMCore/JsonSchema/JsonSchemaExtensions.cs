@@ -19,11 +19,15 @@ namespace Agenty.LLMCore.JsonSchema
             type = Nullable.GetUnderlyingType(type) ?? type;
 
             if (type.IsEnum)
+            {
+                var typeDesc = type.GetCustomAttribute<DescriptionAttribute>()?.Description;
+
                 return new JsonSchemaBuilder()
                     .Type<string>()
                     .Enum(Enum.GetNames(type))
-                    .Description($"One of: {string.Join(", ", Enum.GetNames(type))}")
+                    .Description(typeDesc ?? $"One of: {string.Join(", ", Enum.GetNames(type))}")
                     .Build();
+            }
 
             if (type.IsSimpleType())
                 return new JsonSchemaBuilder()

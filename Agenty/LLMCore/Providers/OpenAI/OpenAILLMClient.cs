@@ -86,6 +86,12 @@ namespace Agenty.LLMCore.Providers.OpenAI
             ReasoningMode mode = ReasoningMode.Deterministic,
             string? model = null)
         {
+            // Use streaming cutoff only for OneTool mode
+            if (toolCallMode == ToolCallMode.OneTool)
+            {
+                return await GetSingleToolCallStreaming(prompt, tools, mode, model);
+            }
+
             var chat = GetChatClient(model);
             var options = new ChatCompletionOptions { ToolChoice = toolCallMode.ToChatToolChoice() };
             options.ApplyLLMMode(mode);
@@ -120,7 +126,92 @@ namespace Agenty.LLMCore.Providers.OpenAI
                 OutputTokens = result.Usage?.OutputTokenCount
             };
         }
+        private async Task<LLMResponse> GetSingleToolCallStreaming(
+    Conversation prompt,
+    IEnumerable<Tool> tools,
+    ReasoningMode mode,
+    string? model)
+        {
+            var chat = GetChatClient(model);
+            var options = new ChatCompletionOptions
+            {
+                ToolChoice = ChatToolChoice.CreateAutoChoice(),
+                AllowParallelToolCalls = false
+            };
+            options.ApplyLLMMode(mode);
 
+            foreach (var t in tools.ToChatTools())
+                options.Tools.Add(t);
+
+            var streamingResponse = chat.CompleteChatStreamingAsync(prompt.ToChatMessages(), options);
+
+            string? toolCallId = null;
+            string? toolName = null;
+            var toolArgs = new System.Text.StringBuilder();
+            var content = new System.Text.StringBuilder();
+            int inputTokens = 0, outputTokens = 0;
+            string? finishReason = null;
+
+            await foreach (var update in streamingResponse)
+            {
+                if (update.Usage != null)
+                {
+                    inputTokens = update.Usage.InputTokenCount;
+                    outputTokens = update.Usage.OutputTokenCount;
+                }
+                if (update.ToolCallUpdates != null)
+                {
+                    foreach (var toolUpdate in update.ToolCallUpdates)
+                    {
+                        toolCallId ??= toolUpdate.ToolCallId;
+                        toolName ??= toolUpdate.FunctionName;
+                        var argsDelta = toolUpdate.FunctionArgumentsUpdate?.ToString() ?? "";
+                        if (!string.IsNullOrEmpty(argsDelta))
+                            toolArgs.Append(argsDelta);
+                    }
+                }
+                if (update.ContentUpdate != null)
+                {
+                    foreach (var contentItem in update.ContentUpdate)
+                    {
+                        if (contentItem.Text != null)
+                            content.Append(contentItem.Text);
+                    }
+                }
+
+                if (update.FinishReason != null)
+                    finishReason = update.FinishReason.Value.ToString();
+
+                if (toolArgs.Length > 0 && toolArgs.ToString().TryParseCompleteJson(out _))
+                {
+                    finishReason ??= "tool_calls";
+                    break;
+                }
+            }
+
+            var toolCalls = new List<ToolCall>();
+            if (toolCallId != null && toolName != null)
+            {
+                try
+                {
+                    var args = JObject.Parse(toolArgs.ToString());
+                    toolCalls.Add(new ToolCall(toolCallId, toolName, args));
+                }
+                catch
+                {
+                    toolCalls.Add(new ToolCall(toolCallId, toolName, new JObject()));
+                }
+            }
+
+            return new LLMResponse(
+                assistantMessage: content.Length > 0 ? content.ToString() : null,
+                toolCalls: toolCalls,
+                finishReason: finishReason ?? "stop")
+            {
+                InputTokens = inputTokens,
+                OutputTokens = outputTokens
+            };
+        }
         public async Task<LLMResponse> GetStructuredResponse(
             Conversation prompt,
             JObject responseFormat,

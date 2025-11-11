@@ -1,6 +1,7 @@
 ﻿using Agenty.LLMCore.Messages;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -41,6 +42,18 @@ namespace Agenty
 
             return JsonConvert.SerializeObject(obj, settings);
         }
-
+        public static bool TryParseCompleteJson(this string json, out JObject? result)
+        {
+            result = null;
+            try
+            {
+                result = JObject.Parse(json);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 }
