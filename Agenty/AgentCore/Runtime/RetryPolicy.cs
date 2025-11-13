@@ -1,6 +1,7 @@
 ﻿using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.ToolHandling;
+using Microsoft.Extensions.Options;
 using System;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -8,6 +9,15 @@ using System.Threading.Tasks;
 
 namespace Agenty.AgentCore.Runtime
 {
+    public sealed class RetryPolicyOptions
+    {
+        public int MaxRetries { get; set; } = 3;
+        public TimeSpan InitialDelay { get; set; } = TimeSpan.FromMilliseconds(500);
+        public double BackoffFactor { get; set; } = 2.0;
+        public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(120);
+        public bool Enabled { get; set; } = true;
+    }
+
     public interface IRetryPolicy
     {
         Task<T?> ExecuteAsync<T>(
@@ -21,21 +31,11 @@ namespace Agenty.AgentCore.Runtime
     /// </summary>
     public sealed class DefaultRetryPolicy : IRetryPolicy
     {
-        private readonly int _maxRetries;
-        private readonly TimeSpan _initialDelay;
-        private readonly double _backoffFactor;
-        private readonly TimeSpan _timeout;
+        private readonly RetryPolicyOptions _options;
 
-        public DefaultRetryPolicy(
-            int maxRetries = 3,
-            TimeSpan? initialDelay = null,
-            double backoffFactor = 2.0,
-            TimeSpan? timeout = null)
+        public DefaultRetryPolicy(IOptions<RetryPolicyOptions>? options = null)
         {
-            _maxRetries = maxRetries;
-            _initialDelay = initialDelay ?? TimeSpan.FromMilliseconds(500);
-            _backoffFactor = backoffFactor;
-            _timeout = timeout ?? TimeSpan.FromSeconds(120);
+            _options = options?.Value ?? new RetryPolicyOptions();
         }
 
         public async Task<T?> ExecuteAsync<T>(
@@ -43,27 +43,30 @@ namespace Agenty.AgentCore.Runtime
             Conversation prompt)
             where T : class
         {
+            if (!_options.Enabled)
+                return await action(prompt);
+
             var intPrompt = new Conversation().CloneFrom(prompt);
 
-            for (int attempt = 0; attempt <= _maxRetries; attempt++)
+            for (int attempt = 0; attempt <= _options.MaxRetries; attempt++)
             {
                 try
                 {
                     var task = action(intPrompt);
-                    var completed = await Task.WhenAny(task, Task.Delay(_timeout));
+                    var completed = await Task.WhenAny(task, Task.Delay(_options.Timeout));
                     if (completed != task)
-                        throw new TimeoutException($"LLM call timed out after {_timeout.TotalSeconds}s");
+                        throw new TimeoutException($"LLM call timed out after {_options.Timeout.TotalSeconds}s");
 
                     return await task;
                 }
                 catch (Exception ex)
                 {
-                    if (attempt == _maxRetries)
+                    if (attempt == _options.MaxRetries)
                         throw;
 
                     intPrompt.AddAssistant($"Attempt {attempt + 1} failed: {ex.Message}. Retrying...");
                     var delay = TimeSpan.FromMilliseconds(
-                        _initialDelay.TotalMilliseconds * Math.Pow(_backoffFactor, attempt));
+                        _options.InitialDelay.TotalMilliseconds * Math.Pow(_options.BackoffFactor, attempt));
                     await Task.Delay(delay);
                 }
             }

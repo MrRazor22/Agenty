@@ -21,7 +21,11 @@ namespace TestApp
                     opts.ApiKey = "lmstudio";
                     opts.Model = "qwen@q5_k_m";
                 });
-
+                builder.AddRetryPolicy(o =>
+                {
+                    o.MaxRetries = 1;
+                    o.Timeout = TimeSpan.FromMinutes(5);
+                });
                 builder.WithLogLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
 
                 app = builder.Build();

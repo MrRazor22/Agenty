@@ -6,10 +6,10 @@ using Agenty.LLMCore.Providers.OpenAI;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -25,12 +25,13 @@ namespace Agenty.AgentCore
         IDictionary<string, object?> Items { get; }
         CancellationToken CancellationToken { get; }
     }
+
     public sealed class AgentResponse
     {
         public string? Message { get; private set; }
         public object? Payload { get; private set; }
 
-        internal void Set(string? message = null, object? payload = null)
+        public void Set(string? message = null, object? payload = null)
         {
             Message = message;
             Payload = payload;
@@ -39,7 +40,7 @@ namespace Agenty.AgentCore
 
     internal sealed class AgentContext : IAgentContext
     {
-        private readonly AgentResponse _reponse = new AgentResponse();
+        private readonly AgentResponse _response = new AgentResponse();
 
         public AgentContext(IServiceProvider services, CancellationToken cancellationToken = default)
         {
@@ -51,11 +52,11 @@ namespace Agenty.AgentCore
 
         public Conversation Chat { get; }
         public string? UserRequest { get; set; }
-        public AgentResponse Response => _reponse;
+        public AgentResponse Response => _response;
         public IServiceProvider Services { get; }
         public IDictionary<string, object?> Items { get; }
         public CancellationToken CancellationToken { get; }
-        public void SetResult(string? message, object? payload) => _reponse.Set(message, payload);
+        public void SetResult(string? message, object? payload) => _response.Set(message, payload);
     }
 
     // === 2. AgentBuilder (like WebApplicationBuilder) ===
@@ -73,7 +74,8 @@ namespace Agenty.AgentCore
             Services.AddSingleton<IToolCatalog>(sp => sp.GetRequiredService<ToolRegistryCatalog>());
             Services.AddSingleton<IToolRuntime, ToolRuntime>();
             Services.AddSingleton<ITokenManager, TokenManager>();
-
+            Services.AddSingleton<IRetryPolicy, DefaultRetryPolicy>();
+            Services.Configure<RetryPolicyOptions>(_ => { }); // default values
             Services.AddLogging(builder =>
             {
                 builder.AddSimpleConsole(options =>
@@ -116,6 +118,7 @@ namespace Agenty.AgentCore
         private AgentStepDelegate _pipeline = ctx => Task.CompletedTask;
         public IServiceProvider Services => _services;
         public Conversation ChatHistory => _history;
+
         internal Agent(IServiceProvider services)
         {
             _services = services;
@@ -168,7 +171,6 @@ namespace Agenty.AgentCore
             _pipeline = ctx => middleware(ctx, next);
             return this;
         }
-
         // default overload — supports DI and optional constructors 
         // unified Use<TStep> — handles both DI and factory forms
         private int _runningTotalTokens = 0;
@@ -197,13 +199,13 @@ namespace Agenty.AgentCore
                     var after = tokenMgr?.GetTotals() ?? TokenUsage.Empty;
                     var delta = after - before;
                     logger?.LogInformation(
-    "│ Step: {Step,-20} │ Time: {Ms,6} ms │ In: {In,5} │ Out: {Out,5} │ Δ: {Delta,5} │ Total: {Total,6} │",
-    stepName,
-    sw.ElapsedMilliseconds,
-    delta.InputTokens,
-    delta.OutputTokens,
-    delta.Total,
-    after.Total);
+                        "│ Step: {Step,-20} │ Time: {Ms,6} ms │ In: {In,5} │ Out: {Out,5} │ Δ: {Delta,5} │ Total: {Total,6} │",
+                        stepName,
+                        sw.ElapsedMilliseconds,
+                        delta.InputTokens,
+                        delta.OutputTokens,
+                        delta.Total,
+                        after.Total);
 
                     await next(innerCtx);
                 });
@@ -211,7 +213,6 @@ namespace Agenty.AgentCore
                 StepContext.Current.Value = prev;
             });
         }
-
 
         // run
         public async Task<AgentResponse> ExecuteAsync(string goal, CancellationToken ct = default)
@@ -266,7 +267,6 @@ namespace Agenty.AgentCore
         Task<AgentResponse> ExecuteAsync(string goal, CancellationToken cancellationToken = default);
     }
 
-
     public sealed class OpenAIOptions
     {
         public string BaseUrl { get; set; } = "http://127.0.0.1:1234/v1";
@@ -287,13 +287,13 @@ namespace Agenty.AgentCore
                 client.Initialize(options.BaseUrl, options.ApiKey, options.Model);
                 return client;
             });
+
             builder.Services.AddSingleton<IToolRuntime>(sp =>
             {
                 var registry = sp.GetRequiredService<IToolCatalog>();
                 var logger = sp.GetService<ILogger<ToolRuntime>>();
                 return new ToolRuntime(registry, logger);
             });
-
 
             builder.Services.AddSingleton<ILLMCoordinator>(sp =>
             {
@@ -303,10 +303,21 @@ namespace Agenty.AgentCore
                 var runtime = sp.GetRequiredService<IToolRuntime>();
                 var tokenManager = sp.GetRequiredService<ITokenManager>();
                 var parser = new ToolCallParser();
-                var retry = new DefaultRetryPolicy();
+                var retry = sp.GetRequiredService<IRetryPolicy>();
                 return new LLMCoordinator(llmClient, registry, runtime, parser, tokenManager, retry, logger);
             });
 
+            return builder;
+        }
+
+        public static AgentBuilder AddRetryPolicy(this AgentBuilder builder, Action<RetryPolicyOptions>? configure = null)
+        {
+            if (configure != null)
+                builder.Services.Configure(configure);
+            else
+                builder.Services.Configure<RetryPolicyOptions>(_ => { }); // defaults
+
+            builder.Services.AddSingleton<IRetryPolicy, DefaultRetryPolicy>();
             return builder;
         }
     }
