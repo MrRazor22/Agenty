@@ -1,12 +1,10 @@
 ﻿using Agenty.AgentCore.Runtime;
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
-using Agenty.LLMCore.Messages;
+using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-using SharpToken;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,68 +18,53 @@ namespace Agenty.AgentCore.Flows
         {
             try
             {
-                // --- Code before next(ctx) (INWARD/REQUEST PATH) ---
-                // Pass control to the rest of the agent pipeline (Planning, Tools, etc.)
                 await next(ctx);
             }
             catch (Exception ex)
             {
-                // --- Code after next(ctx) (OUTWARD/REVERSE/RESPONSE PATH) ---
-                // This code runs only if an exception is thrown by a subsequent step 
-                // and bubbles up the chain.
-
                 var logger = ctx.Services.GetService<ILogger<ErrorHandlingStep>>();
-                logger?.LogError(ex, "Agent pipeline failed due to an exception.");
+                logger?.LogError(ex, "Unhandled agent pipeline exception.");
 
-                // 1. Clear the internal state (meaningful action)
-                ctx.Chat.AddAssistant($"An unexpected error occurred: {ex.Message}. I cannot complete your request.");
-
-                // 2. Set a clean, user-facing error response (meaningful action)
-                // This prevents an empty or corrupt response from being returned.
-                ctx.Response.Set("I'm sorry, I encountered a critical error while processing your request. Please try again or rephrase your goal.");
+                ctx.Chat.AddAssistant("An internal error occurred. Unable to continue.");
+                ctx.Response.Set("Sorry, something went wrong while processing your request.");
             }
         }
     }
+
     public sealed class PlanningStep : IAgentStep
     {
         private readonly string? _model;
         private readonly ReasoningMode _mode;
+        private readonly LLMCallOptions? _opts;
 
-        public PlanningStep(string? model = null, ReasoningMode mode = ReasoningMode.Balanced)
+        public PlanningStep(string? model = null, ReasoningMode mode = ReasoningMode.Balanced, LLMCallOptions? opts = null)
         {
             _model = model;
             _mode = mode;
+            _opts = opts;
         }
-
+        class Plan
+        {
+            public List<string> Steps { get; set; }
+        }
         public async Task InvokeAsync(IAgentContext ctx, AgentStepDelegate next)
         {
             var llm = ctx.Services.GetRequiredService<ILLMCoordinator>();
-            var toolCatalog = ctx.Services.GetRequiredService<IToolCatalog>();
+            var tools = ctx.Services.GetRequiredService<IToolCatalog>();
 
-            // Build a system prompt with role + instructions
-            var sysPrompt = $@"
-You are the *planner* component of an AI agent.  
-Your task: Break down the user's request into **a clear, ordered list of minimal-steps**.  
-Each step should reference the **available tools** when relevant, and be phrased as an actionable instruction (but you will *not* execute anything right now).
-
-Available tools: {string.Join(", ", toolCatalog.RegisteredTools.Select(t => t.Name))}  
-Constraints:  
-- Use as few steps as needed.  
-- Do not repeat the user request.  
-- Do not execute the steps, only plan them.  
-- If the request is ambiguous, include one clarifying question step.";
+            var sysPrompt = $@"Break the user request into a minimal ordered set of actionable steps.";
 
             var convo = new Conversation()
                 .CloneFrom(ctx.Chat)
                 .AddSystem(sysPrompt)
-                .AddUser($"User request: {ctx.UserRequest}");
+                .AddUser(ctx.UserRequest ?? "");
 
-            var plan = await llm.GetResponse(convo, _mode, _model, ctx.CancellationToken);
+            var plan = await llm.GetStructured<Plan>(convo, _mode, _model, _opts, ctx.CancellationToken);
 
-            if (!string.IsNullOrWhiteSpace(plan))
+            if (plan != null && plan.Steps.Count > 0)
             {
-                ctx.Items["plan"] = plan;
-                ctx.Chat.AddSystem($"Planned approach:\n{plan}");
+                ctx.Items["plan"] = plan.Steps.AsJsonString();
+                ctx.Chat.AddSystem("Plan:\n" + ctx.Items["plan"]);
             }
 
             await next(ctx);
@@ -94,83 +77,63 @@ Constraints:
         private readonly ReasoningMode _mode;
         private readonly ToolCallMode _toolMode;
         private readonly int _maxIterations;
-        private int _iterations = 0;
+        private readonly LLMCallOptions? _opts;
 
         public ToolCallingStep(
             string? model = null,
             ReasoningMode mode = ReasoningMode.Balanced,
             ToolCallMode toolMode = ToolCallMode.Auto,
-            int maxIterations = 50)
+            int maxIterations = 10,
+            LLMCallOptions? opts = null)
         {
             _model = model;
             _mode = mode;
             _toolMode = toolMode;
             _maxIterations = maxIterations;
+            _opts = opts;
         }
 
         public async Task InvokeAsync(IAgentContext ctx, AgentStepDelegate next)
         {
             var llm = ctx.Services.GetRequiredService<ILLMCoordinator>();
+            var iterations = 0;
 
-            var resp = await llm.GetToolCallResponse(ctx.Chat, _toolMode, _mode, _model, ctx.CancellationToken);
+            var resp = await llm.GetToolCallResponse(
+                ctx.Chat,
+                _toolMode,
+                _mode,
+                _model,
+                _opts,
+                ctx.CancellationToken);
 
             while (!ctx.CancellationToken.IsCancellationRequested &&
                    resp.Calls.Count > 0 &&
-                   _iterations < _maxIterations)
+                   iterations < _maxIterations)
             {
-                ctx.Chat.AddAssistant(resp.AssistantMessage);
+                if (!string.IsNullOrWhiteSpace(resp.AssistantMessage))
+                    ctx.Chat.AddAssistant(resp.AssistantMessage);
 
                 var results = await llm.RunToolCalls(resp.Calls.ToList(), ctx.CancellationToken);
                 ctx.Chat.AppendToolCallAndResults(results);
 
-                resp = await llm.GetToolCallResponse(ctx.Chat, _toolMode, _mode, _model, ctx.CancellationToken);
+                resp = await llm.GetToolCallResponse(
+                    ctx.Chat,
+                    _toolMode,
+                    _mode,
+                    _model,
+                    _opts,
+                    ctx.CancellationToken);
 
-                _iterations++;
+                iterations++;
             }
 
-            if (!ctx.CancellationToken.IsCancellationRequested)
+            if (!string.IsNullOrWhiteSpace(resp.AssistantMessage))
             {
-                ctx.Chat.AddAssistant(resp.AssistantMessage!);
-                ctx.Response.Set(resp.AssistantMessage!);
+                ctx.Chat.AddAssistant(resp.AssistantMessage);
+                ctx.Response.Set(resp.AssistantMessage);
             }
 
-            ctx.Chat.AddAssistant(resp.AssistantMessage!);
-            ctx.Response.Set(resp.AssistantMessage!);
-
             await next(ctx);
         }
     }
-
-    public sealed class FinalSummaryStep : IAgentStep
-    {
-        private readonly string? _model;
-        private readonly ReasoningMode _mode;
-
-        public FinalSummaryStep(string? model = null, ReasoningMode mode = ReasoningMode.Creative)
-        {
-            _model = model;
-            _mode = mode;
-        }
-
-        public async Task InvokeAsync(IAgentContext ctx, AgentStepDelegate next)
-        {
-            var llm = ctx.Services.GetRequiredService<ILLMCoordinator>();
-
-            // Feed the whole chat (minus system/meta junk) and tell the model to cleanly conclude it
-            var polishChat = new Conversation()
-                .AddSystem($@"
-Give a single final response that directly answers the user's request.
-Respond naturally and clearly to the user in a user friendy way.
-")
-                .AddUser($"user's request: {ctx.UserRequest}, Converstation So far: {ctx.Chat.ToJson(ChatFilter.All & ~ChatFilter.System)}");
-
-            var finalAnswer = await llm.GetResponse(polishChat, _mode, _model, ctx.CancellationToken);
-
-            ctx.Chat.AddAssistant(finalAnswer);
-            ctx.Response.Set(finalAnswer);
-
-            await next(ctx);
-        }
-    }
-
 }

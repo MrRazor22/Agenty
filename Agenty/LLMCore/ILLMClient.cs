@@ -1,4 +1,5 @@
-﻿using Agenty.LLMCore.ChatHandling;
+﻿using Agenty.AgentCore.Runtime;
+using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
 using Newtonsoft.Json.Linq;
@@ -12,19 +13,35 @@ namespace Agenty.LLMCore
     {
         void Initialize(string url, string apiKey, string modelName);
 
-        Task<LLMResponse> GetResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced, string? model = null, CancellationToken ct = default);
-        IAsyncEnumerable<string> GetStreamingResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced, string? model = null, CancellationToken ct = default);
+        Task<LLMResponse> GetResponse(
+            Conversation prompt,
+            ReasoningMode mode = ReasoningMode.Balanced,
+            string? model = null,
+            LLMCallOptions? opts = null,
+            CancellationToken ct = default);
+
+        IAsyncEnumerable<string> GetStreamingResponse(
+            Conversation prompt,
+            ReasoningMode mode = ReasoningMode.Balanced,
+            string? model = null,
+            CancellationToken ct = default);
+
         Task<LLMResponse> GetToolCallResponse(
             Conversation prompt,
             IEnumerable<Tool> tools,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
             ReasoningMode mode = ReasoningMode.Balanced,
             string? model = null,
+            LLMCallOptions? opts = null,
             CancellationToken ct = default);
+
         Task<LLMResponse> GetStructuredResponse(
             Conversation prompt,
             JObject responseFormat,
-            ReasoningMode mode = ReasoningMode.Balanced, string? model = null, CancellationToken ct = default);
+            ReasoningMode mode = ReasoningMode.Balanced,
+            string? model = null,
+            LLMCallOptions? opts = null,
+            CancellationToken ct = default);
     }
 
     public enum ToolCallMode
@@ -46,7 +63,9 @@ namespace Agenty.LLMCore
     public sealed class LLMResponse
     {
         public string? AssistantMessage { get; set; }
-        public JObject? StructuredResult { get; set; }   // <-- Newtonsoft JObject
+
+        public JToken? StructuredResult { get; set; }
+
         public List<ToolCall> ToolCalls { get; set; } = new List<ToolCall>();
         public string? FinishReason { get; set; }
         public int? InputTokens { get; set; }
@@ -62,7 +81,7 @@ namespace Agenty.LLMCore
 
         public LLMResponse(
             string? assistantMessage = null,
-            JObject? structuredResult = null,   // <-- JObject
+            JToken? structuredResult = null,
             List<ToolCall>? toolCalls = null,
             string? finishReason = null)
         {
@@ -72,4 +91,5 @@ namespace Agenty.LLMCore
             FinishReason = finishReason;
         }
     }
+
 }

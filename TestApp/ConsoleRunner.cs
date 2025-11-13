@@ -26,20 +26,20 @@ namespace TestApp
                     o.MaxRetries = 1;
                     o.Timeout = TimeSpan.FromMinutes(5);
                 });
-                builder.WithLogLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
+                builder.WithLogLevel(Microsoft.Extensions.Logging.LogLevel.Trace);
 
                 app = builder.Build();
                 await app.LoadHistoryAsync("default");
 
-                app.WithSystemPrompt("You are a helpful assistant.")
-                   .WithTools<GeoTools>()
-                   .WithTools<WeatherTool>()
-                   .WithTools<ConversionTools>()
-                   .WithTools<MathTools>()
-                   .WithTools<SearchTools>()
-                   .Use<ErrorHandlingStep>()
-                   .Use<FinalSummaryStep>()
-                   .Use(() => new ToolCallingStep(toolMode: ToolCallMode.OneTool));
+                app.WithSystemPrompt("You are a helpful assistant. Never fabricate data.")
+   .WithTools<GeoTools>()
+   .WithTools<WeatherTool>()
+   .WithTools<ConversionTools>()
+   .WithTools<MathTools>()
+   .WithTools<SearchTools>()
+   .Use<ErrorHandlingStep>()
+   .Use(() => new ToolCallingStep(toolMode: ToolCallMode.OneTool))
+   .Use<PlanningStep>();
 
                 while (true)
                 {
@@ -93,7 +93,8 @@ namespace TestApp
             }
             finally
             {
-                await app?.SaveHistoryAsync("default");
+                if (app != null)
+                    await app.SaveHistoryAsync("default");
             }
         }
 

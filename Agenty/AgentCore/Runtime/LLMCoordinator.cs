@@ -16,6 +16,13 @@ using System.Threading.Tasks;
 
 namespace Agenty.AgentCore.Runtime
 {
+    public sealed class LLMCallOptions
+    {
+        public float? Temperature { get; set; }
+        public float? TopP { get; set; }
+        public int? MaxOutputTokens { get; set; }
+    }
+
     public class ToolCallResponse
     {
         public IReadOnlyList<ToolCall> Calls { get; }
@@ -35,11 +42,34 @@ namespace Agenty.AgentCore.Runtime
 
     public interface ILLMCoordinator
     {
-        Task<string?> GetResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced, string? model = null, CancellationToken ct = default);
-        Task<T?> GetStructured<T>(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced, string? model = null, CancellationToken ct = default) where T : class;
-        Task<ToolCallResponse> GetToolCallResponse(Conversation prompt, ToolCallMode toolCallMode = ToolCallMode.Auto, ReasoningMode mode = ReasoningMode.Balanced, string? model = null, CancellationToken ct = default, params Tool[] tools);
-        Task<IReadOnlyList<ToolCallResult>> RunToolCalls(List<ToolCall> toolCalls, CancellationToken ct = default);
+        Task<string?> GetResponse(
+            Conversation prompt,
+            ReasoningMode mode = ReasoningMode.Balanced,
+            string? model = null,
+            LLMCallOptions? opts = null,
+            CancellationToken ct = default);
+
+        Task<T> GetStructured<T>(
+            Conversation prompt,
+            ReasoningMode mode = ReasoningMode.Balanced,
+            string? model = null,
+            LLMCallOptions? opts = null,
+            CancellationToken ct = default);
+
+        Task<ToolCallResponse> GetToolCallResponse(
+            Conversation prompt,
+            ToolCallMode toolCallMode = ToolCallMode.Auto,
+            ReasoningMode mode = ReasoningMode.Balanced,
+            string? model = null,
+            LLMCallOptions? opts = null,
+            CancellationToken ct = default,
+            params Tool[] tools);
+
+        Task<IReadOnlyList<ToolCallResult>> RunToolCalls(
+            List<ToolCall> toolCalls,
+            CancellationToken ct = default);
     }
+
 
     internal sealed class LLMCoordinator : ILLMCoordinator
     {
@@ -71,22 +101,41 @@ namespace Agenty.AgentCore.Runtime
             _logger = logger;
         }
 
-        public async Task<string?> GetResponse(Conversation prompt, ReasoningMode mode = ReasoningMode.Balanced, string? model = null, CancellationToken ct = default)
+        public async Task<string?> GetResponse(
+    Conversation prompt,
+    ReasoningMode mode = ReasoningMode.Balanced,
+    string? model = null,
+    LLMCallOptions? opts = null,
+    CancellationToken ct = default)
         {
             _logger.LogTrace("Fetching simple LLM response (Mode={Mode}, Model={Model})", mode, model ?? "default");
-            var resp = await _llm.GetResponse(prompt, mode, model, ct);
+
+            var resp = await _llm.GetResponse(prompt, mode, model, opts, ct);
+
             _tokenManager.Record(resp.InputTokens ?? 0, resp.OutputTokens ?? 0);
             _logger.LogTrace("Response received. Tokens In={In}, Out={Out}", resp.InputTokens, resp.OutputTokens);
             return resp.AssistantMessage;
         }
 
-        public async Task<T?> GetStructured<T>(Conversation prompt, ReasoningMode mode = ReasoningMode.Deterministic, string? model = null, CancellationToken ct = default) where T : class
+
+        public async Task<T> GetStructured<T>(
+            Conversation prompt,
+            ReasoningMode mode = ReasoningMode.Deterministic,
+            string? model = null,
+            LLMCallOptions? opts = null,
+            CancellationToken ct = default)
         {
             _logger.LogTrace("Requesting structured response for {Type}", typeof(T).Name);
-            return await _retryPolicy.ExecuteAsync(intPrompt => RunStructured<T>(intPrompt, mode, model, ct), prompt);
+            return await _retryPolicy.ExecuteAsync(
+    p => RunStructured<T>(p, mode, model, opts, ct), prompt);
         }
 
-        private async Task<T?> RunStructured<T>(Conversation intPrompt, ReasoningMode mode, string? model = null, CancellationToken ct = default) where T : class
+        private async Task<T> RunStructured<T>(
+    Conversation intPrompt,
+    ReasoningMode mode,
+    string? model,
+    LLMCallOptions? opts,
+    CancellationToken ct)
         {
             var typeKey = typeof(T).FullName!;
             var schema = _schemaCache.GetOrAdd(typeKey, _ =>
@@ -96,7 +145,7 @@ namespace Agenty.AgentCore.Runtime
             });
 
             _logger.LogTrace("Running structured call for {Type}", typeKey);
-            var response = await _llm.GetStructuredResponse(intPrompt, schema, mode, model, ct);
+            var response = await _llm.GetStructuredResponse(intPrompt, schema, mode, model, opts, ct);
             _tokenManager.Record(response.InputTokens ?? 0, response.OutputTokens ?? 0);
 
             if (response?.StructuredResult == null)
@@ -116,10 +165,20 @@ namespace Agenty.AgentCore.Runtime
             }
 
             _logger.LogTrace("Structured response for {Type} validated successfully", typeKey);
-            return response.StructuredResult.ToObject<T>(JsonSerializer.Create(new JsonSerializerSettings
+
+            try
             {
-                Converters = { new Newtonsoft.Json.Converters.StringEnumConverter() }
-            }));
+                return response.StructuredResult.ToObject<T>(JsonSerializer.Create(new JsonSerializerSettings
+                {
+                    Converters = { new Newtonsoft.Json.Converters.StringEnumConverter() }
+                }));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed converting structured JSON to {Type}", typeof(T).Name);
+                intPrompt.AddAssistant($"JSON parsed but cannot convert to {typeof(T).Name}. Fix format.");
+                return default;
+            }
         }
 
         public async Task<ToolCallResponse> GetToolCallResponse(
@@ -127,6 +186,7 @@ namespace Agenty.AgentCore.Runtime
             ToolCallMode toolCallMode = ToolCallMode.Auto,
             ReasoningMode mode = ReasoningMode.Balanced,
             string? model = null,
+            LLMCallOptions? opts = null,
             CancellationToken ct = default,
             params Tool[] tools)
         {
@@ -138,22 +198,23 @@ namespace Agenty.AgentCore.Runtime
                 mode, model ?? "default", tools.Length);
 
             var resp = await _retryPolicy.ExecuteAsync(
-                async intPrompt => await RunToolCall(intPrompt, toolCallMode, mode, tools, model, ct),
-                prompt);
+    p => RunToolCall(p, toolCallMode, mode, tools, model, opts, ct),
+    prompt);
 
             return resp ?? new ToolCallResponse(Array.Empty<ToolCall>(), "No tool call produced.", null);
         }
 
         private async Task<ToolCallResponse> RunToolCall(
-            Conversation intPrompt,
-            ToolCallMode toolCallMode,
-            ReasoningMode mode,
-            Tool[] tools,
-            string? model = null,
-            CancellationToken ct = default)
+    Conversation intPrompt,
+    ToolCallMode toolCallMode,
+    ReasoningMode mode,
+    Tool[] tools,
+    string? model,
+    LLMCallOptions? opts,
+    CancellationToken ct)
         {
             _logger.LogTrace("Running tool call pass (Mode={Mode}, Tools={Count})", mode, tools.Length);
-            var response = await _llm.GetToolCallResponse(intPrompt, tools, toolCallMode, mode, model, ct);
+            var response = await _llm.GetToolCallResponse(intPrompt, tools, toolCallMode, mode, model, opts, ct);
             _tokenManager.Record(response.InputTokens ?? 0, response.OutputTokens ?? 0);
 
             var valid = new List<ToolCall>();

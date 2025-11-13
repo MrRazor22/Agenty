@@ -20,10 +20,9 @@ namespace Agenty.AgentCore.Runtime
 
     public interface IRetryPolicy
     {
-        Task<T?> ExecuteAsync<T>(
-            Func<Conversation, Task<T?>> action,
-            Conversation prompt)
-            where T : class;
+        Task<T> ExecuteAsync<T>(
+            Func<Conversation, Task<T>> action,
+            Conversation prompt);
     }
 
     /// <summary>
@@ -38,10 +37,9 @@ namespace Agenty.AgentCore.Runtime
             _options = options?.Value ?? new RetryPolicyOptions();
         }
 
-        public async Task<T?> ExecuteAsync<T>(
-            Func<Conversation, Task<T?>> action,
+        public async Task<T> ExecuteAsync<T>(
+            Func<Conversation, Task<T>> action,
             Conversation prompt)
-            where T : class
         {
             if (!_options.Enabled)
                 return await action(prompt);
