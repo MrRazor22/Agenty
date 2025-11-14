@@ -43,10 +43,20 @@ namespace Agenty.AgentCore.Flows
             _mode = mode;
             _opts = opts;
         }
-        class Plan
+        public class Plan
         {
             public List<string> Steps { get; set; }
+
+            public override string ToString()
+            {
+                if (Steps == null || Steps.Count == 0)
+                    return string.Empty;
+
+                return string.Join("\n",
+                    Steps.Select((s, i) => $"Step {i + 1}: {s}"));
+            }
         }
+
         public async Task InvokeAsync(IAgentContext ctx, AgentStepDelegate next)
         {
             var llm = ctx.Services.GetRequiredService<ILLMCoordinator>();
@@ -55,16 +65,15 @@ namespace Agenty.AgentCore.Flows
             var sysPrompt = $@"Break the user request into a minimal ordered set of actionable steps.";
 
             var convo = new Conversation()
-                .CloneFrom(ctx.Chat)
-                .AddSystem(sysPrompt)
-                .AddUser(ctx.UserRequest ?? "");
+                .CloneFrom(ctx.Chat, ~ChatFilter.System)
+                .AddSystem(sysPrompt);
 
             var plan = await llm.GetStructured<Plan>(convo, _mode, _model, _opts, ctx.CancellationToken);
 
             if (plan != null && plan.Steps.Count > 0)
             {
-                ctx.Items["plan"] = plan.Steps.AsJsonString();
-                ctx.Chat.AddSystem("Plan:\n" + ctx.Items["plan"]);
+                ctx.Items["plan"] = plan;
+                ctx.Chat.AddAssistant("Let's proceed with these steps:\n" + ctx.Items["plan"]);
             }
 
             await next(ctx);

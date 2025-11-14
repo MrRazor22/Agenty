@@ -60,14 +60,6 @@ namespace Agenty.LLMCore.BuiltInTools
             return ParseCountry(countries[0]);
         }
 
-        [Description("Get information about multiple countries.")]
-        public static async Task<List<CountryInfo>> GetMultipleCountriesInfo(
-            [Description("Array of country names")] string[] names)
-        {
-            var tasks = names.Select(GetCountryInfo);
-            return (await Task.WhenAll(tasks)).ToList();
-        }
-
         [Description("Search for countries by region (e.g., 'Europe', 'Asia').")]
         public static async Task<List<CountryInfo>> GetCountriesByRegion(
             [Description("Region name")] string region)

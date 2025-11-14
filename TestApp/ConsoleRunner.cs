@@ -26,12 +26,14 @@ namespace TestApp
                     o.MaxRetries = 1;
                     o.Timeout = TimeSpan.FromMinutes(5);
                 });
-                builder.WithLogLevel(Microsoft.Extensions.Logging.LogLevel.Trace);
+                builder.WithLogLevel(Microsoft.Extensions.Logging.LogLevel.Information);
 
                 app = builder.Build();
                 await app.LoadHistoryAsync("default");
 
-                app.WithSystemPrompt("You are a helpful assistant. Never fabricate data.")
+                app.WithSystemPrompt(
+     "You are an AI agent, execute all user requests faithfully."
+ )
    .WithTools<GeoTools>()
    .WithTools<WeatherTool>()
    .WithTools<ConversionTools>()
