@@ -45,52 +45,6 @@ namespace Agenty.LLMCore.Providers.OpenAI
 
         public async Task<LLMResponse> GetResponse(
             Conversation prompt,
-            ReasoningMode mode = ReasoningMode.Balanced,
-            string? model = null,
-            LLMCallOptions? opts = null,
-            CancellationToken ct = default)
-        {
-            var chat = GetChatClient(model);
-            var options = new ChatCompletionOptions { ToolChoice = ChatToolChoice.CreateNoneChoice() };
-
-            options.ApplyLLMMode(mode);
-
-            if (opts?.Temperature != null) options.Temperature = opts.Temperature;
-            if (opts?.TopP != null) options.TopP = opts.TopP;
-            if (opts?.MaxOutputTokens != null) options.MaxOutputTokenCount = opts.MaxOutputTokens;
-
-            var response = await chat.CompleteChatAsync(prompt.ToChatMessages(), options, ct);
-            var result = response.Value;
-            var text = string.Join("", result.Content.Select(c => c.Text));
-
-            return new LLMResponse(
-                assistantMessage: string.IsNullOrWhiteSpace(text) ? null : text,
-                finishReason: result.FinishReason.ToString())
-            {
-                InputTokens = result.Usage?.InputTokenCount,
-                OutputTokens = result.Usage?.OutputTokenCount
-            };
-        }
-
-        public async IAsyncEnumerable<string> GetStreamingResponse(
-            Conversation prompt,
-            ReasoningMode mode = ReasoningMode.Balanced,
-            string? model = null,
-            CancellationToken ct = default)
-        {
-            var chat = GetChatClient(model);
-            var options = new ChatCompletionOptions();
-            options.ApplyLLMMode(mode);
-
-            await foreach (var update in chat.CompleteChatStreamingAsync(prompt.ToChatMessages(), options, ct))
-            {
-                foreach (var part in update.ContentUpdate)
-                    yield return part.Text;
-            }
-        }
-
-        public async Task<LLMResponse> GetToolCallResponse(
-            Conversation prompt,
             IEnumerable<Tool> tools,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
             ReasoningMode mode = ReasoningMode.Deterministic,
@@ -237,7 +191,9 @@ namespace Agenty.LLMCore.Providers.OpenAI
     ReasoningMode mode = ReasoningMode.Deterministic,
     string? model = null,
     LLMCallOptions? opts = null,
-    CancellationToken ct = default)
+    CancellationToken ct = default,
+    ToolCallMode toolCallMode = ToolCallMode.None,
+    params Tool[] tools)
         {
             var chat = GetChatClient(model);
 
@@ -248,6 +204,17 @@ namespace Agenty.LLMCore.Providers.OpenAI
                     jsonSchema: BinaryData.FromString(responseFormat.ToString(Newtonsoft.Json.Formatting.None)),
                     jsonSchemaIsStrict: true)
             };
+
+            // apply tool mode
+            options.ToolChoice = toolCallMode.ToChatToolChoice();
+
+            // apply tools if present
+            if (tools != null && tools.Length > 0)
+            {
+                foreach (var t in tools.ToChatTools())
+                    options.Tools.Add(t);
+            }
+
             options.ApplyLLMMode(mode);
 
             if (opts?.Temperature != null) options.Temperature = opts.Temperature;
@@ -257,7 +224,8 @@ namespace Agenty.LLMCore.Providers.OpenAI
             var response = await chat.CompleteChatAsync(prompt.ToChatMessages(), options, ct);
             var result = response.Value;
 
-            var raw = result.Content[0].Text?.Trim();
+            // get the raw text
+            var raw = result.Content?[0]?.Text?.Trim();
             if (string.IsNullOrEmpty(raw))
             {
                 return new LLMResponse(

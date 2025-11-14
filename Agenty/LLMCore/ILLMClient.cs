@@ -12,21 +12,7 @@ namespace Agenty.LLMCore
     public interface ILLMClient
     {
         void Initialize(string url, string apiKey, string modelName);
-
         Task<LLMResponse> GetResponse(
-            Conversation prompt,
-            ReasoningMode mode = ReasoningMode.Balanced,
-            string? model = null,
-            LLMCallOptions? opts = null,
-            CancellationToken ct = default);
-
-        IAsyncEnumerable<string> GetStreamingResponse(
-            Conversation prompt,
-            ReasoningMode mode = ReasoningMode.Balanced,
-            string? model = null,
-            CancellationToken ct = default);
-
-        Task<LLMResponse> GetToolCallResponse(
             Conversation prompt,
             IEnumerable<Tool> tools,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
@@ -38,10 +24,12 @@ namespace Agenty.LLMCore
         Task<LLMResponse> GetStructuredResponse(
             Conversation prompt,
             JObject responseFormat,
-            ReasoningMode mode = ReasoningMode.Balanced,
+            ReasoningMode mode = ReasoningMode.Deterministic,
             string? model = null,
             LLMCallOptions? opts = null,
-            CancellationToken ct = default);
+            CancellationToken ct = default,
+            ToolCallMode toolCallMode = ToolCallMode.None,
+            params Tool[] tools);
     }
 
     public enum ToolCallMode

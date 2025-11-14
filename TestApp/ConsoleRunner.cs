@@ -23,25 +23,25 @@ namespace TestApp
                 });
                 builder.AddRetryPolicy(o =>
                 {
-                    o.MaxRetries = 1;
+                    o.MaxRetries = 3;
                     o.Timeout = TimeSpan.FromMinutes(5);
                 });
-                builder.WithLogLevel(Microsoft.Extensions.Logging.LogLevel.Information);
+                builder.WithLogLevel(Microsoft.Extensions.Logging.LogLevel.Trace);
 
                 app = builder.Build();
                 await app.LoadHistoryAsync("default");
 
                 app.WithSystemPrompt(
-     "You are an AI agent, execute all user requests faithfully."
- )
-   .WithTools<GeoTools>()
-   .WithTools<WeatherTool>()
-   .WithTools<ConversionTools>()
-   .WithTools<MathTools>()
-   .WithTools<SearchTools>()
-   .Use<ErrorHandlingStep>()
-   .Use(() => new ToolCallingStep(toolMode: ToolCallMode.OneTool))
-   .Use<PlanningStep>();
+                     "You are an AI agent, execute all user requests faithfully."
+                 )
+                   .WithTools<GeoTools>()
+                   .WithTools<WeatherTool>()
+                   .WithTools<ConversionTools>()
+                   .WithTools<MathTools>()
+                   .WithTools<SearchTools>()
+                   .Use<ErrorHandlingStep>()
+                   .Use(() => new ToolCallingStep(toolMode: ToolCallMode.OneTool))
+                   .Use<PlanningStep>();
 
                 while (true)
                 {

@@ -47,14 +47,17 @@ namespace Agenty.AgentCore.Runtime
             ReasoningMode mode = ReasoningMode.Balanced,
             string? model = null,
             LLMCallOptions? opts = null,
-            CancellationToken ct = default);
+            CancellationToken ct = default,
+            params Tool[] tools);
 
         Task<T> GetStructured<T>(
             Conversation prompt,
-            ReasoningMode mode = ReasoningMode.Balanced,
+            ReasoningMode mode = ReasoningMode.Deterministic,
             string? model = null,
             LLMCallOptions? opts = null,
-            CancellationToken ct = default);
+            CancellationToken ct = default,
+            ToolCallMode toolCallMode = ToolCallMode.None,
+            params Tool[] tools);
 
         Task<ToolCallResponse> GetToolCallResponse(
             Conversation prompt,
@@ -106,11 +109,20 @@ namespace Agenty.AgentCore.Runtime
     ReasoningMode mode = ReasoningMode.Balanced,
     string? model = null,
     LLMCallOptions? opts = null,
-    CancellationToken ct = default)
+    CancellationToken ct = default,
+    params Tool[] tools)
         {
             _logger.LogTrace("Fetching simple LLM response (Mode={Mode}, Model={Model})", mode, model ?? "default");
 
-            var resp = await _llm.GetResponse(prompt, mode, model, opts, ct);
+            var resp = await _llm.GetResponse(
+                prompt,
+                tools,
+                ToolCallMode.None,
+                mode,
+                model,
+                opts,
+                ct
+            );
 
             _tokenManager.Record(resp.InputTokens ?? 0, resp.OutputTokens ?? 0);
             _logger.LogTrace("Response received. Tokens In={In}, Out={Out}", resp.InputTokens, resp.OutputTokens);
@@ -123,11 +135,13 @@ namespace Agenty.AgentCore.Runtime
             ReasoningMode mode = ReasoningMode.Deterministic,
             string? model = null,
             LLMCallOptions? opts = null,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            ToolCallMode toolCallMode = ToolCallMode.None,
+            params Tool[] tools)
         {
             _logger.LogTrace("Requesting structured response for {Type}", typeof(T).Name);
             return await _retryPolicy.ExecuteAsync(
-    p => RunStructured<T>(p, mode, model, opts, ct), prompt);
+    p => RunStructured<T>(p, mode, model, opts, ct, toolCallMode, tools), prompt);
         }
 
         private async Task<T> RunStructured<T>(
@@ -135,7 +149,9 @@ namespace Agenty.AgentCore.Runtime
     ReasoningMode mode,
     string? model,
     LLMCallOptions? opts,
-    CancellationToken ct)
+    CancellationToken ct,
+    ToolCallMode toolCallMode,
+    params Tool[] tools)
         {
             var typeKey = typeof(T).FullName!;
             var schema = _schemaCache.GetOrAdd(typeKey, _ =>
@@ -145,7 +161,7 @@ namespace Agenty.AgentCore.Runtime
             });
 
             _logger.LogTrace("Running structured call for {Type}", typeKey);
-            var response = await _llm.GetStructuredResponse(intPrompt, schema, mode, model, opts, ct);
+            var response = await _llm.GetStructuredResponse(intPrompt, schema, mode, model, opts, ct, toolCallMode, tools);
             _tokenManager.Record(response.InputTokens ?? 0, response.OutputTokens ?? 0);
 
             if (response?.StructuredResult == null)
@@ -214,7 +230,7 @@ namespace Agenty.AgentCore.Runtime
     CancellationToken ct)
         {
             _logger.LogTrace("Running tool call pass (Mode={Mode}, Tools={Count})", mode, tools.Length);
-            var response = await _llm.GetToolCallResponse(intPrompt, tools, toolCallMode, mode, model, opts, ct);
+            var response = await _llm.GetResponse(intPrompt, tools, toolCallMode, mode, model, opts, ct);
             _tokenManager.Record(response.InputTokens ?? 0, response.OutputTokens ?? 0);
 
             var valid = new List<ToolCall>();

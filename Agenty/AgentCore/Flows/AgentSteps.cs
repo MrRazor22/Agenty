@@ -77,6 +77,18 @@ namespace Agenty.AgentCore.Flows
             }
 
             await next(ctx);
+
+            string finalResponse = "No valid respose generated. Try Again";
+            if (plan != null && plan.Steps.Count > 0)
+            {
+                convo = new Conversation()
+               .CloneFrom(ctx.Chat)
+               .AddAssistant("Now I will provide a summary of all steps and results.");
+
+                finalResponse = await llm.GetResponse(convo, _mode, _model, _opts, ctx.CancellationToken) ?? finalResponse;
+            }
+            ctx.Chat.AddAssistant(finalResponse);
+            ctx.Response.Set(finalResponse);
         }
     }
 
