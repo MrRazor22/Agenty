@@ -172,10 +172,10 @@ namespace Agenty.LLMCore.Providers.OpenAI
             Conversation prompt,
             JObject responseFormat,
             ReasoningMode mode = ReasoningMode.Deterministic,
+            ToolCallMode toolCallMode = ToolCallMode.None,
             string model = null,
             LLMCallOptions opts = null,
             CancellationToken ct = default,
-            ToolCallMode toolCallMode = ToolCallMode.None,
             params Tool[] tools)
         {
             var chat = GetChatClient(model);

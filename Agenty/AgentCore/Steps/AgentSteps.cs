@@ -69,7 +69,7 @@ namespace Agenty.AgentCore.Steps
                 .CloneFrom(ctx.Chat, ~ChatFilter.System)
                 .AddSystem(sysPrompt);
 
-            var plan = await llm.GetStructured<Plan>(convo, _mode, _model, _opts, ctx.CancellationToken);
+            var plan = await llm.GetStructured<Plan>(convo, ToolCallMode.None, _mode, _model, _opts, ctx.CancellationToken);
 
             if (plan != null && plan.Steps.Count > 0)
             {

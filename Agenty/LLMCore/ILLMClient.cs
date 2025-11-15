@@ -22,11 +22,11 @@ namespace Agenty.LLMCore
             params Tool[] tools);
         Task<T> GetStructured<T>(
             Conversation prompt,
+            ToolCallMode toolCallMode = ToolCallMode.None,
             ReasoningMode mode = ReasoningMode.Deterministic,
             string? model = null,
             LLMCallOptions? opts = null,
             CancellationToken ct = default,
-            ToolCallMode toolCallMode = ToolCallMode.None,
             params Tool[] tools);
 
         IAsyncEnumerable<LLMStreamChunk> GetResponseStreaming(

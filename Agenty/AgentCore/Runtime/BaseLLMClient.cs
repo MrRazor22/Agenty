@@ -68,10 +68,10 @@ namespace Agenty.AgentCore.Runtime
             Conversation prompt,
             JObject responseFormat,
             ReasoningMode mode,
+            ToolCallMode toolCallMode,
             string? model,
             LLMCallOptions? opts,
             CancellationToken ct,
-            ToolCallMode toolCallMode,
             params Tool[] tools);
         #endregion
 
@@ -146,13 +146,13 @@ namespace Agenty.AgentCore.Runtime
         }
 
         public async Task<T> GetStructured<T>(
-    Conversation prompt,
-    ReasoningMode mode = ReasoningMode.Deterministic,
-    string? model = null,
-    LLMCallOptions? opts = null,
-    CancellationToken ct = default,
-    ToolCallMode toolCallMode = ToolCallMode.None,
-    params Tool[] tools)
+            Conversation prompt,
+            ToolCallMode toolCallMode = ToolCallMode.None,
+            ReasoningMode mode = ReasoningMode.Deterministic,
+            string? model = null,
+            LLMCallOptions? opts = null,
+            CancellationToken ct = default,
+            params Tool[] tools)
         {
             _logger.LogTrace("Requesting structured response for {Type}", typeof(T).Name);
 
@@ -170,10 +170,10 @@ namespace Agenty.AgentCore.Runtime
                     intPrompt,
                     schema,
                     mode,
+                    toolCallMode,
                     model,
                     opts,
                     ct,
-                    toolCallMode,
                     tools);
 
                 _tokenManager.Record(result.InputTokens, result.OutputTokens);
