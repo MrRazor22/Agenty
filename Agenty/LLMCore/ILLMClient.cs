@@ -48,6 +48,12 @@ namespace Agenty.LLMCore
         Balanced,       // normal reasoning
         Creative        // brainstorming / open ended
     }
+    public sealed class LLMCallOptions
+    {
+        public float? Temperature { get; set; }
+        public float? TopP { get; set; }
+        public int? MaxOutputTokens { get; set; }
+    }
 
     public class LLMResult
     {
@@ -137,10 +143,14 @@ namespace Agenty.LLMCore
             InputTokens = input;
             OutputTokens = output;
         }
+    }
+    public static class LLMStreamChunkExtensions
+    {
+        public static string? AsText(this LLMStreamChunk chunk)
+            => chunk.Payload as string;
 
-        // small helpers for clarity
-        public string? AsText() => Payload as string;
-        public ToolCall? AsToolCall() => Payload as ToolCall;
+        public static ToolCall? AsToolCall(this LLMStreamChunk chunk)
+            => chunk.Payload as ToolCall;
     }
 
 }

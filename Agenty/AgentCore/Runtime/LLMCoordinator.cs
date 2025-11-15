@@ -17,13 +17,6 @@ using System.Threading.Tasks;
 
 namespace Agenty.AgentCore.Runtime
 {
-    public sealed class LLMCallOptions
-    {
-        public float? Temperature { get; set; }
-        public float? TopP { get; set; }
-        public int? MaxOutputTokens { get; set; }
-    }
-
     public interface ILLMCoordinator
     {
         Task<LLMTextToolCallResult> GetResponse(
