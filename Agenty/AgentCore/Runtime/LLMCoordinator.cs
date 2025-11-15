@@ -11,6 +11,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -23,33 +24,16 @@ namespace Agenty.AgentCore.Runtime
         public int? MaxOutputTokens { get; set; }
     }
 
-    public class ToolCallResponse
-    {
-        public IReadOnlyList<ToolCall> Calls { get; }
-        public string? AssistantMessage { get; }
-        public string? FinishReason { get; }
-
-        public ToolCallResponse(
-            IReadOnlyList<ToolCall> calls,
-            string? assistantMessage,
-            string? finishReason)
-        {
-            Calls = calls;
-            AssistantMessage = assistantMessage;
-            FinishReason = finishReason;
-        }
-    }
-
     public interface ILLMCoordinator
     {
-        Task<string?> GetResponse(
+        Task<LLMTextToolCallResult> GetResponse(
             Conversation prompt,
+            ToolCallMode toolCallMode = ToolCallMode.Auto,
             ReasoningMode mode = ReasoningMode.Balanced,
             string? model = null,
             LLMCallOptions? opts = null,
             CancellationToken ct = default,
             params Tool[] tools);
-
         Task<T> GetStructured<T>(
             Conversation prompt,
             ReasoningMode mode = ReasoningMode.Deterministic,
@@ -59,7 +43,7 @@ namespace Agenty.AgentCore.Runtime
             ToolCallMode toolCallMode = ToolCallMode.None,
             params Tool[] tools);
 
-        Task<ToolCallResponse> GetToolCallResponse(
+        IAsyncEnumerable<LLMStreamChunk> StreamResponse(
             Conversation prompt,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
             ReasoningMode mode = ReasoningMode.Balanced,
@@ -103,101 +87,7 @@ namespace Agenty.AgentCore.Runtime
             _retryPolicy = retryPolicy;
             _logger = logger;
         }
-
-        public async Task<string?> GetResponse(
-    Conversation prompt,
-    ReasoningMode mode = ReasoningMode.Balanced,
-    string? model = null,
-    LLMCallOptions? opts = null,
-    CancellationToken ct = default,
-    params Tool[] tools)
-        {
-            _logger.LogTrace("Fetching simple LLM response (Mode={Mode}, Model={Model})", mode, model ?? "default");
-
-            var resp = await _llm.GetResponse(
-                prompt,
-                tools,
-                ToolCallMode.None,
-                mode,
-                model,
-                opts,
-                ct
-            );
-
-            _tokenManager.Record(resp.InputTokens ?? 0, resp.OutputTokens ?? 0);
-            _logger.LogTrace("Response received. Tokens In={In}, Out={Out}", resp.InputTokens, resp.OutputTokens);
-            return resp.AssistantMessage;
-        }
-
-
-        public async Task<T> GetStructured<T>(
-            Conversation prompt,
-            ReasoningMode mode = ReasoningMode.Deterministic,
-            string? model = null,
-            LLMCallOptions? opts = null,
-            CancellationToken ct = default,
-            ToolCallMode toolCallMode = ToolCallMode.None,
-            params Tool[] tools)
-        {
-            _logger.LogTrace("Requesting structured response for {Type}", typeof(T).Name);
-            return await _retryPolicy.ExecuteAsync(
-    p => RunStructured<T>(p, mode, model, opts, ct, toolCallMode, tools), prompt);
-        }
-
-        private async Task<T> RunStructured<T>(
-    Conversation intPrompt,
-    ReasoningMode mode,
-    string? model,
-    LLMCallOptions? opts,
-    CancellationToken ct,
-    ToolCallMode toolCallMode,
-    params Tool[] tools)
-        {
-            var typeKey = typeof(T).FullName!;
-            var schema = _schemaCache.GetOrAdd(typeKey, _ =>
-            {
-                _logger.LogTrace("Schema not cached. Building for {Type}", typeKey);
-                return JsonSchemaExtensions.GetSchemaFor<T>();
-            });
-
-            _logger.LogTrace("Running structured call for {Type}", typeKey);
-            var response = await _llm.GetStructuredResponse(intPrompt, schema, mode, model, opts, ct, toolCallMode, tools);
-            _tokenManager.Record(response.InputTokens ?? 0, response.OutputTokens ?? 0);
-
-            if (response?.StructuredResult == null)
-            {
-                _logger.LogWarning("Structured response for {Type} is null or empty", typeKey);
-                intPrompt.AddAssistant($"Empty or invalid response. Return valid JSON for {typeof(T).Name}.");
-                return default;
-            }
-
-            var errors = _parser.ValidateAgainstSchema(response.StructuredResult, schema, typeof(T).Name);
-            if (errors.Any())
-            {
-                var msg = string.Join("; ", errors.Select(e => $"{e.Path}: {e.Message}"));
-                _logger.LogWarning("Schema validation failed for {Type}: {Msg}", typeKey, msg);
-                intPrompt.AddAssistant($"Validation failed: {msg}. Return valid JSON for {typeof(T).Name}.");
-                return default;
-            }
-
-            _logger.LogTrace("Structured response for {Type} validated successfully", typeKey);
-
-            try
-            {
-                return response.StructuredResult.ToObject<T>(JsonSerializer.Create(new JsonSerializerSettings
-                {
-                    Converters = { new Newtonsoft.Json.Converters.StringEnumConverter() }
-                }));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed converting structured JSON to {Type}", typeof(T).Name);
-                intPrompt.AddAssistant($"JSON parsed but cannot convert to {typeof(T).Name}. Fix format.");
-                return default;
-            }
-        }
-
-        public async Task<ToolCallResponse> GetToolCallResponse(
+        public async Task<LLMTextToolCallResult> GetResponse(
             Conversation prompt,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
             ReasoningMode mode = ReasoningMode.Balanced,
@@ -206,71 +96,299 @@ namespace Agenty.AgentCore.Runtime
             CancellationToken ct = default,
             params Tool[] tools)
         {
-            tools = tools?.Any() == true ? tools : _tools.RegisteredTools.ToArray();
-            if (tools.Length == 0)
-                throw new ArgumentException("No tools registered.", nameof(tools));
+            tools = (tools.Length > 0) ? tools : _tools.RegisteredTools.ToArray();
 
-            _logger.LogTrace("Starting tool call detection (Mode={Mode}, Model={Model}, ToolCount={Count})",
-                mode, model ?? "default", tools.Length);
+            var sb = new System.Text.StringBuilder();
+            var toolCalls = new List<ToolCall>();
 
-            var resp = await _retryPolicy.ExecuteAsync(
-    p => RunToolCall(p, toolCallMode, mode, tools, model, opts, ct),
-    prompt);
+            int input = 0;
+            int output = 0;
+            string finish = "stop";
 
-            return resp ?? new ToolCallResponse(Array.Empty<ToolCall>(), "No tool call produced.", null);
+            await foreach (var chunk in StreamResponse(
+                prompt,
+                toolCallMode,
+                mode,
+                model,
+                opts,
+                ct,
+                tools))
+            {
+                if (ct.IsCancellationRequested)
+                    break;
+
+                switch (chunk.Kind)
+                {
+                    case StreamKind.Text:
+                        var text = chunk.AsText();
+                        if (!string.IsNullOrEmpty(text))
+                            sb.Append(text);
+                        break;
+
+                    case StreamKind.ToolCall:
+                        var tc = chunk.AsToolCall();
+                        if (tc != null)
+                            toolCalls.Add(tc);
+                        break;
+
+                    case StreamKind.Usage:
+                        input = chunk.InputTokens ?? input;
+                        output = chunk.OutputTokens ?? output;
+                        break;
+
+                    case StreamKind.Finish:
+                        finish = chunk.FinishReason ?? finish;
+                        break;
+                }
+            }
+
+            _tokenManager.Record(input, output);
+
+            var answer = sb.ToString();
+            if (!string.IsNullOrWhiteSpace(answer))
+                prompt.AddAssistant(answer);
+
+            return new LLMTextToolCallResult(
+                assistantMessage: answer,
+                toolCalls: toolCalls,
+                finishReason: finish,
+                input: input,
+                output: output
+            );
         }
 
-        private async Task<ToolCallResponse> RunToolCall(
-    Conversation intPrompt,
-    ToolCallMode toolCallMode,
-    ReasoningMode mode,
-    Tool[] tools,
-    string? model,
-    LLMCallOptions? opts,
-    CancellationToken ct)
+        public async Task<T> GetStructured<T>(
+    Conversation prompt,
+    ReasoningMode mode = ReasoningMode.Deterministic,
+    string? model = null,
+    LLMCallOptions? opts = null,
+    CancellationToken ct = default,
+    ToolCallMode toolCallMode = ToolCallMode.None,
+    params Tool[] tools)
         {
-            _logger.LogTrace("Running tool call pass (Mode={Mode}, Tools={Count})", mode, tools.Length);
-            var response = await _llm.GetResponse(intPrompt, tools, toolCallMode, mode, model, opts, ct);
-            _tokenManager.Record(response.InputTokens ?? 0, response.OutputTokens ?? 0);
+            _logger.LogTrace("Requesting structured response for {Type}", typeof(T).Name);
 
-            var valid = new List<ToolCall>();
-            var hadCalls = (response.ToolCalls?.Count ?? 0) > 0;
-            _logger.LogDebug("Received {Count} raw tool calls", response.ToolCalls?.Count ?? 0);
-
-            foreach (var call in response.ToolCalls ?? Enumerable.Empty<ToolCall>())
+            return await _retryPolicy.ExecuteAsync(async intPrompt =>
             {
-                if (!_tools.Contains(call.Name))
+                var typeKey = typeof(T).FullName!;
+                var schema = _schemaCache.GetOrAdd(typeKey, _ =>
                 {
-                    _logger.LogWarning("LLM suggested unknown tool: {Tool}", call.Name);
-                    intPrompt.AddUser($"Tool `{call.Name}` is invlaid, use only the available tools: [{tools.ToJoinedString()}] ");
-                    continue;
+                    _logger.LogTrace("Schema not cached. Building for {Type}", typeKey);
+                    return JsonSchemaExtensions.GetSchemaFor<T>();
+                });
+
+                // call llm client (internal result)
+                var result = await _llm.GetStructuredResponse(
+                    intPrompt,
+                    schema,
+                    mode,
+                    model,
+                    opts,
+                    ct,
+                    toolCallMode,
+                    tools);
+
+                _tokenManager.Record(result.InputTokens, result.OutputTokens);
+
+                // no payload
+                if (result.Payload == null)
+                {
+                    _logger.LogWarning("Structured response for {Type} was null", typeKey);
+                    intPrompt.AddAssistant($"Return proper JSON for {typeof(T).Name}.");
+                    return default;
                 }
 
-                _logger.LogDebug("Accepting tool call: {Tool}", call.Name);
-                valid.Add(new ToolCall(
-                    call.Id ?? Guid.NewGuid().ToString(),
-                    call.Name,
-                    call.Arguments,
-                    _parser.ParseToolParams(_tools, call.Name, call.Arguments)
-                ));
-            }
-
-            if (valid.Count == 0 && !string.IsNullOrWhiteSpace(response.AssistantMessage))
-            {
-                if (!hadCalls)
+                var token = result.Payload as JToken;
+                if (token == null)
                 {
-                    // no tool calls at all — check for inline calls
-                    var inline = _parser.TryExtractInlineToolCall(_tools, response.AssistantMessage);
-                    if (inline != null)
+                    _logger.LogWarning("Structured payload for {Type} is not JToken", typeKey);
+                    intPrompt.AddAssistant($"Return valid JSON object for {typeof(T).Name}.");
+                    return default;
+                }
+
+                // validate against schema
+                var errors = _parser.ValidateAgainstSchema(token, schema, typeof(T).Name);
+                if (errors.Count > 0)
+                {
+                    var msg = string.Join("; ", errors.Select(e => $"{e.Path}: {e.Message}"));
+                    _logger.LogWarning("Schema validation failed for {Type}: {Msg}", typeKey, msg);
+
+                    intPrompt.AddAssistant($"Validation failed: {msg}. Fix JSON for {typeof(T).Name}.");
+
+                    return default;
+                }
+
+                // final conversion
+                try
+                {
+                    var settings = new JsonSerializerSettings
                     {
-                        _logger.LogInformation("Inline tool call detected from assistant message");
-                        valid.AddRange(inline.Calls);
-                    }
+                        Converters = { new Newtonsoft.Json.Converters.StringEnumConverter() }
+                    };
+
+                    return token.ToObject<T>(JsonSerializer.Create(settings));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed converting structured JSON to {Type}", typeof(T).Name);
+                    intPrompt.AddAssistant($"JSON parsed but cannot convert to {typeof(T).Name}. Fix it.");
+                    return default;
+                }
+
+            }, prompt);
+        }
+
+        public async IAsyncEnumerable<LLMStreamChunk> StreamResponse(
+            Conversation prompt,
+            ToolCallMode toolCallMode = ToolCallMode.Auto,
+            ReasoningMode mode = ReasoningMode.Balanced,
+            string? model = null,
+            LLMCallOptions? opts = null,
+            [EnumeratorCancellation] CancellationToken ct = default,
+            params Tool[] tools)
+        {
+            tools = (tools.Length > 0) ? tools : _tools.RegisteredTools.ToArray();
+
+            await foreach (var chunk in _retryPolicy.ExecuteStreamAsync(
+                () => _llm.GetResponseStreaming(prompt, tools, toolCallMode, mode, model, opts, ct),
+                ct))
+            {
+                switch (chunk.Kind)
+                {
+                    case StreamKind.Text:
+                        {
+                            // forward original text chunk
+                            yield return chunk;
+
+                            var text = chunk.AsText();
+                            if (string.IsNullOrEmpty(text))
+                                break;
+
+                            // inline extraction
+                            var extraction = _parser.TryExtractInlineToolCall(_tools, text);
+
+                            if (extraction.Calls.Count > 0)
+                            {
+                                foreach (var c in extraction.Calls)
+                                {
+                                    object[] parsedParams;
+                                    try
+                                    {
+                                        parsedParams = _parser.ParseToolParams(_tools, c.Name, c.Arguments);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogWarning(ex, "Inline param parse failed for {Tool}", c.Name);
+                                        parsedParams = Array.Empty<object>();
+                                    }
+
+                                    var call = new ToolCall(
+                                        id: c.Id ?? Guid.NewGuid().ToString(),
+                                        name: c.Name,
+                                        arguments: c.Arguments,
+                                        parameters: parsedParams
+                                    );
+
+                                    var inlineChunk = new LLMStreamChunk(
+                                        StreamKind.ToolCall,
+                                        payload: call
+                                    );
+
+                                    HandleToolCallMode(toolCallMode, tools, inlineChunk, prompt);
+
+                                    yield return inlineChunk;
+
+                                    if (toolCallMode == ToolCallMode.OneTool)
+                                        yield break;
+                                }
+                            }
+
+                            break;
+                        }
+
+                    case StreamKind.ToolCall:
+                        {
+                            var raw = chunk.AsToolCall();
+                            if (raw == null)
+                                break;
+
+                            object[] parsedParams;
+                            try
+                            {
+                                parsedParams = _parser.ParseToolParams(_tools, raw.Name, raw.Arguments);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "Direct tool param parse failed for {Tool}", raw.Name);
+                                parsedParams = Array.Empty<object>();
+                            }
+
+                            var enriched = new ToolCall(
+                                id: raw.Id ?? Guid.NewGuid().ToString(),
+                                name: raw.Name,
+                                arguments: raw.Arguments,
+                                parameters: parsedParams
+                            );
+
+                            var enrichedChunk = new LLMStreamChunk(
+                                StreamKind.ToolCall,
+                                payload: enriched
+                            );
+
+                            HandleToolCallMode(toolCallMode, tools, enrichedChunk, prompt);
+
+                            yield return enrichedChunk;
+
+                            if (toolCallMode == ToolCallMode.OneTool)
+                                yield break;
+
+                            break;
+                        }
+
+                    case StreamKind.Usage:
+                        _tokenManager.Record(chunk.InputTokens ?? 0, chunk.OutputTokens ?? 0);
+                        yield return chunk;
+                        break;
+
+                    case StreamKind.Finish:
+                        yield return chunk;
+                        break;
                 }
             }
+        }
+        private void HandleToolCallMode(
+            ToolCallMode mode,
+            Tool[] allowedTools,
+            LLMStreamChunk chunk,
+            Conversation prompt)
+        {
+            var call = chunk.AsToolCall();
+            if (call == null)
+                return;
 
-            _logger.LogTrace("Tool call phase complete. Valid calls={Count}", valid.Count);
-            return new ToolCallResponse(valid, response.AssistantMessage, response.FinishReason);
+            var name = call.Name;
+
+            if (!_tools.Contains(name))
+            {
+                prompt.AddAssistant(
+                    $"Tool `{name}` is invalid. Use: [{string.Join(", ", allowedTools.Select(t => t.Name))}]");
+                return;
+            }
+
+            if (mode == ToolCallMode.None)
+            {
+                prompt.AddAssistant($"Tool call `{name}` not allowed in ToolCallMode.None.");
+                return;
+            }
+
+            if (mode == ToolCallMode.Required)
+                return;
+
+            if (mode == ToolCallMode.Auto)
+                return;
+
+            if (mode == ToolCallMode.OneTool)
+                return;
         }
 
         public Task<IReadOnlyList<ToolCallResult>> RunToolCalls(List<ToolCall> toolCalls, CancellationToken ct = default)

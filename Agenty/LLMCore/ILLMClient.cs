@@ -4,6 +4,7 @@ using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
 using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -12,21 +13,21 @@ namespace Agenty.LLMCore
     public interface ILLMClient
     {
         void Initialize(string url, string apiKey, string modelName);
-        Task<LLMResponse> GetResponse(
+        IAsyncEnumerable<LLMStreamChunk> GetResponseStreaming(
             Conversation prompt,
             IEnumerable<Tool> tools,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
-            ReasoningMode mode = ReasoningMode.Balanced,
-            string? model = null,
-            LLMCallOptions? opts = null,
-            CancellationToken ct = default);
-
-        Task<LLMResponse> GetStructuredResponse(
-            Conversation prompt,
-            JObject responseFormat,
             ReasoningMode mode = ReasoningMode.Deterministic,
             string? model = null,
             LLMCallOptions? opts = null,
+            [EnumeratorCancellation] CancellationToken ct = default);
+
+        Task<LLMStructuredResult> GetStructuredResponse(
+            Conversation prompt,
+            JObject responseFormat,
+            ReasoningMode mode = ReasoningMode.Deterministic,
+            string model = null,
+            LLMCallOptions opts = null,
             CancellationToken ct = default,
             ToolCallMode toolCallMode = ToolCallMode.None,
             params Tool[] tools);
@@ -48,36 +49,98 @@ namespace Agenty.LLMCore
         Creative        // brainstorming / open ended
     }
 
-    public sealed class LLMResponse
+    public class LLMResult
     {
-        public string? AssistantMessage { get; set; }
+        public string AssistantMessage { get; protected set; }   // ALWAYS present
+        public virtual object Payload { get; protected set; }    // optional extra
+        public string FinishReason { get; protected set; }
+        public int InputTokens { get; protected set; }
+        public int OutputTokens { get; protected set; }
 
-        public JToken? StructuredResult { get; set; }
-
-        public List<ToolCall> ToolCalls { get; set; } = new List<ToolCall>();
-        public string? FinishReason { get; set; }
-        public int? InputTokens { get; set; }
-        public int? OutputTokens { get; set; }
-        public int? TotalTokens => (InputTokens ?? 0) + (OutputTokens ?? 0);
-
-        public LLMResponse() { }
-
-        public LLMResponse(string? assistantMessage)
+        public LLMResult(
+            string assistantMessage,
+            object payload,
+            string finishReason,
+            int inputTokens,
+            int outputTokens)
         {
-            AssistantMessage = assistantMessage;
+            AssistantMessage = assistantMessage ?? "";
+            Payload = payload;
+            FinishReason = finishReason ?? "stop";
+            InputTokens = inputTokens;
+            OutputTokens = outputTokens;
+        }
+    }
+
+    public sealed class LLMTextToolCallResult : LLMResult
+    {
+        public new List<ToolCall> Payload { get; }
+
+        public LLMTextToolCallResult(
+            string assistantMessage,
+            List<ToolCall> toolCalls,
+            string finishReason,
+            int input,
+            int output)
+            : base(assistantMessage, toolCalls, finishReason, input, output)
+        {
+            Payload = toolCalls;
+        }
+    }
+
+    public sealed class LLMStructuredResult : LLMResult
+    {
+        public new JToken Payload { get; }
+
+        public LLMStructuredResult(
+            JToken payload,
+            string finishReason,
+            int input,
+            int output)
+            : base(null, payload, finishReason, input, output)
+        {
+            Payload = payload;
+        }
+    }
+
+    public enum StreamKind
+    {
+        Text,
+        ToolCall,
+        Usage,
+        Finish,
+        // future:
+        // Image,
+        // Audio,
+        // Json,
+        // Reasoning
+    }
+
+    public readonly struct LLMStreamChunk
+    {
+        public StreamKind Kind { get; }
+        public object? Payload { get; }     // unified extensible payload
+        public string? FinishReason { get; }
+        public int? InputTokens { get; }
+        public int? OutputTokens { get; }
+
+        public LLMStreamChunk(
+            StreamKind kind,
+            object? payload = null,
+            string? finish = null,
+            int? input = null,
+            int? output = null)
+        {
+            Kind = kind;
+            Payload = payload;
+            FinishReason = finish;
+            InputTokens = input;
+            OutputTokens = output;
         }
 
-        public LLMResponse(
-            string? assistantMessage = null,
-            JToken? structuredResult = null,
-            List<ToolCall>? toolCalls = null,
-            string? finishReason = null)
-        {
-            AssistantMessage = assistantMessage;
-            StructuredResult = structuredResult;
-            ToolCalls = toolCalls ?? new List<ToolCall>();
-            FinishReason = finishReason;
-        }
+        // small helpers for clarity
+        public string? AsText() => Payload as string;
+        public ToolCall? AsToolCall() => Payload as ToolCall;
     }
 
 }

@@ -2,6 +2,7 @@
 using Agenty.AgentCore.TokenHandling;
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
+using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.Providers.OpenAI;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,6 +11,7 @@ using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -23,6 +25,7 @@ namespace Agenty.AgentCore
         AgentResponse Response { get; }
         IServiceProvider Services { get; }
         IDictionary<string, object?> Items { get; }
+        Action<string>? Stream { get; set; }
         CancellationToken CancellationToken { get; }
     }
 
@@ -55,6 +58,7 @@ namespace Agenty.AgentCore
         public AgentResponse Response => _response;
         public IServiceProvider Services { get; }
         public IDictionary<string, object?> Items { get; }
+        public Action<string>? Stream { get; set; }
         public CancellationToken CancellationToken { get; }
         public void SetResult(string? message, object? payload) => _response.Set(message, payload);
     }
@@ -321,6 +325,39 @@ namespace Agenty.AgentCore
             return builder;
         }
     }
+    public static class AgentContextStreamingExtensions
+    {
+        private const string TextBufferKey = "__stream_text_buffer";
+        private const string ToolCallKey = "__stream_tool_call";
+
+        public static void StreamBegin(this IAgentContext ctx)
+        {
+            ctx.Items[TextBufferKey] = new StringBuilder();
+            ctx.Items[ToolCallKey] = null;
+        }
+
+        public static void StreamApply(this IAgentContext ctx, LLMStreamChunk chunk)
+        {
+            switch (chunk.Kind)
+            {
+                case StreamKind.Text:
+                    ctx.Stream?.Invoke(chunk.AsText()!);
+                    ((StringBuilder)ctx.Items[TextBufferKey]).Append(chunk.AsText());
+                    break;
+
+                case StreamKind.ToolCall:
+                    ctx.Items[ToolCallKey] = chunk.AsToolCall();
+                    break;
+            }
+        }
+
+        public static string StreamFinalText(this IAgentContext ctx)
+            => ctx.Items[TextBufferKey] is StringBuilder sb ? sb.ToString().Trim() : "";
+
+        public static ToolCall? StreamFinalToolCall(this IAgentContext ctx)
+            => ctx.Items[ToolCallKey] as ToolCall;
+    }
+
 
     /// <summary>
     /// Tracks the current step name using AsyncLocal for implicit context flow.

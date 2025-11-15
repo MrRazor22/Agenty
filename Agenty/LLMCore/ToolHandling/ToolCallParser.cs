@@ -9,9 +9,21 @@ using System.Text.RegularExpressions;
 
 namespace Agenty.LLMCore.ToolHandling
 {
+    public sealed class InlineToolExtraction
+    {
+        public List<ToolCall> Calls { get; }
+        public string AssistantMessage { get; }
+
+        public InlineToolExtraction(List<ToolCall> calls, string assistantMessage)
+        {
+            Calls = calls;
+            AssistantMessage = assistantMessage;
+        }
+    }
+
     public interface IToolCallParser
     {
-        ToolCallResponse TryExtractInlineToolCall(IToolCatalog tools, string content, bool strict = false);
+        InlineToolExtraction TryExtractInlineToolCall(IToolCatalog tools, string content, bool strict = false);
         object[] ParseToolParams(IToolCatalog tools, string toolName, JObject arguments);
         List<ToolValidationError> ValidateAgainstSchema(JToken? node, JObject schema, string path = "");
     }
@@ -74,7 +86,7 @@ namespace Agenty.LLMCore.ToolHandling
         );
         #endregion
 
-        public ToolCallResponse TryExtractInlineToolCall(IToolCatalog tools, string content, bool strict = false)
+        public InlineToolExtraction TryExtractInlineToolCall(IToolCatalog tools, string content, bool strict = false)
         {
             var matches = ToolTagPattern.Matches(content).Cast<Match>()
                 .Concat(LooseToolJsonPattern.Matches(content).Cast<Match>())
@@ -97,7 +109,7 @@ namespace Agenty.LLMCore.ToolHandling
                 catch
                 {
                     if (strict)
-                        return new ToolCallResponse(Array.Empty<ToolCall>(), $"Invalid JSON: `{jsonStr}`", null);
+                        return new InlineToolExtraction(new List<ToolCall>(), $"Invalid JSON: `{jsonStr}`");
                     continue;
                 }
                 if (node == null) continue;
@@ -113,12 +125,11 @@ namespace Agenty.LLMCore.ToolHandling
                     var message = node[ToolJsonAssistantMessageTag]?.ToString();
 
                     if (string.IsNullOrEmpty(name))
-                        return new ToolCallResponse(Array.Empty<ToolCall>(), "Tool call missing 'name'.", null);
+                        return new InlineToolExtraction(new List<ToolCall>(), "Tool call missing 'name'.");
 
                     if (!tools.Contains(name))
-                        return new ToolCallResponse(Array.Empty<ToolCall>(),
-                            $"Tool `{name}` not registered. Available: {string.Join(", ", tools.RegisteredTools.Select(t => t.Name))}",
-                            null);
+                        return new InlineToolExtraction(new List<ToolCall>(),
+                            $"Tool `{name}` not registered. Available: {string.Join(", ", tools.RegisteredTools.Select(t => t.Name))}");
 
                     var id = node.ContainsKey("id")
                         ? node["id"]?.ToString() ?? Guid.NewGuid().ToString()
@@ -131,7 +142,7 @@ namespace Agenty.LLMCore.ToolHandling
                 if (!hasName && !hasArgs && hasMessage)
                 {
                     toolCalls.Add(new ToolCall(node[ToolJsonAssistantMessageTag]?.ToString() ?? fallback));
-                    return new ToolCallResponse(toolCalls, assistantMessage, null);
+                    return new InlineToolExtraction(toolCalls, assistantMessage);
                 }
 
                 if (strict)
@@ -149,7 +160,7 @@ namespace Agenty.LLMCore.ToolHandling
             if (!string.IsNullOrWhiteSpace(fallback))
                 assistantMessage = fallback;
 
-            return new ToolCallResponse(toolCalls, assistantMessage, null);
+            return new InlineToolExtraction(toolCalls, assistantMessage);
         }
 
         public object[] ParseToolParams(IToolCatalog tools, string toolName, JObject arguments)

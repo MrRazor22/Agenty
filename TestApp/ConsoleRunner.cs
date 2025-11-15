@@ -39,9 +39,13 @@ namespace TestApp
                    .WithTools<ConversionTools>()
                    .WithTools<MathTools>()
                    .WithTools<SearchTools>()
-                   .Use<ErrorHandlingStep>()
-                   .Use(() => new ToolCallingStep(toolMode: ToolCallMode.OneTool))
-                   .Use<PlanningStep>();
+                   .Use(() => new StreamingToolCallingStep(toolMode: ToolCallMode.OneTool))
+                   .Use<PlanningStep>()
+                   .Use(async (ctx, next) =>
+                   {
+                       ctx.Stream = s => Console.Write(s);
+                       await next(ctx);
+                   });
 
                 while (true)
                 {

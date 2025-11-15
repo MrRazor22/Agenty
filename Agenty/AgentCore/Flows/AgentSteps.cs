@@ -2,12 +2,14 @@
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
+using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace Agenty.AgentCore.Flows
@@ -85,14 +87,15 @@ namespace Agenty.AgentCore.Flows
                .CloneFrom(ctx.Chat)
                .AddAssistant("Now I will provide a summary of all steps and results.");
 
-                finalResponse = await llm.GetResponse(convo, _mode, _model, _opts, ctx.CancellationToken) ?? finalResponse;
+                var res = await llm.GetResponse(convo, ToolCallMode.None, _mode, _model, _opts, ctx.CancellationToken);
+                finalResponse = res.AssistantMessage ?? finalResponse;
             }
             ctx.Chat.AddAssistant(finalResponse);
             ctx.Response.Set(finalResponse);
         }
     }
 
-    public sealed class ToolCallingStep : IAgentStep
+    public sealed class StreamingToolCallingStep : IAgentStep
     {
         private readonly string? _model;
         private readonly ReasoningMode _mode;
@@ -100,7 +103,7 @@ namespace Agenty.AgentCore.Flows
         private readonly int _maxIterations;
         private readonly LLMCallOptions? _opts;
 
-        public ToolCallingStep(
+        public StreamingToolCallingStep(
             string? model = null,
             ReasoningMode mode = ReasoningMode.Balanced,
             ToolCallMode toolMode = ToolCallMode.Auto,
@@ -116,45 +119,58 @@ namespace Agenty.AgentCore.Flows
 
         public async Task InvokeAsync(IAgentContext ctx, AgentStepDelegate next)
         {
+            if (ctx.Stream == null)
+                throw new InvalidOperationException("Streaming requires ctx.Stream.");
+
             var llm = ctx.Services.GetRequiredService<ILLMCoordinator>();
-            var iterations = 0;
+            var runtime = ctx.Services.GetRequiredService<IToolRuntime>();
 
-            var resp = await llm.GetToolCallResponse(
-                ctx.Chat,
-                _toolMode,
-                _mode,
-                _model,
-                _opts,
-                ctx.CancellationToken);
+            int iteration = 0;
 
-            while (!ctx.CancellationToken.IsCancellationRequested &&
-                   resp.Calls.Count > 0 &&
-                   iterations < _maxIterations)
+            while (iteration < _maxIterations &&
+                   !ctx.CancellationToken.IsCancellationRequested)
             {
-                if (!string.IsNullOrWhiteSpace(resp.AssistantMessage))
-                    ctx.Chat.AddAssistant(resp.AssistantMessage);
+                ctx.StreamBegin();
 
-                var results = await llm.RunToolCalls(resp.Calls.ToList(), ctx.CancellationToken);
-                ctx.Chat.AppendToolCallAndResults(results);
-
-                resp = await llm.GetToolCallResponse(
+                // STREAM → TEXT + POSSIBLE TOOLCALL
+                await foreach (var chunk in llm.StreamResponse(
                     ctx.Chat,
-                    _toolMode,
+                    _toolMode,        // <-- DO NOT CHANGE THIS MID-LOOP
                     _mode,
                     _model,
                     _opts,
+                    ctx.CancellationToken))
+                {
+                    ctx.StreamApply(chunk);
+                }
+
+                var assistantText = ctx.StreamFinalText();
+                var toolCall = ctx.StreamFinalToolCall();
+
+                if (!string.IsNullOrWhiteSpace(assistantText))
+                    ctx.Chat.AddAssistant(assistantText);
+
+                // If no toolcall → this is FINAL ANSWER
+                if (toolCall == null)
+                {
+                    ctx.Response.Set(assistantText);
+                    break;
+                }
+
+                // EXECUTE TOOL
+                var results = await runtime.HandleToolCallsAsync(
+                    new List<ToolCall> { toolCall },
                     ctx.CancellationToken);
 
-                iterations++;
-            }
+                ctx.Chat.AppendToolCallAndResults(results);
 
-            if (!string.IsNullOrWhiteSpace(resp.AssistantMessage))
-            {
-                ctx.Chat.AddAssistant(resp.AssistantMessage);
-                ctx.Response.Set(resp.AssistantMessage);
+                // LOOP AGAIN and stream next round
+                iteration++;
             }
 
             await next(ctx);
         }
+
     }
+
 }

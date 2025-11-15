@@ -10,6 +10,8 @@ using System.ClientModel;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -43,25 +45,24 @@ namespace Agenty.LLMCore.Providers.OpenAI
             return _chatClients.GetOrAdd(key, m => _client.GetChatClient(m));
         }
 
-        public async Task<LLMResponse> GetResponse(
+        public async IAsyncEnumerable<LLMStreamChunk> GetResponseStreaming(
             Conversation prompt,
             IEnumerable<Tool> tools,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
             ReasoningMode mode = ReasoningMode.Deterministic,
             string? model = null,
             LLMCallOptions? opts = null,
-            CancellationToken ct = default)
+            [EnumeratorCancellation] CancellationToken ct = default)
         {
-            if (toolCallMode == ToolCallMode.OneTool)
-            {
-                return await GetSingleToolCallStreaming(prompt, tools, mode, model);
-            }
-
             var chat = GetChatClient(model);
-            var options = new ChatCompletionOptions { ToolChoice = toolCallMode.ToChatToolChoice() };
+
+            var options = new ChatCompletionOptions
+            {
+                ToolChoice = toolCallMode.ToChatToolChoice(),
+                AllowParallelToolCalls = false
+            };
 
             options.ApplyLLMMode(mode);
-
             if (opts?.Temperature != null) options.Temperature = opts.Temperature;
             if (opts?.TopP != null) options.TopP = opts.TopP;
             if (opts?.MaxOutputTokens != null) options.MaxOutputTokenCount = opts.MaxOutputTokens;
@@ -69,131 +70,102 @@ namespace Agenty.LLMCore.Providers.OpenAI
             foreach (var t in tools.ToChatTools())
                 options.Tools.Add(t);
 
-            var response = await chat.CompleteChatAsync(prompt.ToChatMessages(), options, ct);
-            var result = response.Value;
+            var stream = chat.CompleteChatStreamingAsync(prompt.ToChatMessages(), options, ct);
 
-            var toolCalls = new List<ToolCall>();
-            if (result.ToolCalls != null)
-            {
-                foreach (var call in result.ToolCalls)
-                {
-                    var args = call.FunctionArguments != null
-                        ? JObject.Parse(call.FunctionArguments.ToString())
-                        : new JObject();
-
-                    toolCalls.Add(new ToolCall(call.Id ?? Guid.NewGuid().ToString(), call.FunctionName, args));
-                }
-            }
-
-            var content = result.Content?.FirstOrDefault()?.Text;
-
-            return new LLMResponse(
-                assistantMessage: string.IsNullOrWhiteSpace(content) ? null : content,
-                toolCalls: toolCalls,
-                finishReason: result.FinishReason.ToString())
-            {
-                InputTokens = result.Usage?.InputTokenCount,
-                OutputTokens = result.Usage?.OutputTokenCount
-            };
-        }
-
-        private async Task<LLMResponse> GetSingleToolCallStreaming(
-            Conversation prompt,
-            IEnumerable<Tool> tools,
-            ReasoningMode mode,
-            string? model,
-            CancellationToken ct = default)
-        {
-            var chat = GetChatClient(model);
-            var options = new ChatCompletionOptions
-            {
-                ToolChoice = ChatToolChoice.CreateAutoChoice(),
-                AllowParallelToolCalls = false
-            };
-            options.ApplyLLMMode(mode);
-
-            foreach (var t in tools.ToChatTools())
-                options.Tools.Add(t);
-
-            var streamingResponse = chat.CompleteChatStreamingAsync(prompt.ToChatMessages(), options, ct);
-
-            string? toolCallId = null;
+            string? toolId = null;
             string? toolName = null;
-            var toolArgs = new System.Text.StringBuilder();
-            var content = new System.Text.StringBuilder();
-            int inputTokens = 0, outputTokens = 0;
+            var toolArgsSb = new StringBuilder();
+
+            int inputTokens = 0;
+            int outputTokens = 0;
             string? finishReason = null;
 
-            await foreach (var update in streamingResponse)
+            await foreach (var update in stream.WithCancellation(ct))
             {
                 if (update.Usage != null)
                 {
                     inputTokens = update.Usage.InputTokenCount;
                     outputTokens = update.Usage.OutputTokenCount;
                 }
-                if (update.ToolCallUpdates != null)
-                {
-                    foreach (var toolUpdate in update.ToolCallUpdates)
-                    {
-                        toolCallId ??= toolUpdate.ToolCallId;
-                        toolName ??= toolUpdate.FunctionName;
-                        var argsDelta = toolUpdate.FunctionArgumentsUpdate?.ToString() ?? "";
-                        if (!string.IsNullOrEmpty(argsDelta))
-                            toolArgs.Append(argsDelta);
-                    }
-                }
+
+                // TEXT
                 if (update.ContentUpdate != null)
                 {
-                    foreach (var contentItem in update.ContentUpdate)
+                    foreach (var c in update.ContentUpdate)
                     {
-                        if (contentItem.Text != null)
-                            content.Append(contentItem.Text);
+                        if (c.Text != null)
+                        {
+                            yield return new LLMStreamChunk(
+                                StreamKind.Text,
+                                payload: c.Text
+                            );
+                        }
                     }
+                }
+
+                // TOOLCALL fragments
+                if (update.ToolCallUpdates != null)
+                {
+                    foreach (var tcu in update.ToolCallUpdates)
+                    {
+                        toolId ??= tcu.ToolCallId;
+                        toolName ??= tcu.FunctionName;
+
+                        var delta = tcu.FunctionArgumentsUpdate?.ToString();
+                        if (!string.IsNullOrEmpty(delta))
+                            toolArgsSb.Append(delta);
+                    }
+                }
+
+                // TOOLCALL assembled
+                if (toolArgsSb.Length > 0 && toolArgsSb.ToString().TryParseCompleteJson(out _))
+                {
+                    JObject args;
+                    try { args = JObject.Parse(toolArgsSb.ToString()); }
+                    catch { args = new JObject(); }
+
+                    var call = new ToolCall(toolId!, toolName!, args);
+
+                    yield return new LLMStreamChunk(
+                        StreamKind.ToolCall,
+                        payload: call
+                    );
+
+                    toolArgsSb.Clear();
+                    toolId = null;
+                    toolName = null;
                 }
 
                 if (update.FinishReason != null)
                     finishReason = update.FinishReason.Value.ToString();
-
-                if (toolArgs.Length > 0 && toolArgs.ToString().TryParseCompleteJson(out _))
-                {
-                    finishReason ??= "tool_calls";
-                    break;
-                }
             }
 
-            var toolCalls = new List<ToolCall>();
-            if (toolCallId != null && toolName != null)
-            {
-                try
-                {
-                    var args = JObject.Parse(toolArgs.ToString());
-                    toolCalls.Add(new ToolCall(toolCallId, toolName, args));
-                }
-                catch
-                {
-                    toolCalls.Add(new ToolCall(toolCallId, toolName, new JObject()));
-                }
-            }
+            // USAGE
+            yield return new LLMStreamChunk(
+                StreamKind.Usage,
+                payload: null,
+                input: inputTokens,
+                output: outputTokens
+            );
 
-            return new LLMResponse(
-                assistantMessage: content.Length > 0 ? content.ToString() : null,
-                toolCalls: toolCalls,
-                finishReason: finishReason ?? "stop")
-            {
-                InputTokens = inputTokens,
-                OutputTokens = outputTokens
-            };
+            // FINISH
+            yield return new LLMStreamChunk(
+                StreamKind.Finish,
+                payload: null,
+                finish: finishReason ?? "stop"
+            );
         }
 
-        public async Task<LLMResponse> GetStructuredResponse(
-    Conversation prompt,
-    JObject responseFormat,
-    ReasoningMode mode = ReasoningMode.Deterministic,
-    string? model = null,
-    LLMCallOptions? opts = null,
-    CancellationToken ct = default,
-    ToolCallMode toolCallMode = ToolCallMode.None,
-    params Tool[] tools)
+
+        public async Task<LLMStructuredResult> GetStructuredResponse(
+            Conversation prompt,
+            JObject responseFormat,
+            ReasoningMode mode = ReasoningMode.Deterministic,
+            string model = null,
+            LLMCallOptions opts = null,
+            CancellationToken ct = default,
+            ToolCallMode toolCallMode = ToolCallMode.None,
+            params Tool[] tools)
         {
             var chat = GetChatClient(model);
 
@@ -201,14 +173,16 @@ namespace Agenty.LLMCore.Providers.OpenAI
             {
                 ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
                     jsonSchemaFormatName: "structured_response",
-                    jsonSchema: BinaryData.FromString(responseFormat.ToString(Newtonsoft.Json.Formatting.None)),
+                    jsonSchema: BinaryData.FromString(
+                        responseFormat.ToString(Newtonsoft.Json.Formatting.None)
+                    ),
                     jsonSchemaIsStrict: true)
             };
 
-            // apply tool mode
+            // tool mode
             options.ToolChoice = toolCallMode.ToChatToolChoice();
 
-            // apply tools if present
+            // attach tools
             if (tools != null && tools.Length > 0)
             {
                 foreach (var t in tools.ToChatTools())
@@ -221,42 +195,36 @@ namespace Agenty.LLMCore.Providers.OpenAI
             if (opts?.TopP != null) options.TopP = opts.TopP;
             if (opts?.MaxOutputTokens != null) options.MaxOutputTokenCount = opts.MaxOutputTokens;
 
+            // call
             var response = await chat.CompleteChatAsync(prompt.ToChatMessages(), options, ct);
             var result = response.Value;
 
-            // get the raw text
+            // raw structured JSON
             var raw = result.Content?[0]?.Text?.Trim();
-            if (string.IsNullOrEmpty(raw))
+            JToken payload = null;
+
+            if (!string.IsNullOrEmpty(raw))
             {
-                return new LLMResponse(
-                    assistantMessage: null,
-                    structuredResult: null,
-                    finishReason: result.FinishReason.ToString())
+                try
                 {
-                    InputTokens = result.Usage?.InputTokenCount,
-                    OutputTokens = result.Usage?.OutputTokenCount
-                };
+                    payload = JToken.Parse(raw);
+                }
+                catch
+                {
+                    // fallback: allow quoted raw strings
+                    if (raw.StartsWith("\"") && raw.EndsWith("\""))
+                        payload = JValue.Parse(raw);
+                    else
+                        payload = JValue.CreateString(raw);
+                }
             }
 
-            JToken parsed;
-            try
-            {
-                parsed = JToken.Parse(raw);
-            }
-            catch
-            {
-                parsed = (raw.StartsWith("\"") && raw.EndsWith("\""))
-                    ? JValue.Parse(raw)
-                    : JValue.CreateString(raw);
-            }
-
-            return new LLMResponse(
-                structuredResult: parsed,
-                finishReason: result.FinishReason.ToString())
-            {
-                InputTokens = result.Usage?.InputTokenCount,
-                OutputTokens = result.Usage?.OutputTokenCount
-            };
+            return new LLMStructuredResult(
+                payload,
+                result.FinishReason.ToString(),
+                result.Usage?.InputTokenCount ?? 0,
+                result.Usage?.OutputTokenCount ?? 0
+            );
         }
     }
 }
