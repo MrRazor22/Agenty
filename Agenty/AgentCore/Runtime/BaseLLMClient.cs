@@ -54,7 +54,7 @@ namespace Agenty.AgentCore.Runtime
             _logger = logger;
         }
 
-        // the ONLY abstract methods providers must implement
+        #region abstract methods providers must implement
         protected abstract IAsyncEnumerable<LLMStreamChunk> ProviderStream(
             Conversation prompt,
             IEnumerable<Tool> tools,
@@ -73,7 +73,7 @@ namespace Agenty.AgentCore.Runtime
             CancellationToken ct,
             ToolCallMode toolCallMode,
             params Tool[] tools);
-
+        #endregion
 
         public async Task<LLMTextToolCallResult> GetResponse(
             Conversation prompt,
