@@ -5,7 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore.Runtime
+namespace Agenty.AgentCore.Steps
 {
     public delegate Task AgentStepDelegate(IAgentContext ctx);
 

@@ -1,4 +1,5 @@
-﻿using Agenty.AgentCore.Runtime;
+﻿using Agenty.AgentCore.Flows;
+using Agenty.AgentCore.Runtime;
 using Agenty.AgentCore.TokenHandling;
 using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
@@ -101,8 +102,7 @@ namespace Agenty.AgentCore
         public Agent Build()
         {
             var provider = Services.BuildServiceProvider(validateScopes: true);
-            var hasLLM = provider.GetService<ILLMClient>() != null &&
-                         provider.GetService<ILLMCoordinator>() != null;
+            var hasLLM = provider.GetService<ILLMClient>() != null;
 
             if (!hasLLM)
                 Console.WriteLine("[Warning] No LLM client/coordinator registered. Tool calls or planning may fail.");
@@ -285,13 +285,6 @@ namespace Agenty.AgentCore
             var options = new OpenAIOptions();
             configure(options);
 
-            builder.Services.AddSingleton<ILLMClient>(sp =>
-            {
-                var client = new OpenAILLMClient();
-                client.Initialize(options.BaseUrl, options.ApiKey, options.Model);
-                return client;
-            });
-
             builder.Services.AddSingleton<IToolRuntime>(sp =>
             {
                 var registry = sp.GetRequiredService<IToolCatalog>();
@@ -299,16 +292,15 @@ namespace Agenty.AgentCore
                 return new ToolRuntime(registry, logger);
             });
 
-            builder.Services.AddSingleton<ILLMCoordinator>(sp =>
+            builder.Services.AddSingleton<ILLMClient>(sp =>
             {
-                var logger = sp.GetRequiredService<ILogger<LLMCoordinator>>();
-                var llmClient = sp.GetRequiredService<ILLMClient>();
+                var logger = sp.GetRequiredService<ILogger<ILLMClient>>();
                 var registry = sp.GetRequiredService<IToolCatalog>();
                 var runtime = sp.GetRequiredService<IToolRuntime>();
                 var tokenManager = sp.GetRequiredService<ITokenManager>();
                 var parser = new ToolCallParser();
                 var retry = sp.GetRequiredService<IRetryPolicy>();
-                return new LLMCoordinator(llmClient, registry, runtime, parser, tokenManager, retry, logger);
+                return new OpenAILLMClient(options.BaseUrl, options.ApiKey, options.Model, registry, runtime, parser, tokenManager, retry, logger);
             });
 
             return builder;

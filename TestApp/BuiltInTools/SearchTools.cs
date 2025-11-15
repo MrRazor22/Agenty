@@ -20,32 +20,43 @@ namespace Agenty.LLMCore.BuiltInTools
             _http.DefaultRequestHeaders.UserAgent.ParseAdd(HttpDefaults.UserAgent);
         }
 
-        [Description("Quick search Internet using DuckDuckGo Instant Answer API.")]
+        [Description("Quick search the internet.")]
         public static async Task<string> Search(
             [Description("Search query text")] string query)
         {
             if (string.IsNullOrWhiteSpace(query))
                 return "Error: Empty query.";
 
-            var url = $"https://api.duckduckgo.com/?q={Uri.EscapeDataString(query)}&format=json&no_html=1";
+            var url = $"https://api.duckduckgo.com/?q={Uri.EscapeDataString(query)}&format=json&no_html=1&skip_disambig=1";
             try
             {
                 var json = await _http.GetStringAsync(url);
                 var node = JsonNode.Parse(json);
 
+                // 1. Try Abstract
                 var abstractText = node?["Abstract"]?.ToString();
-                if (!string.IsNullOrEmpty(abstractText))
+                if (!string.IsNullOrWhiteSpace(abstractText))
                     return abstractText;
 
-                // fallback: heading + related
-                var heading = node?["Heading"]?.ToString() ?? query;
-                return $"No instant answer. Related to: {heading}";
+                // 2. Try RelatedTopics[0].Text
+                var related = node?["RelatedTopics"]?.AsArray()?.FirstOrDefault()?["Text"]?.ToString();
+                if (!string.IsNullOrWhiteSpace(related))
+                    return related;
+
+                // 3. Try Heading
+                var heading = node?["Heading"]?.ToString();
+                if (!string.IsNullOrWhiteSpace(heading))
+                    return $"No direct answer. Related topic: {heading}";
+
+                // 4. Fallback
+                return $"No instant answer found for: {query}";
             }
             catch (Exception ex)
             {
                 return $"Search failed: {ex.Message}";
             }
         }
+
 
         [Description("Get a Wikipedia summary for a given topic.")]
         public static async Task<string> GetWikiSummary(

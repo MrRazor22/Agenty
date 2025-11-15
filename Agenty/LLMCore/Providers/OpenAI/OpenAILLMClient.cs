@@ -1,7 +1,9 @@
 ﻿using Agenty.AgentCore.Runtime;
+using Agenty.AgentCore.TokenHandling;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 using OpenAI;
 using OpenAI.Chat;
@@ -17,23 +19,32 @@ using System.Threading.Tasks;
 
 namespace Agenty.LLMCore.Providers.OpenAI
 {
-    internal sealed class OpenAILLMClient : ILLMClient
+    internal sealed class OpenAILLMClient : BaseLLMClient
     {
         private OpenAIClient? _client;
         private readonly ConcurrentDictionary<string, ChatClient> _chatClients =
             new ConcurrentDictionary<string, ChatClient>(StringComparer.OrdinalIgnoreCase);
 
         private string? _defaultModel;
-
-        public void Initialize(string baseUrl, string apiKey, string modelName = "gpt-4o")
+        public OpenAILLMClient(
+            string baseUrl,
+            string apiKey,
+            string modelName,
+            IToolCatalog registry,
+            IToolRuntime runtime,
+            IToolCallParser parser,
+            ITokenManager tokenManager,
+            IRetryPolicy retryPolicy,
+            ILogger<ILLMClient> logger
+        ) : base(baseUrl, apiKey, modelName, registry, runtime, parser, tokenManager, retryPolicy, logger)
         {
             _client = new OpenAIClient(
-                credential: new ApiKeyCredential(apiKey),
-                options: new OpenAIClientOptions { Endpoint = new Uri(baseUrl) }
+                credential: new ApiKeyCredential(ApiKey),
+                options: new OpenAIClientOptions { Endpoint = new Uri(BaseUrl) }
             );
 
-            _defaultModel = modelName;
-            _chatClients[modelName] = _client.GetChatClient(modelName);
+            _defaultModel = DefaultModel;
+            _chatClients[_defaultModel] = _client.GetChatClient(_defaultModel);
         }
 
         private ChatClient GetChatClient(string? model = null)
@@ -45,7 +56,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             return _chatClients.GetOrAdd(key, m => _client.GetChatClient(m));
         }
 
-        public async IAsyncEnumerable<LLMStreamChunk> GetResponseStreaming(
+        protected override async IAsyncEnumerable<LLMStreamChunk> ProviderStream(
             Conversation prompt,
             IEnumerable<Tool> tools,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
@@ -157,7 +168,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
         }
 
 
-        public async Task<LLMStructuredResult> GetStructuredResponse(
+        protected override async Task<LLMStructuredResult> ProviderStructured(
             Conversation prompt,
             JObject responseFormat,
             ReasoningMode mode = ReasoningMode.Deterministic,

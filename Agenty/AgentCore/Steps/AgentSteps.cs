@@ -1,5 +1,4 @@
-﻿using Agenty.AgentCore.Runtime;
-using Agenty.LLMCore;
+﻿using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Messages;
@@ -12,7 +11,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore.Flows
+namespace Agenty.AgentCore.Steps
 {
     public sealed class ErrorHandlingStep : IAgentStep
     {
@@ -61,7 +60,7 @@ namespace Agenty.AgentCore.Flows
 
         public async Task InvokeAsync(IAgentContext ctx, AgentStepDelegate next)
         {
-            var llm = ctx.Services.GetRequiredService<ILLMCoordinator>();
+            var llm = ctx.Services.GetRequiredService<ILLMClient>();
             var tools = ctx.Services.GetRequiredService<IToolCatalog>();
 
             var sysPrompt = $@"Break the user request into a minimal ordered set of actionable steps.";
@@ -122,7 +121,7 @@ namespace Agenty.AgentCore.Flows
             if (ctx.Stream == null)
                 throw new InvalidOperationException("Streaming requires ctx.Stream.");
 
-            var llm = ctx.Services.GetRequiredService<ILLMCoordinator>();
+            var llm = ctx.Services.GetRequiredService<ILLMClient>();
             var runtime = ctx.Services.GetRequiredService<IToolRuntime>();
 
             int iteration = 0;
@@ -133,7 +132,7 @@ namespace Agenty.AgentCore.Flows
                 ctx.StreamBegin();
 
                 // STREAM → TEXT + POSSIBLE TOOLCALL
-                await foreach (var chunk in llm.StreamResponse(
+                await foreach (var chunk in llm.GetResponseStreaming(
                     ctx.Chat,
                     _toolMode,        // <-- DO NOT CHANGE THIS MID-LOOP
                     _mode,

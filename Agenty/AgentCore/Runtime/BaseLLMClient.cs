@@ -17,62 +17,35 @@ using System.Threading.Tasks;
 
 namespace Agenty.AgentCore.Runtime
 {
-    public interface ILLMCoordinator
+    public abstract class BaseLLMClient : ILLMClient
     {
-        Task<LLMTextToolCallResult> GetResponse(
-            Conversation prompt,
-            ToolCallMode toolCallMode = ToolCallMode.Auto,
-            ReasoningMode mode = ReasoningMode.Balanced,
-            string? model = null,
-            LLMCallOptions? opts = null,
-            CancellationToken ct = default,
-            params Tool[] tools);
-        Task<T> GetStructured<T>(
-            Conversation prompt,
-            ReasoningMode mode = ReasoningMode.Deterministic,
-            string? model = null,
-            LLMCallOptions? opts = null,
-            CancellationToken ct = default,
-            ToolCallMode toolCallMode = ToolCallMode.None,
-            params Tool[] tools);
-
-        IAsyncEnumerable<LLMStreamChunk> StreamResponse(
-            Conversation prompt,
-            ToolCallMode toolCallMode = ToolCallMode.Auto,
-            ReasoningMode mode = ReasoningMode.Balanced,
-            string? model = null,
-            LLMCallOptions? opts = null,
-            CancellationToken ct = default,
-            params Tool[] tools);
-
-        Task<IReadOnlyList<ToolCallResult>> RunToolCalls(
-            List<ToolCall> toolCalls,
-            CancellationToken ct = default);
-    }
-
-
-    internal sealed class LLMCoordinator : ILLMCoordinator
-    {
-        private readonly ILLMClient _llm;
         private readonly IToolCatalog _tools;
         private readonly IToolRuntime _Runtime;
         private readonly IToolCallParser _parser;
         private readonly ITokenManager _tokenManager;
         private readonly IRetryPolicy _retryPolicy;
-        private readonly ILogger<LLMCoordinator> _logger;
+        private readonly ILogger<ILLMClient> _logger;
+        protected string BaseUrl { get; }
+        protected string ApiKey { get; }
+        protected string DefaultModel { get; }
+
 
         private static readonly ConcurrentDictionary<string, JObject> _schemaCache = new ConcurrentDictionary<string, JObject>();
 
-        public LLMCoordinator(
-            ILLMClient llm,
+        public BaseLLMClient(
+            string baseUrl,
+            string apiKey,
+            string defaultModel,
             IToolCatalog registry,
             IToolRuntime Runtime,
             IToolCallParser parser,
             ITokenManager tokenManager,
             IRetryPolicy retryPolicy,
-            ILogger<LLMCoordinator> logger)
+            ILogger<ILLMClient> logger)
         {
-            _llm = llm;
+            BaseUrl = baseUrl;
+            ApiKey = apiKey;
+            DefaultModel = defaultModel;
             _tools = registry;
             _Runtime = Runtime;
             _parser = parser;
@@ -80,6 +53,28 @@ namespace Agenty.AgentCore.Runtime
             _retryPolicy = retryPolicy;
             _logger = logger;
         }
+
+        // the ONLY abstract methods providers must implement
+        protected abstract IAsyncEnumerable<LLMStreamChunk> ProviderStream(
+            Conversation prompt,
+            IEnumerable<Tool> tools,
+            ToolCallMode toolCallMode,
+            ReasoningMode mode,
+            string? model,
+            LLMCallOptions? opts,
+            CancellationToken ct);
+
+        protected abstract Task<LLMStructuredResult> ProviderStructured(
+            Conversation prompt,
+            JObject responseFormat,
+            ReasoningMode mode,
+            string? model,
+            LLMCallOptions? opts,
+            CancellationToken ct,
+            ToolCallMode toolCallMode,
+            params Tool[] tools);
+
+
         public async Task<LLMTextToolCallResult> GetResponse(
             Conversation prompt,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
@@ -98,7 +93,7 @@ namespace Agenty.AgentCore.Runtime
             int output = 0;
             string finish = "stop";
 
-            await foreach (var chunk in StreamResponse(
+            await foreach (var chunk in GetResponseStreaming(
                 prompt,
                 toolCallMode,
                 mode,
@@ -171,7 +166,7 @@ namespace Agenty.AgentCore.Runtime
                 });
 
                 // call llm client (internal result)
-                var result = await _llm.GetStructuredResponse(
+                var result = await ProviderStructured(
                     intPrompt,
                     schema,
                     mode,
@@ -231,7 +226,7 @@ namespace Agenty.AgentCore.Runtime
             }, prompt);
         }
 
-        public async IAsyncEnumerable<LLMStreamChunk> StreamResponse(
+        public async IAsyncEnumerable<LLMStreamChunk> GetResponseStreaming(
             Conversation prompt,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
             ReasoningMode mode = ReasoningMode.Balanced,
@@ -243,7 +238,7 @@ namespace Agenty.AgentCore.Runtime
             tools = (tools.Length > 0) ? tools : _tools.RegisteredTools.ToArray();
 
             await foreach (var chunk in _retryPolicy.ExecuteStreamAsync(
-                () => _llm.GetResponseStreaming(prompt, tools, toolCallMode, mode, model, opts, ct),
+                () => ProviderStream(prompt, tools, toolCallMode, mode, model, opts, ct),
                 ct))
             {
                 switch (chunk.Kind)
