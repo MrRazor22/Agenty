@@ -69,7 +69,7 @@ namespace Agenty.AgentCore.Steps
                 .CloneFrom(ctx.Chat, ~ChatFilter.System)
                 .AddSystem(sysPrompt);
 
-            var plan = await llm.GetStructured<Plan>(convo, ToolCallMode.None, _mode, _model, _opts, ctx.CancellationToken);
+            var plan = await llm.GetStructuredTyped<Plan>(convo, ToolCallMode.None, _mode, _model, _opts, ctx.CancellationToken);
 
             if (plan != null && plan.Steps.Count > 0)
             {
@@ -86,7 +86,7 @@ namespace Agenty.AgentCore.Steps
                .CloneFrom(ctx.Chat)
                .AddAssistant("Now I will provide a summary of all steps and results.");
 
-                var res = await llm.GetResponse(convo, ToolCallMode.None, _mode, _model, _opts, ctx.CancellationToken);
+                var res = await llm.GetResponseStreaming(convo, ToolCallMode.None, _mode, _model, _opts, ctx.CancellationToken);
                 finalResponse = res.AssistantMessage ?? finalResponse;
             }
             ctx.Chat.AddAssistant(finalResponse);
@@ -118,58 +118,50 @@ namespace Agenty.AgentCore.Steps
 
         public async Task InvokeAsync(IAgentContext ctx, AgentStepDelegate next)
         {
-            if (ctx.Stream == null)
-                throw new InvalidOperationException("Streaming requires ctx.Stream.");
-
             var llm = ctx.Services.GetRequiredService<ILLMClient>();
             var runtime = ctx.Services.GetRequiredService<IToolRuntime>();
 
             int iteration = 0;
 
-            while (iteration < _maxIterations &&
-                   !ctx.CancellationToken.IsCancellationRequested)
+            while (iteration < _maxIterations && !ctx.CancellationToken.IsCancellationRequested)
             {
-                ctx.StreamBegin();
-
-                // STREAM → TEXT + POSSIBLE TOOLCALL
-                await foreach (var chunk in llm.GetResponseStreaming(
+                // STREAM LIVE
+                var result = await llm.GetResponseStreaming(
                     ctx.Chat,
-                    _toolMode,        // <-- DO NOT CHANGE THIS MID-LOOP
+                    _toolMode,
                     _mode,
                     _model,
                     _opts,
-                    ctx.CancellationToken))
-                {
-                    ctx.StreamApply(chunk);
-                }
+                    ctx.CancellationToken,
+                    onChunk: chunk =>
+                    {
+                        if (chunk.Kind == StreamKind.Text)
+                            ctx.Stream?.Invoke(chunk.AsText()!);
+                    });
 
-                var assistantText = ctx.StreamFinalText();
-                var toolCall = ctx.StreamFinalToolCall();
+                // text
+                var assistantText = result.AssistantMessage ?? "";
+                ctx.Chat.AddAssistant(assistantText);
 
-                if (!string.IsNullOrWhiteSpace(assistantText))
-                    ctx.Chat.AddAssistant(assistantText);
-
-                // If no toolcall → this is FINAL ANSWER
+                // toolcall?
+                var toolCall = result.Payload.FirstOrDefault(); // result.Payload is List<ToolCall>
                 if (toolCall == null)
                 {
                     ctx.Response.Set(assistantText);
                     break;
                 }
 
-                // EXECUTE TOOL
-                var results = await runtime.HandleToolCallsAsync(
+                // RUN TOOL
+                var outputs = await runtime.HandleToolCallsAsync(
                     new List<ToolCall> { toolCall },
                     ctx.CancellationToken);
 
-                ctx.Chat.AppendToolCallAndResults(results);
+                ctx.Chat.AppendToolCallAndResults(outputs);
 
-                // LOOP AGAIN and stream next round
                 iteration++;
             }
 
             await next(ctx);
         }
-
     }
-
 }

@@ -28,8 +28,9 @@ namespace Agenty.AgentCore.Runtime
             Func<Conversation, Task<T>> action,
             Conversation prompt);
         IAsyncEnumerable<LLMStreamChunk> ExecuteStreamAsync(
-        Func<IAsyncEnumerable<LLMStreamChunk>> streamFactory,
-        CancellationToken ct = default);
+            Conversation prompt,
+            Func<Conversation, IAsyncEnumerable<LLMStreamChunk>> factory,
+            CancellationToken ct = default);
     }
 
     /// <summary>
@@ -88,26 +89,20 @@ namespace Agenty.AgentCore.Runtime
         // --------------------------------------------------------
 
         public async IAsyncEnumerable<LLMStreamChunk> ExecuteStreamAsync(
-    Func<IAsyncEnumerable<LLMStreamChunk>> streamFactory,
-    [EnumeratorCancellation] CancellationToken ct = default)
+            Conversation originalPrompt,
+            Func<Conversation, IAsyncEnumerable<LLMStreamChunk>> factory,
+            [EnumeratorCancellation] CancellationToken ct = default)
         {
-            if (!_options.Enabled)
-            {
-                await foreach (var chunk in streamFactory().WithCancellation(ct))
-                    yield return chunk;
-                yield break;
-            }
+            var intPrompt = new Conversation().CloneFrom(originalPrompt);
 
-            int attempt = 0;
-
-            while (attempt <= _options.MaxRetries)
+            for (int attempt = 0; attempt <= _options.MaxRetries; attempt++)
             {
-                var succeeded = true;
+                bool succeeded = true;
 
                 using var timeoutCts = new CancellationTokenSource(_options.Timeout);
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
 
-                var stream = streamFactory(); // fresh enumerator for each attempt
+                var stream = factory(intPrompt);
                 var enumerator = stream.GetAsyncEnumerator(linked.Token);
 
                 try
@@ -115,15 +110,9 @@ namespace Agenty.AgentCore.Runtime
                     while (true)
                     {
                         bool moved;
-                        try
-                        {
-                            moved = await enumerator.MoveNextAsync();
-                        }
-                        catch
-                        {
-                            succeeded = false;
-                            break;
-                        }
+
+                        try { moved = await enumerator.MoveNextAsync(); }
+                        catch { succeeded = false; break; }
 
                         if (!moved) break;
 
@@ -136,23 +125,19 @@ namespace Agenty.AgentCore.Runtime
                 }
 
                 if (succeeded)
-                    yield break; // stream finished cleanly
-
-                attempt++;
-
-                if (attempt > _options.MaxRetries)
                     yield break;
 
-                // Emit a small retry marker as a Text chunk using the single-struct type
-                yield return new LLMStreamChunk(
-                    StreamKind.Text,
-                    payload: $"[retry {attempt}]");
+                if (attempt == _options.MaxRetries)
+                    yield break;
 
-                var delay = TimeSpan.FromMilliseconds(
-                    _options.InitialDelay.TotalMilliseconds *
-                    Math.Pow(_options.BackoffFactor, attempt - 1));
+                intPrompt.AddAssistant($"Retry {attempt + 1} due to error.");
 
-                await Task.Delay(delay, ct);
+                yield return new LLMStreamChunk(StreamKind.Text, $"[retry {attempt + 1}]");
+
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(_options.InitialDelay.TotalMilliseconds *
+                                              Math.Pow(_options.BackoffFactor, attempt)),
+                    ct);
             }
         }
     }

@@ -3,6 +3,7 @@ using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
 using Newtonsoft.Json.Linq;
+using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -12,16 +13,17 @@ namespace Agenty.LLMCore
 {
     public interface ILLMClient
     {
-        Task<LLMTextToolCallResult> GetResponse(
+        Task<T> GetStructuredTyped<T>(
             Conversation prompt,
-            ToolCallMode toolCallMode = ToolCallMode.Auto,
-            ReasoningMode mode = ReasoningMode.Balanced,
-            string? model = null,
-            LLMCallOptions? opts = null,
+            ToolCallMode toolCallMode = ToolCallMode.None,
+            ReasoningMode mode = ReasoningMode.Deterministic,
+            string model = null,
+            LLMCallOptions opts = null,
             CancellationToken ct = default,
             params Tool[] tools);
-        Task<T> GetStructured<T>(
+        Task<LLMStructuredResult> GetStructured(
             Conversation prompt,
+            Type targetType,
             ToolCallMode toolCallMode = ToolCallMode.None,
             ReasoningMode mode = ReasoningMode.Deterministic,
             string? model = null,
@@ -29,14 +31,15 @@ namespace Agenty.LLMCore
             CancellationToken ct = default,
             params Tool[] tools);
 
-        IAsyncEnumerable<LLMStreamChunk> GetResponseStreaming(
-            Conversation prompt,
-            ToolCallMode toolCallMode = ToolCallMode.Auto,
-            ReasoningMode mode = ReasoningMode.Balanced,
-            string? model = null,
-            LLMCallOptions? opts = null,
-            CancellationToken ct = default,
-            params Tool[] tools);
+        Task<LLMTextToolCallResult> GetResponseStreaming(
+             Conversation prompt,
+             ToolCallMode toolCallMode = ToolCallMode.Auto,
+             ReasoningMode mode = ReasoningMode.Balanced,
+             string? model = null,
+             LLMCallOptions? opts = null,
+             CancellationToken ct = default,
+             Action<LLMStreamChunk>? onChunk = null,
+             params Tool[] tools);
 
         Task<IReadOnlyList<ToolCallResult>> RunToolCalls(
             List<ToolCall> toolCalls,
