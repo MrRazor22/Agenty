@@ -42,7 +42,7 @@ namespace Agenty.LLMCore.ChatHandling
             return convo.Add(Role.Assistant, new TextContent(text!));
         }
 
-        public static Conversation AddToolCall(this Conversation convo, ToolCall? call)
+        public static Conversation AddAssistantToolCall(this Conversation convo, ToolCall? call)
         {
             if (call == null) return convo;
             return convo.Add(Role.Assistant, call);
@@ -175,7 +175,7 @@ namespace Agenty.LLMCore.ChatHandling
         {
             foreach (var r in results)
             {
-                chat.AddToolCall(r.Call);
+                chat.AddAssistantToolCall(r.Call);
                 chat.AddToolResult(r);
             }
             return chat;

@@ -13,7 +13,7 @@ namespace Agenty.LLMCore
 {
     public interface ILLMClient
     {
-        Task<T> GetStructuredTyped<T>(
+        Task<T> GetStructured<T>(
             Conversation prompt,
             ToolCallMode toolCallMode = ToolCallMode.None,
             ReasoningMode mode = ReasoningMode.Deterministic,
@@ -21,7 +21,7 @@ namespace Agenty.LLMCore
             LLMCallOptions opts = null,
             CancellationToken ct = default,
             params Tool[] tools);
-        Task<LLMStructuredResult> GetStructured(
+        Task<LLMStructuredResult> GetStructuredResponse(
             Conversation prompt,
             Type targetType,
             ToolCallMode toolCallMode = ToolCallMode.None,
@@ -31,7 +31,7 @@ namespace Agenty.LLMCore
             CancellationToken ct = default,
             params Tool[] tools);
 
-        Task<LLMTextToolCallResult> GetResponseStreaming(
+        Task<LLMTextToolCallResult> GetStreamedResponse(
              Conversation prompt,
              ToolCallMode toolCallMode = ToolCallMode.Auto,
              ReasoningMode mode = ReasoningMode.Balanced,

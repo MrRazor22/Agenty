@@ -2,6 +2,7 @@
 using Agenty.AgentCore.Steps;
 using Agenty.LLMCore;
 using Agenty.LLMCore.BuiltInTools;
+using System.Text;
 using System.Threading;
 
 namespace TestApp
@@ -39,13 +40,38 @@ namespace TestApp
                    .WithTools<ConversionTools>()
                    .WithTools<MathTools>()
                    .WithTools<SearchTools>()
-                   .Use(() => new StreamingToolCallingStep(toolMode: ToolCallMode.OneTool))
+                   .Use(() => new ToolCallingStep())
                    .Use<PlanningStep>()
                    .Use(async (ctx, next) =>
                    {
-                       ctx.Stream = s => Console.Write(s);
+                       bool started = false;
+                       StringBuilder line = new();
+
+                       ctx.Stream = chunk =>
+                       {
+                           // first time
+                           if (!started)
+                           {
+                               started = true;
+                               Console.Write("[stream] ");
+                           }
+
+                           if (string.IsNullOrEmpty(chunk))
+                               return;
+
+                           // accumulate
+                           line.Append(chunk);
+
+                           // print without newlines
+                           Console.Write(chunk);
+                       };
+
                        await next(ctx);
+
+                       if (started)
+                           Console.WriteLine();
                    });
+
 
                 while (true)
                 {

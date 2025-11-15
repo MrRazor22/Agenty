@@ -52,13 +52,13 @@ namespace Agenty.AgentCore.Runtime
             if (!_options.Enabled)
                 return await action(prompt);
 
-            var intPrompt = new Conversation().CloneFrom(prompt);
+            var clonedPrompt = new Conversation().CloneFrom(prompt);
 
             for (int attempt = 0; attempt <= _options.MaxRetries; attempt++)
             {
                 try
                 {
-                    var task = action(intPrompt);
+                    var task = action(clonedPrompt);
 
                     var completed =
                         await Task.WhenAny(task, Task.Delay(_options.Timeout));
@@ -71,7 +71,7 @@ namespace Agenty.AgentCore.Runtime
                 }
                 catch when (attempt < _options.MaxRetries)
                 {
-                    intPrompt.AddAssistant($"Retry {attempt + 1} due to error.");
+                    clonedPrompt.AddAssistant($"Retry {attempt + 1} due to error.");
 
                     var delay = TimeSpan.FromMilliseconds(
                         _options.InitialDelay.TotalMilliseconds *
@@ -93,7 +93,7 @@ namespace Agenty.AgentCore.Runtime
             Func<Conversation, IAsyncEnumerable<LLMStreamChunk>> factory,
             [EnumeratorCancellation] CancellationToken ct = default)
         {
-            var intPrompt = new Conversation().CloneFrom(originalPrompt);
+            var clonedPrompt = new Conversation().CloneFrom(originalPrompt);
 
             for (int attempt = 0; attempt <= _options.MaxRetries; attempt++)
             {
@@ -102,7 +102,7 @@ namespace Agenty.AgentCore.Runtime
                 using var timeoutCts = new CancellationTokenSource(_options.Timeout);
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
 
-                var stream = factory(intPrompt);
+                var stream = factory(clonedPrompt);
                 var enumerator = stream.GetAsyncEnumerator(linked.Token);
 
                 try
@@ -130,7 +130,7 @@ namespace Agenty.AgentCore.Runtime
                 if (attempt == _options.MaxRetries)
                     yield break;
 
-                intPrompt.AddAssistant($"Retry {attempt + 1} due to error.");
+                clonedPrompt.AddAssistant($"Retry {attempt + 1} due to error.");
 
                 yield return new LLMStreamChunk(StreamKind.Text, $"[retry {attempt + 1}]");
 

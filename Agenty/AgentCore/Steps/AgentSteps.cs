@@ -63,18 +63,18 @@ namespace Agenty.AgentCore.Steps
             var llm = ctx.Services.GetRequiredService<ILLMClient>();
             var tools = ctx.Services.GetRequiredService<IToolCatalog>();
 
-            var sysPrompt = $@"Break the user request into a minimal ordered set of actionable steps.";
+            var planPrompt = @"Break my request into actionable steps based on the tools you got and information you know.";
 
             var convo = new Conversation()
-                .CloneFrom(ctx.Chat, ~ChatFilter.System)
-                .AddSystem(sysPrompt);
+                .CloneFrom(ctx.Chat)
+                .AddUser(planPrompt);
 
-            var plan = await llm.GetStructuredTyped<Plan>(convo, ToolCallMode.None, _mode, _model, _opts, ctx.CancellationToken);
+            var plan = await llm.GetStructured<Plan>(convo, ToolCallMode.None, _mode, _model, _opts, ctx.CancellationToken);
 
             if (plan != null && plan.Steps.Count > 0)
             {
                 ctx.Items["plan"] = plan;
-                ctx.Chat.AddAssistant("Let's proceed with these steps:\n" + ctx.Items["plan"]);
+                ctx.Chat.AddUser("For my request please follow these steps:\n" + ctx.Items["plan"]);
             }
 
             await next(ctx);
@@ -84,9 +84,13 @@ namespace Agenty.AgentCore.Steps
             {
                 convo = new Conversation()
                .CloneFrom(ctx.Chat)
-               .AddAssistant("Now I will provide a summary of all steps and results.");
+               .AddUser($"With all the available info you gathered for my request: '{ctx.UserRequest}', provide a final user facing answer.");
 
-                var res = await llm.GetResponseStreaming(convo, ToolCallMode.None, _mode, _model, _opts, ctx.CancellationToken);
+                var res = await llm.GetStreamedResponse(convo, ToolCallMode.None, _mode, _model, _opts, ctx.CancellationToken, onChunk: chunk =>
+                {
+                    if (chunk.Kind == StreamKind.Text)
+                        ctx.Stream?.Invoke(chunk.AsText()!);
+                });
                 finalResponse = res.AssistantMessage ?? finalResponse;
             }
             ctx.Chat.AddAssistant(finalResponse);
@@ -94,7 +98,7 @@ namespace Agenty.AgentCore.Steps
         }
     }
 
-    public sealed class StreamingToolCallingStep : IAgentStep
+    public sealed class ToolCallingStep : IAgentStep
     {
         private readonly string? _model;
         private readonly ReasoningMode _mode;
@@ -102,7 +106,7 @@ namespace Agenty.AgentCore.Steps
         private readonly int _maxIterations;
         private readonly LLMCallOptions? _opts;
 
-        public StreamingToolCallingStep(
+        public ToolCallingStep(
             string? model = null,
             ReasoningMode mode = ReasoningMode.Balanced,
             ToolCallMode toolMode = ToolCallMode.Auto,
@@ -126,7 +130,7 @@ namespace Agenty.AgentCore.Steps
             while (iteration < _maxIterations && !ctx.CancellationToken.IsCancellationRequested)
             {
                 // STREAM LIVE
-                var result = await llm.GetResponseStreaming(
+                var result = await llm.GetStreamedResponse(
                     ctx.Chat,
                     _toolMode,
                     _mode,
@@ -139,15 +143,14 @@ namespace Agenty.AgentCore.Steps
                             ctx.Stream?.Invoke(chunk.AsText()!);
                     });
 
-                // text
-                var assistantText = result.AssistantMessage ?? "";
-                ctx.Chat.AddAssistant(assistantText);
+                // text 
+                ctx.Chat.AddAssistant(result.AssistantMessage);
 
                 // toolcall?
                 var toolCall = result.Payload.FirstOrDefault(); // result.Payload is List<ToolCall>
                 if (toolCall == null)
                 {
-                    ctx.Response.Set(assistantText);
+                    ctx.Response.Set(result.AssistantMessage);
                     break;
                 }
 

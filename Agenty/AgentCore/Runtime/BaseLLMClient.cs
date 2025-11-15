@@ -56,7 +56,7 @@ namespace Agenty.AgentCore.Runtime
         }
 
         #region abstract methods providers must implement
-        protected abstract IAsyncEnumerable<LLMStreamChunk> ProviderStream(
+        protected abstract IAsyncEnumerable<LLMStreamChunk> GetProviderStreamingResponse(
             Conversation prompt,
             IEnumerable<Tool> tools,
             ToolCallMode toolCallMode,
@@ -65,7 +65,7 @@ namespace Agenty.AgentCore.Runtime
             LLMCallOptions? opts,
             CancellationToken ct);
 
-        protected abstract Task<LLMStructuredResult> ProviderStructured(
+        protected abstract Task<LLMStructuredResult> GetProviderStructuredResponse(
             Conversation prompt,
             JObject responseFormat,
             ReasoningMode mode,
@@ -75,7 +75,7 @@ namespace Agenty.AgentCore.Runtime
             CancellationToken ct,
             params Tool[] tools);
         #endregion 
-        public async Task<T> GetStructuredTyped<T>(
+        public async Task<T> GetStructured<T>(
             Conversation prompt,
             ToolCallMode toolCallMode = ToolCallMode.None,
             ReasoningMode mode = ReasoningMode.Deterministic,
@@ -84,7 +84,7 @@ namespace Agenty.AgentCore.Runtime
             CancellationToken ct = default,
             params Tool[] tools)
         {
-            var result = await GetStructured(
+            var result = await GetStructuredResponse(
                 prompt,
                 typeof(T),
                 toolCallMode,
@@ -108,7 +108,7 @@ namespace Agenty.AgentCore.Runtime
             }
         }
 
-        public async Task<LLMStructuredResult> GetStructured(
+        public async Task<LLMStructuredResult> GetStructuredResponse(
             Conversation prompt,
             Type targetType,
             ToolCallMode toolCallMode = ToolCallMode.None,
@@ -129,7 +129,7 @@ namespace Agenty.AgentCore.Runtime
                     return JsonSchemaExtensions.GetSchemaForType(targetType);
                 });
 
-                var result = await ProviderStructured(
+                var result = await GetProviderStructuredResponse(
                     intPrompt,
                     schema,
                     mode,
@@ -172,7 +172,7 @@ namespace Agenty.AgentCore.Runtime
             }, prompt);
         }
 
-        public async Task<LLMTextToolCallResult> GetResponseStreaming(
+        public async Task<LLMTextToolCallResult> GetStreamedResponse(
             Conversation prompt,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
             ReasoningMode mode = ReasoningMode.Balanced,
@@ -183,7 +183,6 @@ namespace Agenty.AgentCore.Runtime
             params Tool[] tools)
         {
             tools = (tools.Length > 0) ? tools : _tools.RegisteredTools.ToArray();
-
             bool limitOne = toolCallMode == ToolCallMode.OneTool;
 
             var sb = new StringBuilder();
@@ -193,9 +192,20 @@ namespace Agenty.AgentCore.Runtime
             int output = 0;
             string finish = "stop";
 
+            // -----------------------------
+            // MAIN STREAM (with retries)
+            // -----------------------------
             await foreach (var chunk in _retryPolicy.ExecuteStreamAsync(
                 prompt,
-                p => ProviderStream(p, tools, toolCallMode, mode, model, opts, ct),
+                clonedPrompt => ProduceValidatedStream(
+                    clonedPrompt,
+                    tools,
+                    toolCallMode,
+                    limitOne,
+                    mode,
+                    model,
+                    opts,
+                    ct),
                 ct))
             {
                 onChunk?.Invoke(chunk);
@@ -203,72 +213,12 @@ namespace Agenty.AgentCore.Runtime
                 switch (chunk.Kind)
                 {
                     case StreamKind.Text:
-                        {
-                            var text = chunk.AsText();
-                            if (!string.IsNullOrEmpty(text))
-                                sb.Append(text);
-
-                            // INLINE
-                            var extraction = _parser.TryExtractInlineToolCall(_tools, text);
-                            foreach (var c in extraction.Calls)
-                            {
-                                if (limitOne && toolCalls.Count > 0)
-                                    break;
-
-                                if (!_tools.Contains(c.Name))
-                                {
-                                    prompt.AddAssistant(
-                                        $"Tool `{c.Name}` is invalid. Use only: {string.Join(", ", tools.Select(t => t.Name))}.");
-                                    continue;
-                                }
-
-                                try
-                                {
-                                    var parsed = _parser.ParseToolParams(_tools, c.Name, c.Arguments);
-                                    toolCalls.Add(new ToolCall(
-                                        c.Id ?? Guid.NewGuid().ToString(),
-                                        c.Name,
-                                        c.Arguments,
-                                        parsed));
-                                }
-                                catch
-                                {
-                                    prompt.AddAssistant($"Fix parameters for tool `{c.Name}`.");
-                                }
-                            }
-                            break;
-                        }
+                        sb.Append(chunk.AsText());
+                        break;
 
                     case StreamKind.ToolCall:
-                        {
-                            var raw = chunk.AsToolCall();
-                            if (raw == null) break;
-
-                            if (limitOne && toolCalls.Count > 0)
-                                break;
-
-                            if (!_tools.Contains(raw.Name))
-                            {
-                                prompt.AddAssistant(
-                                    $"Tool `{raw.Name}` is invalid. Allowed: {string.Join(", ", tools.Select(t => t.Name))}.");
-                                break;
-                            }
-
-                            try
-                            {
-                                var parsed = _parser.ParseToolParams(_tools, raw.Name, raw.Arguments);
-                                toolCalls.Add(new ToolCall(
-                                    raw.Id ?? Guid.NewGuid().ToString(),
-                                    raw.Name,
-                                    raw.Arguments,
-                                    parsed));
-                            }
-                            catch
-                            {
-                                prompt.AddAssistant($"Fix parameters for tool `{raw.Name}`.");
-                            }
-                            break;
-                        }
+                        toolCalls.Add(chunk.AsToolCall());
+                        break;
 
                     case StreamKind.Usage:
                         input = chunk.InputTokens ?? input;
@@ -284,8 +234,6 @@ namespace Agenty.AgentCore.Runtime
             _tokenManager.Record(input, output);
 
             var finalText = sb.ToString().Trim();
-            if (!string.IsNullOrEmpty(finalText))
-                prompt.AddAssistant(finalText);
 
             return new LLMTextToolCallResult(
                 finalText,
@@ -294,6 +242,92 @@ namespace Agenty.AgentCore.Runtime
                 input,
                 output
             );
+        }
+        private async IAsyncEnumerable<LLMStreamChunk> ProduceValidatedStream(
+            Conversation clonedPrompt,
+            Tool[] tools,
+            ToolCallMode toolCallMode,
+            bool limitOne,
+            ReasoningMode mode,
+            string? model,
+            LLMCallOptions? opts,
+            [EnumeratorCancellation] CancellationToken ct)
+        {
+            await foreach (var rawChunk in GetProviderStreamingResponse(
+                clonedPrompt, tools, toolCallMode, mode, model, opts, ct))
+            {
+                // TEXT ----------------------------------------------------
+                if (rawChunk.Kind == StreamKind.Text)
+                {
+                    var text = rawChunk.AsText();
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        // first yield text
+                        yield return rawChunk;
+
+                        // inline extraction
+                        var extraction = _parser.TryExtractInlineToolCall(_tools, text);
+                        foreach (var c in extraction.Calls)
+                        {
+                            if (!_tools.Contains(c.Name))
+                                throw new Exception($"Unknown tool '{c.Name}'");
+
+                            var parsed = _parser.ParseToolParams(_tools, c.Name, c.Arguments);
+
+                            var validated = new ToolCall(
+                                c.Id ?? Guid.NewGuid().ToString(),
+                                c.Name,
+                                c.Arguments,
+                                parsed
+                            );
+
+                            // yield validated toolcall
+                            yield return new LLMStreamChunk(
+                                StreamKind.ToolCall,
+                                payload: validated
+                            );
+
+                            if (limitOne)
+                                yield break;
+                        }
+                    }
+                    continue;
+                }
+
+                // TOOLCALL ------------------------------------------------
+                if (rawChunk.Kind == StreamKind.ToolCall)
+                {
+                    var raw = rawChunk.AsToolCall();
+                    if (raw == null)
+                        continue;
+
+
+                    if (!_tools.Contains(raw.Name))
+                        throw new Exception($"Unknown tool '{raw.Name}'");
+
+                    var parsed = _parser.ParseToolParams(_tools, raw.Name, raw.Arguments);
+
+                    var validated = new ToolCall(
+                        raw.Id ?? Guid.NewGuid().ToString(),
+                        raw.Name,
+                        raw.Arguments,
+                        parsed
+                    );
+
+                    yield return new LLMStreamChunk(
+                        StreamKind.ToolCall,
+                        payload: validated
+                    );
+
+                    if (limitOne)
+                        yield break;
+
+                    continue;
+                }
+
+                // USAGE / FINISH ------------------------------------------
+                yield return rawChunk;
+            }
         }
 
         public Task<IReadOnlyList<ToolCallResult>> RunToolCalls(List<ToolCall> toolCalls, CancellationToken ct = default)

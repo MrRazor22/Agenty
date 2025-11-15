@@ -317,39 +317,6 @@ namespace Agenty.AgentCore
             return builder;
         }
     }
-    public static class AgentContextStreamingExtensions
-    {
-        private const string TextBufferKey = "__stream_text_buffer";
-        private const string ToolCallKey = "__stream_tool_call";
-
-        public static void StreamBegin(this IAgentContext ctx)
-        {
-            ctx.Items[TextBufferKey] = new StringBuilder();
-            ctx.Items[ToolCallKey] = null;
-        }
-
-        public static void StreamApply(this IAgentContext ctx, LLMStreamChunk chunk)
-        {
-            switch (chunk.Kind)
-            {
-                case StreamKind.Text:
-                    ctx.Stream?.Invoke(chunk.AsText()!);
-                    ((StringBuilder)ctx.Items[TextBufferKey]).Append(chunk.AsText());
-                    break;
-
-                case StreamKind.ToolCall:
-                    ctx.Items[ToolCallKey] = chunk.AsToolCall();
-                    break;
-            }
-        }
-
-        public static string StreamFinalText(this IAgentContext ctx)
-            => ctx.Items[TextBufferKey] is StringBuilder sb ? sb.ToString().Trim() : "";
-
-        public static ToolCall? StreamFinalToolCall(this IAgentContext ctx)
-            => ctx.Items[ToolCallKey] as ToolCall;
-    }
-
 
     /// <summary>
     /// Tracks the current step name using AsyncLocal for implicit context flow.

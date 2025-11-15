@@ -56,7 +56,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             return _chatClients.GetOrAdd(key, m => _client.GetChatClient(m));
         }
 
-        protected override async IAsyncEnumerable<LLMStreamChunk> ProviderStream(
+        protected override async IAsyncEnumerable<LLMStreamChunk> GetProviderStreamingResponse(
             Conversation prompt,
             IEnumerable<Tool> tools,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
@@ -168,7 +168,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
         }
 
 
-        protected override async Task<LLMStructuredResult> ProviderStructured(
+        protected override async Task<LLMStructuredResult> GetProviderStructuredResponse(
             Conversation prompt,
             JObject responseFormat,
             ReasoningMode mode = ReasoningMode.Deterministic,
