@@ -116,6 +116,10 @@ namespace Agenty.AgentCore
         }
     }
 
+    public interface IAgent
+    {
+        Task<AgentResponse> ExecuteAsync(string goal, CancellationToken cancellationToken = default);
+    }
     // === 3. Agent (like WebApplication) ===
     public sealed class Agent : IAgent
     {
@@ -252,90 +256,5 @@ namespace Agenty.AgentCore
         }
 
         public static AgentBuilder CreateBuilder() => new AgentBuilder();
-    }
-
-    public interface IAgent
-    {
-        Task<AgentResponse> ExecuteAsync(string goal, CancellationToken cancellationToken = default);
-    }
-
-    public static class AgentServiceCollectionExtensions
-    {
-        public static AgentBuilder AddOpenAI(this AgentBuilder builder, Action<LLMInitOptions> configure)
-        {
-            var opts = new LLMInitOptions();
-            configure(opts);
-
-            builder.Services.AddSingleton<IToolRuntime>(sp =>
-            {
-                var registry = sp.GetRequiredService<IToolCatalog>();
-                var logger = sp.GetService<ILogger<ToolRuntime>>();
-                return new ToolRuntime(registry, logger);
-            });
-
-            builder.Services.AddSingleton<ILLMClient>(sp =>
-            {
-                var logger = sp.GetRequiredService<ILogger<ILLMClient>>();
-                var registry = sp.GetRequiredService<IToolCatalog>();
-                var runtime = sp.GetRequiredService<IToolRuntime>();
-                var tokenizer = sp.GetRequiredService<ITokenizer>();
-                var trimmer = sp.GetRequiredService<IContextTrimmer>();
-                var tokenManager = sp.GetRequiredService<ITokenManager>();
-                var parser = new ToolCallParser();
-                var retry = sp.GetRequiredService<IRetryPolicy>();
-
-                return new OpenAILLMClient(
-                    opts,
-                    registry,
-                    runtime,
-                    parser,
-                    tokenizer,
-                    trimmer,
-                    tokenManager,
-                    retry,
-                    logger);
-            });
-
-            return builder;
-        }
-
-        public static AgentBuilder AddRetryPolicy(this AgentBuilder builder, Action<RetryPolicyOptions>? configure = null)
-        {
-            if (configure != null)
-                builder.Services.Configure(configure);
-            else
-                builder.Services.Configure<RetryPolicyOptions>(_ => { }); // defaults
-
-            builder.Services.AddSingleton<IRetryPolicy, DefaultRetryPolicy>();
-            return builder;
-        }
-    }
-    public static class ContextTrimExtensions
-    {
-        public static AgentBuilder AddContextTrimming(
-            this AgentBuilder builder,
-            Action<ContextTrimOptions> configure)
-        {
-            var options = new ContextTrimOptions();
-            configure(options);
-
-            builder.Services.AddSingleton<IContextTrimmer>(sp =>
-            {
-                var tokenizer = sp.GetRequiredService<ITokenizer>();
-                return new SlidingWindowTrimmer(tokenizer, options);
-            });
-
-            return builder;
-        }
-    }
-
-
-    /// <summary>
-    /// Tracks the current step name using AsyncLocal for implicit context flow.
-    /// Similar to how ASP.NET tracks HttpContext.
-    /// </summary>
-    public static class StepContext
-    {
-        public static readonly AsyncLocal<string?> Current = new AsyncLocal<string?>();
     }
 }
