@@ -118,7 +118,8 @@ namespace Agenty.LLMCore
 
         Task<LLMStructuredResponse<T>> ExecuteAsync<T>(
             LLMStructuredRequest request,
-            CancellationToken ct = default);
+            CancellationToken ct = default,
+            Action<LLMStreamChunk>? onStream = null);
 
         Task<IReadOnlyList<ToolCallResult>> RunToolCalls(
             List<ToolCall> calls,

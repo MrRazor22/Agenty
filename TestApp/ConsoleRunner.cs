@@ -33,7 +33,7 @@ namespace TestApp
                     o.MaxRetries = 3;
                     o.Timeout = TimeSpan.FromMinutes(5);
                 });
-                builder.WithLogLevel(Microsoft.Extensions.Logging.LogLevel.Trace);
+                builder.WithLogLevel(Microsoft.Extensions.Logging.LogLevel.Information);
 
                 app = builder.Build();
                 await app.LoadHistoryAsync("default");
@@ -48,6 +48,7 @@ namespace TestApp
                    .WithTools<SearchTools>()
                    .Use(() => new ToolCallingStep(toolMode: ToolCallMode.OneTool))
                    .Use<PlanningStep>()
+                   .Use<ErrorHandlingStep>()
                .Use(async (ctx, next) =>
                {
                    bool started = false;

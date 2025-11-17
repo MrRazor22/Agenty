@@ -69,7 +69,11 @@ namespace Agenty.AgentCore.Steps
                 .AddUser(ctx.UserRequest)
                 .AddUser(planPrompt);
 
-            var plan = await llm.GetStructuredAsync<Plan>(convo, model: _model, ct: ctx.CancellationToken);
+            var plan = await llm.GetStructuredAsync<Plan>(
+                convo,
+                model: _model,
+                ct: ctx.CancellationToken,
+                onStream: s => ctx.Stream?.Invoke(s));
 
             if (plan != null && plan.Steps.Count > 0)
             {

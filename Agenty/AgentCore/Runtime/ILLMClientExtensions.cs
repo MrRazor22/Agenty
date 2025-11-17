@@ -21,12 +21,21 @@ namespace Agenty.AgentCore.Runtime
             string model = null,
             ReasoningMode reasoning = ReasoningMode.Balanced,
             LLMSamplingOptions sampling = null,
+            Action<string>? onStream = null,
             CancellationToken ct = default)
         {
             var convo = new Conversation().AddUser(userMessage);
-            return client.GetStructuredAsync<T>(convo, allowedTools, toolMode, model, reasoning, sampling, ct);
+            return client.GetStructuredAsync<T>(
+                convo,
+                allowedTools,
+                toolMode,
+                model,
+                reasoning,
+                sampling,
+                onStream,
+                ct
+            );
         }
-
         public static async Task<T> GetStructuredAsync<T>(
             this ILLMClient client,
             Conversation prompt,
@@ -35,6 +44,7 @@ namespace Agenty.AgentCore.Runtime
             string model = null,
             ReasoningMode reasoning = ReasoningMode.Balanced,
             LLMSamplingOptions sampling = null,
+            Action<string>? onStream = null,
             CancellationToken ct = default)
         {
             var req = new LLMStructuredRequest(
@@ -47,8 +57,11 @@ namespace Agenty.AgentCore.Runtime
                 sampling: sampling
             );
 
-            var resp = await client.ExecuteAsync<T>(req, ct);
-
+            var resp = await client.ExecuteAsync<T>(req, ct, onStream: chunk =>
+            {
+                if (chunk.Kind == StreamKind.Text && !string.IsNullOrWhiteSpace(chunk.AsText()))
+                    onStream?.Invoke(chunk.AsText()!);
+            });
             return resp.Result;
         }
 

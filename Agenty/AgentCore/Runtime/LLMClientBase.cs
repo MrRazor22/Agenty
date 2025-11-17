@@ -21,6 +21,7 @@ namespace Agenty.AgentCore.Runtime
     {
         private int _currInTokensSoFar;
         private int _currOutTokensSoFar;
+        private string _currFinishReason;
         private readonly IToolCatalog _tools;
         private readonly IToolRuntime _Runtime;
         private readonly IToolCallParser _parser;
@@ -68,13 +69,14 @@ namespace Agenty.AgentCore.Runtime
         #endregion
 
         private async IAsyncEnumerable<LLMStreamChunk> PrepareStreamAsync(
-     LLMRequestBase request,
-     [EnumeratorCancellation] CancellationToken ct)
+             LLMRequestBase request,
+             [EnumeratorCancellation] CancellationToken ct)
         {
             _trimmer.Trim(request.Prompt, null, request.Model ?? DefaultModel);
 
             _currInTokensSoFar = 0;
             _currOutTokensSoFar = 0;
+            _currFinishReason = "stop";
 
             var sb = new StringBuilder(); // capture assistant text for fallback
 
@@ -90,6 +92,12 @@ namespace Agenty.AgentCore.Runtime
 
                     if (chunk.OutputTokens.HasValue)
                         _currOutTokensSoFar = chunk.OutputTokens.Value;
+                }
+
+                if (chunk.Kind == StreamKind.Finish)
+                {
+                    if (chunk.FinishReason != null)
+                        _currFinishReason = chunk.FinishReason ?? _currFinishReason;
                 }
 
                 yield return chunk;
@@ -109,7 +117,8 @@ namespace Agenty.AgentCore.Runtime
 
         public async Task<LLMStructuredResponse<T>> ExecuteAsync<T>(
             LLMStructuredRequest request,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            Action<LLMStreamChunk>? onStream = null)
         {
             _logger.LogTrace("Requesting structured response for {Type}", typeof(T).Name);
 
@@ -129,9 +138,6 @@ namespace Agenty.AgentCore.Runtime
                         : _tools.RegisteredTools.ToArray());
 
             StringBuilder jsonBuffer = new StringBuilder();
-            int input = 0;
-            int output = 0;
-            string finish = "stop";
 
             // ------------ STREAM WITH RETRIES ------------
             await foreach (var chunk in _retryPolicy.ExecuteStreamAsync(
@@ -139,14 +145,10 @@ namespace Agenty.AgentCore.Runtime
                 clonedRequest => PrepareStreamAsync(clonedRequest, ct),
                 ct))
             {
+                onStream?.Invoke(chunk);
+
                 if (chunk.Kind == StreamKind.Text)
                     jsonBuffer.Append(chunk.AsText());
-
-                if (chunk.Kind == StreamKind.Finish)
-                {
-                    if (chunk.FinishReason != null)
-                        finish = chunk.FinishReason;
-                }
             }
 
             string rawText = jsonBuffer.ToString();
@@ -181,7 +183,7 @@ namespace Agenty.AgentCore.Runtime
             return new LLMStructuredResponse<T>(
                 json,
                 typed,
-                finish,
+                _currFinishReason,
                 _currInTokensSoFar,
                 _currOutTokensSoFar
             );
@@ -202,10 +204,6 @@ namespace Agenty.AgentCore.Runtime
             var sb = new StringBuilder();
             var toolCalls = new List<ToolCall>();
 
-            int input = 0;
-            int output = 0;
-            string finish = "stop";
-
             // -----------------------------
             // MAIN STREAM (with retries)
             // -----------------------------
@@ -225,10 +223,6 @@ namespace Agenty.AgentCore.Runtime
                     case StreamKind.ToolCall:
                         toolCalls.Add(chunk.AsToolCall());
                         break;
-
-                    case StreamKind.Finish:
-                        finish = chunk.FinishReason ?? finish;
-                        break;
                 }
             }
 
@@ -237,7 +231,7 @@ namespace Agenty.AgentCore.Runtime
             return new LLMResponse(
                 finalText,
                 toolCalls,
-                finish,
+                _currFinishReason,
                 _currInTokensSoFar,
                 _currOutTokensSoFar
             );
