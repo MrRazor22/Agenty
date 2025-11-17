@@ -27,9 +27,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
 
         private string? _defaultModel;
         public OpenAILLMClient(
-            string baseUrl,
-            string apiKey,
-            string modelName,
+            LLMInitOptions opts,
             IToolCatalog registry,
             IToolRuntime runtime,
             IToolCallParser parser,
@@ -37,7 +35,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             ITokenManager tokenManager,
             IRetryPolicy retryPolicy,
             ILogger<ILLMClient> logger
-        ) : base(baseUrl, apiKey, modelName, registry, runtime, parser, trimmer, tokenManager, retryPolicy, logger)
+        ) : base(opts, registry, runtime, parser, trimmer, tokenManager, retryPolicy, logger)
         {
             _client = new OpenAIClient(
                 credential: new ApiKeyCredential(ApiKey),

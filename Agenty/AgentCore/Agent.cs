@@ -259,19 +259,12 @@ namespace Agenty.AgentCore
         Task<AgentResponse> ExecuteAsync(string goal, CancellationToken cancellationToken = default);
     }
 
-    public sealed class OpenAIOptions
-    {
-        public string BaseUrl { get; set; } = "http://127.0.0.1:1234/v1";
-        public string ApiKey { get; set; } = "lmstudio";
-        public string Model { get; set; } = "qwen@q5_k_m";
-    }
-
     public static class AgentServiceCollectionExtensions
     {
-        public static AgentBuilder AddOpenAI(this AgentBuilder builder, Action<OpenAIOptions> configure)
+        public static AgentBuilder AddOpenAI(this AgentBuilder builder, Action<LLMInitOptions> configure)
         {
-            var options = new OpenAIOptions();
-            configure(options);
+            var opts = new LLMInitOptions();
+            configure(opts);
 
             builder.Services.AddSingleton<IToolRuntime>(sp =>
             {
@@ -289,10 +282,9 @@ namespace Agenty.AgentCore
                 var tokenManager = sp.GetRequiredService<ITokenManager>();
                 var parser = new ToolCallParser();
                 var retry = sp.GetRequiredService<IRetryPolicy>();
+
                 return new OpenAILLMClient(
-                    options.BaseUrl,
-                    options.ApiKey,
-                    options.Model,
+                    opts,
                     registry,
                     runtime,
                     parser,

@@ -102,6 +102,12 @@ namespace Agenty.LLMCore
             };
         }
     }
+    public sealed class LLMInitOptions
+    {
+        public string BaseUrl { get; set; } = "";
+        public string ApiKey { get; set; } = "";
+        public string Model { get; set; } = "";
+    }
 
     public interface ILLMClient
     {

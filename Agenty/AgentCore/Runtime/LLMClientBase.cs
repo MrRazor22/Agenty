@@ -19,6 +19,8 @@ namespace Agenty.AgentCore.Runtime
 {
     public abstract class LLMClientBase : ILLMClient
     {
+        private int _currInTokensSoFar;
+        private int _currOutTokensSoFar;
         private readonly IToolCatalog _tools;
         private readonly IToolRuntime _Runtime;
         private readonly IToolCallParser _parser;
@@ -34,25 +36,24 @@ namespace Agenty.AgentCore.Runtime
         private static readonly ConcurrentDictionary<string, JObject> _schemaCache = new ConcurrentDictionary<string, JObject>();
 
         public LLMClientBase(
-            string baseUrl,
-            string apiKey,
-            string defaultModel,
+            LLMInitOptions opts,
             IToolCatalog registry,
-            IToolRuntime Runtime,
+            IToolRuntime runtime,
             IToolCallParser parser,
             IContextTrimmer trimmer,
             ITokenManager tokenManager,
             IRetryPolicy retryPolicy,
             ILogger<ILLMClient> logger)
         {
-            BaseUrl = baseUrl;
-            ApiKey = apiKey;
-            DefaultModel = defaultModel;
+            BaseUrl = opts.BaseUrl;
+            ApiKey = opts.ApiKey;
+            DefaultModel = opts.Model;
+
             _tools = registry;
-            _Runtime = Runtime;
+            _Runtime = runtime;
             _parser = parser;
-            _tokenManager = tokenManager;
             _trimmer = trimmer;
+            _tokenManager = tokenManager;
             _retryPolicy = retryPolicy;
             _logger = logger;
         }
@@ -63,12 +64,30 @@ namespace Agenty.AgentCore.Runtime
             CancellationToken ct);
         #endregion
 
-        private IAsyncEnumerable<LLMStreamChunk> PrepareStreamAsync(
+        private async IAsyncEnumerable<LLMStreamChunk> PrepareStreamAsync(
             LLMRequestBase request,
-            CancellationToken ct)
+            [EnumeratorCancellation] CancellationToken ct)
         {
+            // trim prompt BEFORE streaming
             _trimmer.Trim(request.Prompt, null, request.Model ?? DefaultModel);
-            return StreamAsync(request, ct);
+
+            // reset temp usage
+            _currInTokensSoFar = 0;
+            _currOutTokensSoFar = 0;
+
+            await foreach (var chunk in StreamAsync(request, ct))
+            {
+                if (chunk.Kind == StreamKind.Usage)
+                {
+                    if (chunk.InputTokens.HasValue) _currInTokensSoFar = chunk.InputTokens.Value;
+                    if (chunk.OutputTokens.HasValue) _currOutTokensSoFar = chunk.OutputTokens.Value;
+                }
+
+                yield return chunk;
+            }
+
+            // centrally record usage ONCE
+            _tokenManager.Record(_currInTokensSoFar, _currOutTokensSoFar);
         }
 
         public async Task<LLMStructuredResponse<T>> ExecuteAsync<T>(
@@ -106,20 +125,12 @@ namespace Agenty.AgentCore.Runtime
                 if (chunk.Kind == StreamKind.Text)
                     jsonBuffer.Append(chunk.AsText());
 
-                if (chunk.Kind == StreamKind.Usage)
-                {
-                    if (chunk.InputTokens.HasValue) input = chunk.InputTokens.Value;
-                    if (chunk.OutputTokens.HasValue) output = chunk.OutputTokens.Value;
-                }
-
                 if (chunk.Kind == StreamKind.Finish)
                 {
                     if (chunk.FinishReason != null)
                         finish = chunk.FinishReason;
                 }
             }
-
-            _tokenManager.Record(input, output);
 
             string rawText = jsonBuffer.ToString();
             JToken json = null;
@@ -154,8 +165,9 @@ namespace Agenty.AgentCore.Runtime
                 json,
                 typed,
                 finish,
-                input,
-                output);
+                _currInTokensSoFar,
+                _currOutTokensSoFar
+            );
         }
 
 
@@ -197,18 +209,11 @@ namespace Agenty.AgentCore.Runtime
                         toolCalls.Add(chunk.AsToolCall());
                         break;
 
-                    case StreamKind.Usage:
-                        input = chunk.InputTokens ?? input;
-                        output = chunk.OutputTokens ?? output;
-                        break;
-
                     case StreamKind.Finish:
                         finish = chunk.FinishReason ?? finish;
                         break;
                 }
             }
-
-            _tokenManager.Record(input, output);
 
             var finalText = sb.ToString().Trim();
 
@@ -216,8 +221,8 @@ namespace Agenty.AgentCore.Runtime
                 finalText,
                 toolCalls,
                 finish,
-                input,
-                output
+                _currInTokensSoFar,
+                _currOutTokensSoFar
             );
         }
         private async IAsyncEnumerable<LLMStreamChunk> ProduceValidatedStream(LLMRequest request, [EnumeratorCancellation] CancellationToken ct)
