@@ -86,7 +86,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
             }
         }
 
-        public static void ApplySamplingOptions(this ChatCompletionOptions opts, LLMRequest? options)
+        public static void ApplySamplingOptions(this ChatCompletionOptions opts, LLMRequestBase? options)
         {
             if (options.Sampling == null)
             {
@@ -104,7 +104,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
                 opts.MaxOutputTokenCount = options.Sampling.MaxOutputTokens;
         }
 
-        private static void ApplyReasoningMode(ChatCompletionOptions opts, LLMRequest options)
+        private static void ApplyReasoningMode(ChatCompletionOptions opts, LLMRequestBase options)
         {
             switch (options.Reasoning)
             {

@@ -66,7 +66,7 @@ namespace Agenty.AgentCore.Steps
             var planPrompt = @"Break my request into actionable steps based on the tools you got and information you know. If you dont know or have the information required ask the user DO NOT fabricate anything be honest about your limitations";
 
             var convo = new Conversation()
-                .CloneFrom(ctx.Chat)
+                .Clone(ctx.Chat)
                 .AddUser(planPrompt);
 
             var plan = await llm.GetStructuredAsync<Plan>(convo, model: _model, ct: ctx.CancellationToken);
@@ -83,7 +83,7 @@ namespace Agenty.AgentCore.Steps
             if (plan != null && plan.Steps.Count > 0)
             {
                 convo = new Conversation()
-               .CloneFrom(ctx.Chat)
+               .Clone(ctx.Chat)
                .AddUser($"With all the available info you gathered for my request: '{ctx.UserRequest}', provide a final user facing answer.");
 
                 var res = await llm.GetResponseAsync(

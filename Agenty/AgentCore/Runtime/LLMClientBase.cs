@@ -55,70 +55,101 @@ namespace Agenty.AgentCore.Runtime
         }
 
         #region abstract methods providers must implement 
-        protected abstract IAsyncEnumerable<LLMStreamChunk> GetProviderStreamingResponse(
-            LLMToolRequest request,
+        protected abstract IAsyncEnumerable<LLMStreamChunk> StreamAsync(
+            LLMRequestBase request,
             CancellationToken ct);
-        protected abstract Task<LLMStructuredResponse<T>> GetProviderStructuredResponse<T>(
-            LLMStructuredRequest request,
-            CancellationToken ct = default);
         #endregion
 
         public async Task<LLMStructuredResponse<T>> ExecuteAsync<T>(
-    LLMStructuredRequest request,
-    CancellationToken ct = default)
+            LLMStructuredRequest request,
+            CancellationToken ct = default)
         {
             _logger.LogTrace("Requesting structured response for {Type}", typeof(T).Name);
 
-            // inject T into request
             request.ResultType = typeof(T);
 
-            return await _retryPolicy.ExecuteAsync(async intPrompt =>
-            {
-                string typeKey = typeof(T).FullName!;
+            string typeKey = request.ResultType.FullName;
 
-                request.Schema = _schemaCache.GetOrAdd(typeKey, _ =>
-                {
-                    _logger.LogTrace("Schema not cached. Building for {Type}", typeKey);
-                    return JsonSchemaExtensions.GetSchemaForType(typeof(T));
-                });
+            request.Schema = _schemaCache.GetOrAdd(
+                typeKey,
+                _ => JsonSchemaExtensions.GetSchemaForType(request.ResultType));
 
-                request.AllowedTools = request.ToolCallMode == ToolCallMode.Disabled
-                    ? Array.Empty<Tool>()
-                    : (request.AllowedTools?.Any() == true
+            request.AllowedTools =
+                request.ToolCallMode == ToolCallMode.Disabled
+                    ? new Tool[0]
+                    : (request.AllowedTools != null && request.AllowedTools.Any()
                         ? request.AllowedTools.ToArray()
                         : _tools.RegisteredTools.ToArray());
 
-                var providerResponse = await GetProviderStructuredResponse<T>(request, ct);
+            StringBuilder jsonBuffer = new StringBuilder();
+            int input = 0;
+            int output = 0;
+            string finish = "stop";
 
-                _tokenManager.Record(providerResponse.InputTokens, providerResponse.OutputTokens);
+            // ------------ STREAM WITH RETRIES ------------
+            await foreach (var chunk in _retryPolicy.ExecuteStreamAsync(
+                request,
+                clonedRequest => StreamAsync(clonedRequest, ct),
+                ct))
+            {
+                if (chunk.Kind == StreamKind.Text)
+                    jsonBuffer.Append(chunk.AsText());
 
-                // Validations
-                var json = providerResponse.RawJson;
-                if (json == null)
+                if (chunk.Kind == StreamKind.Usage)
                 {
-                    _logger.LogWarning("Structured response null for {Type}", typeKey);
-                    intPrompt.AddAssistant($"Return valid JSON for {typeof(T).Name}.");
-                    return providerResponse;
+                    if (chunk.InputTokens.HasValue) input = chunk.InputTokens.Value;
+                    if (chunk.OutputTokens.HasValue) output = chunk.OutputTokens.Value;
                 }
 
-                var errors = _parser.ValidateAgainstSchema(json, request.Schema, typeof(T).Name);
-                if (errors.Count > 0)
+                if (chunk.Kind == StreamKind.Finish)
                 {
-                    var msg = string.Join("; ", errors.Select(e => $"{e.Path}: {e.Message}"));
-                    _logger.LogWarning("Validation failed for {Type}: {Msg}", typeKey, msg);
-
-                    intPrompt.AddAssistant($"Validation failed: {msg}. Fix JSON for {typeof(T).Name}.");
-
-                    return providerResponse;
+                    if (chunk.FinishReason != null)
+                        finish = chunk.FinishReason;
                 }
+            }
 
-                return providerResponse;
+            _tokenManager.Record(input, output);
 
-            }, request.Prompt);
+            string rawText = jsonBuffer.ToString();
+            JToken json = null;
+
+            try
+            {
+                json = JToken.Parse(rawText);
+            }
+            catch
+            {
+                // INVALID JSON → retry driver will see assistant correction
+                _logger.LogWarning("Invalid JSON for structured response {Type}", typeKey);
+                request.Prompt.AddAssistant("Return valid JSON matching the schema.");
+                throw new Exception("Retry structured JSON parse");
+            }
+
+            // ---------- SCHEMA VALIDATION ----------
+            var errors = _parser.ValidateAgainstSchema(json, request.Schema, request.ResultType.Name);
+
+            if (errors.Count > 0)
+            {
+                var msg = string.Join("; ", errors.Select(e => e.Path + ": " + e.Message));
+                _logger.LogWarning("Validation failed for {Type}: {Msg}", typeKey, msg);
+
+                request.Prompt.AddAssistant("Validation failed: " + msg + ". Fix JSON.");
+                throw new Exception("Retry structured validation");
+            }
+
+            T typed = json.ToObject<T>();
+
+            return new LLMStructuredResponse<T>(
+                json,
+                typed,
+                finish,
+                input,
+                output);
         }
 
-        public async Task<LLMTextAndToolCallResponse> ExecuteAsync(
-            LLMToolRequest? request,
+
+        public async Task<LLMResponse> ExecuteAsync(
+            LLMRequest? request,
             CancellationToken ct = default,
             Action<LLMStreamChunk>? onStream = null)
         {
@@ -139,8 +170,8 @@ namespace Agenty.AgentCore.Runtime
             // MAIN STREAM (with retries)
             // -----------------------------
             await foreach (var chunk in _retryPolicy.ExecuteStreamAsync(
-                request.Prompt,
-                clonedPrompt => ProduceValidatedStream(request, ct),
+                request,
+                clonedrequest => ProduceValidatedStream((LLMRequest)clonedrequest, ct),
                 ct))
             {
                 onStream?.Invoke(chunk);
@@ -170,7 +201,7 @@ namespace Agenty.AgentCore.Runtime
 
             var finalText = sb.ToString().Trim();
 
-            return new LLMTextAndToolCallResponse(
+            return new LLMResponse(
                 finalText,
                 toolCalls,
                 finish,
@@ -178,46 +209,51 @@ namespace Agenty.AgentCore.Runtime
                 output
             );
         }
-        private async IAsyncEnumerable<LLMStreamChunk> ProduceValidatedStream(LLMToolRequest request, [EnumeratorCancellation] CancellationToken ct)
+        private async IAsyncEnumerable<LLMStreamChunk> ProduceValidatedStream(LLMRequest request, [EnumeratorCancellation] CancellationToken ct)
         {
             bool limitOneTool = request.ToolCallMode == ToolCallMode.OneTool;
-            await foreach (var rawChunk in GetProviderStreamingResponse(request, ct))
+            await foreach (var rawChunk in StreamAsync(request, ct))
             {
                 // TEXT ----------------------------------------------------
                 if (rawChunk.Kind == StreamKind.Text)
                 {
                     var text = rawChunk.AsText();
-                    if (!string.IsNullOrEmpty(text))
+                    if (string.IsNullOrEmpty(text))
+                        continue;
+
+                    yield return rawChunk; // emit as-is
+
+                    // inline extraction from assistant message
+                    var extraction = _parser.TryExtractInlineToolCall(_tools, text);
+
+                    foreach (var call in extraction.Calls)
                     {
-                        // first yield text
-                        yield return rawChunk;
-
-                        // inline extraction
-                        var extraction = _parser.TryExtractInlineToolCall(_tools, text);
-                        foreach (var c in extraction.Calls)
+                        if (!_tools.Contains(call.Name))
                         {
-                            if (!_tools.Contains(c.Name))
-                                throw new Exception($"Unknown tool '{c.Name}'");
-
-                            var parsed = _parser.ParseToolParams(_tools, c.Name, c.Arguments);
-
-                            var validated = new ToolCall(
-                                c.Id ?? Guid.NewGuid().ToString(),
-                                c.Name,
-                                c.Arguments,
-                                parsed
+                            request.Prompt.AddUser(
+                                $"Tool `{call.Name}` is invalid. Use only: [{string.Join(", ", _tools.RegisteredTools.Select(t => t.Name))}]"
                             );
-
-                            // yield validated toolcall
-                            yield return new LLMStreamChunk(
-                                StreamKind.ToolCall,
-                                payload: validated
-                            );
-
-                            if (limitOneTool)
-                                yield break;
+                            continue;
                         }
+
+                        var parsed = _parser.ParseToolParams(_tools, call.Name, call.Arguments);
+
+                        var validated = new ToolCall(
+                            call.Id ?? Guid.NewGuid().ToString(),
+                            call.Name,
+                            call.Arguments,
+                            parsed
+                        );
+
+                        yield return new LLMStreamChunk(
+                            StreamKind.ToolCall,
+                            payload: validated
+                        );
+
+                        if (limitOneTool)
+                            yield break;
                     }
+
                     continue;
                 }
 
@@ -228,10 +264,16 @@ namespace Agenty.AgentCore.Runtime
                     if (raw == null)
                         continue;
 
-
+                    // UNKNOWN TOOL? -> correction prompt injection
                     if (!_tools.Contains(raw.Name))
-                        throw new Exception($"Unknown tool '{raw.Name}'");
+                    {
+                        request.Prompt.AddUser(
+                            $"Tool `{raw.Name}` is invalid. Use only: [{string.Join(", ", _tools.RegisteredTools.Select(t => t.Name))}]"
+                        );
+                        continue; // don't emit bad call
+                    }
 
+                    // parse args
                     var parsed = _parser.ParseToolParams(_tools, raw.Name, raw.Arguments);
 
                     var validated = new ToolCall(

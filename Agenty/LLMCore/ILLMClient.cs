@@ -11,31 +11,33 @@ using System.Threading.Tasks;
 
 namespace Agenty.LLMCore
 {
-    public class LLMRequest
+    public abstract class LLMRequestBase
     {
-        public Conversation Prompt { get; }
+        public Conversation Prompt { get; internal set; }
         public string Model { get; }
         public ReasoningMode Reasoning { get; }
         public LLMSamplingOptions Sampling { get; }
 
-        protected LLMRequest(
+        protected LLMRequestBase(
             Conversation prompt,
             string model = null,
             ReasoningMode reasoning = ReasoningMode.Balanced,
             LLMSamplingOptions sampling = null)
         {
-            Prompt = prompt ?? throw new ArgumentNullException(nameof(prompt));
+            Prompt = prompt;
             Model = model;
             Reasoning = reasoning;
             Sampling = sampling;
         }
+
+        public abstract LLMRequestBase DeepClone();
     }
-    public sealed class LLMToolRequest : LLMRequest
+    public sealed class LLMRequest : LLMRequestBase
     {
         public ToolCallMode ToolCallMode { get; }
         public IEnumerable<Tool> AllowedTools { get; internal set; }
 
-        public LLMToolRequest(
+        public LLMRequest(
             Conversation prompt,
             ToolCallMode toolCallMode = ToolCallMode.Auto,
             IEnumerable<Tool> allowedTools = null,
@@ -47,9 +49,20 @@ namespace Agenty.LLMCore
             AllowedTools = allowedTools;
             ToolCallMode = toolCallMode;
         }
-    }
 
-    public sealed class LLMStructuredRequest : LLMRequest
+        public override LLMRequestBase DeepClone()
+        {
+            return new LLMRequest(
+                prompt: Prompt.Clone(),     // **only deep clone here**
+                toolCallMode: ToolCallMode,
+                allowedTools: AllowedTools, // allowed to share — immutable list
+                model: Model,
+                reasoning: Reasoning,
+                sampling: Sampling
+            );
+        }
+    }
+    public sealed class LLMStructuredRequest : LLMRequestBase
     {
         public Type ResultType { get; internal set; }
         public JObject Schema { get; internal set; }
@@ -67,16 +80,33 @@ namespace Agenty.LLMCore
             LLMSamplingOptions sampling = null)
             : base(prompt, model, reasoning, sampling)
         {
-            ResultType = resultType ?? throw new ArgumentNullException(nameof(resultType));
+            ResultType = resultType;
+            Schema = Schema;
             AllowedTools = allowedTools;
             ToolCallMode = toolCallMode;
+        }
+
+        public override LLMRequestBase DeepClone()
+        {
+            return new LLMStructuredRequest(
+                prompt: Prompt.Clone(),        // **deep clone prompt only**
+                resultType: ResultType,
+                allowedTools: AllowedTools,    // immutable list shared
+                toolCallMode: ToolCallMode,
+                model: Model,
+                reasoning: Reasoning,
+                sampling: Sampling
+            )
+            {
+                Schema = Schema                 // Schema is immutable — share
+            };
         }
     }
 
     public interface ILLMClient
     {
-        Task<LLMTextAndToolCallResponse> ExecuteAsync(
-            LLMToolRequest request,
+        Task<LLMResponse> ExecuteAsync(
+            LLMRequest request,
             CancellationToken ct = default,
             Action<LLMStreamChunk>? onStream = null);
 
@@ -113,13 +143,13 @@ namespace Agenty.LLMCore
         public int? MaxOutputTokens { get; set; }
     }
 
-    public abstract class LLMResponse
+    public abstract class LLMResponseBase
     {
         public string FinishReason { get; }
         public int InputTokens { get; }
         public int OutputTokens { get; }
 
-        protected LLMResponse(
+        protected LLMResponseBase(
             string finishReason,
             int inputTokens,
             int outputTokens)
@@ -130,12 +160,12 @@ namespace Agenty.LLMCore
         }
     }
 
-    public sealed class LLMTextAndToolCallResponse : LLMResponse
+    public sealed class LLMResponse : LLMResponseBase
     {
         public string? AssistantMessage { get; }
         public List<ToolCall> ToolCalls { get; }
 
-        public LLMTextAndToolCallResponse(
+        public LLMResponse(
             string? assistantMessage,
             List<ToolCall> toolCalls,
             string finishReason,
@@ -148,7 +178,7 @@ namespace Agenty.LLMCore
         }
     }
 
-    public sealed class LLMStructuredResponse<T> : LLMResponse
+    public sealed class LLMStructuredResponse<T> : LLMResponseBase
     {
         public JToken RawJson { get; }
         public T Result { get; }

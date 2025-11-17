@@ -58,7 +58,7 @@ namespace Agenty.AgentCore.Runtime
         // TEXT
         // ----------------------------- 
 
-        public static async Task<LLMTextAndToolCallResponse> GetResponseAsync(
+        public static async Task<LLMResponse> GetResponseAsync(
             this ILLMClient client,
             Conversation prompt,
             string model = null,
@@ -68,7 +68,7 @@ namespace Agenty.AgentCore.Runtime
             Action<string> onStream = null)
         {
             // Plain text = NO tools.
-            var req = new LLMToolRequest(
+            var req = new LLMRequest(
                 prompt: prompt,
                 allowedTools: null,
                 toolCallMode: ToolCallMode.Disabled,
@@ -85,7 +85,7 @@ namespace Agenty.AgentCore.Runtime
         }
 
         //Tool call
-        public static async Task<LLMTextAndToolCallResponse> GetResponseAsync(
+        public static async Task<LLMResponse> GetResponseAsync(
             this ILLMClient client,
             Conversation convo,
             ToolCallMode toolMode = ToolCallMode.Auto,
@@ -96,7 +96,7 @@ namespace Agenty.AgentCore.Runtime
             Action<string>? onStream = null,
             params Tool[] tools)   // optional
         {
-            var req = new LLMToolRequest(convo, toolMode, tools, model, reasoning, sampling);
+            var req = new LLMRequest(convo, toolMode, tools, model, reasoning, sampling);
 
             return await client.ExecuteAsync(req, ct, onStream: chunk =>
             {

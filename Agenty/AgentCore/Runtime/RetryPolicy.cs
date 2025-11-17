@@ -24,13 +24,10 @@ namespace Agenty.AgentCore.Runtime
 
     public interface IRetryPolicy
     {
-        Task<T> ExecuteAsync<T>(
-            Func<Conversation, Task<T>> action,
-            Conversation prompt);
         IAsyncEnumerable<LLMStreamChunk> ExecuteStreamAsync(
-            Conversation prompt,
-            Func<Conversation, IAsyncEnumerable<LLMStreamChunk>> factory,
-            CancellationToken ct = default);
+            LLMRequestBase originalRequest,
+            Func<LLMRequestBase, IAsyncEnumerable<LLMStreamChunk>> factory,
+            [EnumeratorCancellation] CancellationToken ct = default);
     }
 
     /// <summary>
@@ -45,64 +42,21 @@ namespace Agenty.AgentCore.Runtime
             _options = options?.Value ?? new RetryPolicyOptions();
         }
 
-        public async Task<T> ExecuteAsync<T>(
-            Func<Conversation, Task<T>> action,
-            Conversation prompt)
-        {
-            if (!_options.Enabled)
-                return await action(prompt);
-
-            var clonedPrompt = new Conversation().CloneFrom(prompt);
-
-            for (int attempt = 0; attempt <= _options.MaxRetries; attempt++)
-            {
-                try
-                {
-                    var task = action(clonedPrompt);
-
-                    var completed =
-                        await Task.WhenAny(task, Task.Delay(_options.Timeout));
-
-                    if (completed != task)
-                        throw new TimeoutException(
-                            $"LLM call timed out after {_options.Timeout.TotalSeconds}s");
-
-                    return await task;
-                }
-                catch when (attempt < _options.MaxRetries)
-                {
-                    clonedPrompt.AddAssistant($"Retry {attempt + 1} due to error.");
-
-                    var delay = TimeSpan.FromMilliseconds(
-                        _options.InitialDelay.TotalMilliseconds *
-                        Math.Pow(_options.BackoffFactor, attempt));
-
-                    await Task.Delay(delay);
-                }
-            }
-
-            return default!;
-        }
-
-        // --------------------------------------------------------
-        // STREAMING VERSION
-        // --------------------------------------------------------
-
         public async IAsyncEnumerable<LLMStreamChunk> ExecuteStreamAsync(
-            Conversation originalPrompt,
-            Func<Conversation, IAsyncEnumerable<LLMStreamChunk>> factory,
+            LLMRequestBase originalRequest,
+            Func<LLMRequestBase, IAsyncEnumerable<LLMStreamChunk>> factory,
             [EnumeratorCancellation] CancellationToken ct = default)
         {
-            var clonedPrompt = new Conversation().CloneFrom(originalPrompt);
-
             for (int attempt = 0; attempt <= _options.MaxRetries; attempt++)
             {
+                var clonedRequest = originalRequest.DeepClone();
+
                 bool succeeded = true;
 
                 using var timeoutCts = new CancellationTokenSource(_options.Timeout);
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
 
-                var stream = factory(clonedPrompt);
+                var stream = factory(clonedRequest);
                 var enumerator = stream.GetAsyncEnumerator(linked.Token);
 
                 try
@@ -130,7 +84,7 @@ namespace Agenty.AgentCore.Runtime
                 if (attempt == _options.MaxRetries)
                     yield break;
 
-                clonedPrompt.AddAssistant($"Retry {attempt + 1} due to error.");
+                clonedRequest.Prompt.AddAssistant($"Retry {attempt + 1} due to error.");
 
                 yield return new LLMStreamChunk(StreamKind.Text, $"[retry {attempt + 1}]");
 

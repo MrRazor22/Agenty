@@ -160,7 +160,7 @@ namespace Agenty.AgentCore
             if (_store == null) return;
             var past = await _store.LoadAsync(sessionId);
             if (past != null)
-                _history.CloneFrom(past);
+                _history.Clone(past);
         }
 
         public async Task SaveHistoryAsync(string sessionId)
@@ -228,7 +228,7 @@ namespace Agenty.AgentCore
                 try
                 {
                     _history.AddUser(goal);
-                    ctx.Chat.CloneFrom(_history);
+                    ctx.Chat.Clone(_history);
 
                     var logger = ctx.Services.GetService<ILogger<Agent>>();
                     logger.AttachTo(ctx.Chat);

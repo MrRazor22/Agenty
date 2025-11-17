@@ -54,7 +54,7 @@ namespace Agenty.LLMCore.ChatHandling
             return convo.Add(Role.Tool, result);
         }
 
-        public static Conversation CloneFrom(this Conversation target, Conversation source, ChatFilter filter = ChatFilter.All)
+        public static Conversation Clone(this Conversation target, Conversation source, ChatFilter filter = ChatFilter.All)
         {
             target.Clear();
 
@@ -66,7 +66,18 @@ namespace Agenty.LLMCore.ChatHandling
 
             return target;
         }
+        public static Conversation Clone(this Conversation source, ChatFilter filter = ChatFilter.All)
+        {
+            var copy = new Conversation();
 
+            foreach (var message in source)
+            {
+                if (!ShouldInclude(message, filter)) continue;
+                copy.Add(message.Role, message.Content);
+            }
+
+            return copy;
+        }
         public static string ToJson(this Conversation chat, ChatFilter filter = ChatFilter.All)
         {
             var items = new List<object>();
