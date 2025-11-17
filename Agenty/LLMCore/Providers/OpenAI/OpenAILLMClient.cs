@@ -31,11 +31,12 @@ namespace Agenty.LLMCore.Providers.OpenAI
             IToolCatalog registry,
             IToolRuntime runtime,
             IToolCallParser parser,
+            ITokenizer tokenizer,
             IContextTrimmer trimmer,
             ITokenManager tokenManager,
             IRetryPolicy retryPolicy,
             ILogger<ILLMClient> logger
-        ) : base(opts, registry, runtime, parser, trimmer, tokenManager, retryPolicy, logger)
+        ) : base(opts, registry, runtime, parser, tokenizer, trimmer, tokenManager, retryPolicy, logger)
         {
             _client = new OpenAIClient(
                 credential: new ApiKeyCredential(ApiKey),

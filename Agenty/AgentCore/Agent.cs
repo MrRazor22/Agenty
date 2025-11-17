@@ -278,6 +278,7 @@ namespace Agenty.AgentCore
                 var logger = sp.GetRequiredService<ILogger<ILLMClient>>();
                 var registry = sp.GetRequiredService<IToolCatalog>();
                 var runtime = sp.GetRequiredService<IToolRuntime>();
+                var tokenizer = sp.GetRequiredService<ITokenizer>();
                 var trimmer = sp.GetRequiredService<IContextTrimmer>();
                 var tokenManager = sp.GetRequiredService<ITokenManager>();
                 var parser = new ToolCallParser();
@@ -288,6 +289,7 @@ namespace Agenty.AgentCore
                     registry,
                     runtime,
                     parser,
+                    tokenizer,
                     trimmer,
                     tokenManager,
                     retry,

@@ -24,6 +24,7 @@ namespace Agenty.AgentCore.Runtime
         private readonly IToolCatalog _tools;
         private readonly IToolRuntime _Runtime;
         private readonly IToolCallParser _parser;
+        private readonly ITokenizer _tokenizer;
         private readonly IContextTrimmer _trimmer;
         private readonly ITokenManager _tokenManager;
         private readonly IRetryPolicy _retryPolicy;
@@ -40,6 +41,7 @@ namespace Agenty.AgentCore.Runtime
             IToolCatalog registry,
             IToolRuntime runtime,
             IToolCallParser parser,
+            ITokenizer tokenizer,
             IContextTrimmer trimmer,
             ITokenManager tokenManager,
             IRetryPolicy retryPolicy,
@@ -52,6 +54,7 @@ namespace Agenty.AgentCore.Runtime
             _tools = registry;
             _Runtime = runtime;
             _parser = parser;
+            _tokenizer = tokenizer;
             _trimmer = trimmer;
             _tokenManager = tokenManager;
             _retryPolicy = retryPolicy;
@@ -65,29 +68,43 @@ namespace Agenty.AgentCore.Runtime
         #endregion
 
         private async IAsyncEnumerable<LLMStreamChunk> PrepareStreamAsync(
-            LLMRequestBase request,
-            [EnumeratorCancellation] CancellationToken ct)
+     LLMRequestBase request,
+     [EnumeratorCancellation] CancellationToken ct)
         {
-            // trim prompt BEFORE streaming
             _trimmer.Trim(request.Prompt, null, request.Model ?? DefaultModel);
 
-            // reset temp usage
             _currInTokensSoFar = 0;
             _currOutTokensSoFar = 0;
 
+            var sb = new StringBuilder(); // capture assistant text for fallback
+
             await foreach (var chunk in StreamAsync(request, ct))
             {
+                if (chunk.Kind == StreamKind.Text)
+                    sb.Append(chunk.AsText());
+
                 if (chunk.Kind == StreamKind.Usage)
                 {
-                    if (chunk.InputTokens.HasValue) _currInTokensSoFar = chunk.InputTokens.Value;
-                    if (chunk.OutputTokens.HasValue) _currOutTokensSoFar = chunk.OutputTokens.Value;
+                    if (chunk.InputTokens.HasValue)
+                        _currInTokensSoFar = chunk.InputTokens.Value;
+
+                    if (chunk.OutputTokens.HasValue)
+                        _currOutTokensSoFar = chunk.OutputTokens.Value;
                 }
 
                 yield return chunk;
             }
 
-            // centrally record usage ONCE
-            _tokenManager.Record(_currInTokensSoFar, _currOutTokensSoFar);
+            // fallback estimation
+            int input = _currInTokensSoFar;
+            if (input <= 0)
+                input = _tokenizer.Count(request.Prompt.ToJson(ChatFilter.All), request.Model ?? DefaultModel);
+
+            int output = _currOutTokensSoFar;
+            if (output <= 0)
+                output = _tokenizer.Count(sb.ToString(), request.Model ?? DefaultModel);
+
+            _tokenManager.Record(input, output);
         }
 
         public async Task<LLMStructuredResponse<T>> ExecuteAsync<T>(
