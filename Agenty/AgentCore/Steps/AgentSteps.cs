@@ -1,4 +1,5 @@
-﻿using Agenty.LLMCore;
+﻿using Agenty.AgentCore.Runtime;
+using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Messages;
@@ -36,13 +37,12 @@ namespace Agenty.AgentCore.Steps
     {
         private readonly string? _model;
         private readonly ReasoningMode _mode;
-        private readonly LLMCallOptions? _opts;
+        private readonly LLMSamplingOptions? _opts;
 
-        public PlanningStep(string? model = null, ReasoningMode mode = ReasoningMode.Balanced, LLMCallOptions? opts = null)
+        public PlanningStep(string? model = null, ReasoningMode mode = ReasoningMode.Balanced)
         {
             _model = model;
             _mode = mode;
-            _opts = opts;
         }
         public class Plan
         {
@@ -63,13 +63,13 @@ namespace Agenty.AgentCore.Steps
             var llm = ctx.Services.GetRequiredService<ILLMClient>();
             var tools = ctx.Services.GetRequiredService<IToolCatalog>();
 
-            var planPrompt = @"Break my request into actionable steps based on the tools you got and information you know.";
+            var planPrompt = @"Break my request into actionable steps based on the tools you got and information you know. If you dont know or have the information required ask the user DO NOT fabricate anything be honest about your limitations";
 
             var convo = new Conversation()
                 .CloneFrom(ctx.Chat)
                 .AddUser(planPrompt);
 
-            var plan = await llm.GetStructured<Plan>(convo, ToolCallMode.None, _mode, _model, _opts, ctx.CancellationToken);
+            var plan = await llm.GetStructuredAsync<Plan>(convo, model: _model, ct: ctx.CancellationToken);
 
             if (plan != null && plan.Steps.Count > 0)
             {
@@ -86,11 +86,14 @@ namespace Agenty.AgentCore.Steps
                .CloneFrom(ctx.Chat)
                .AddUser($"With all the available info you gathered for my request: '{ctx.UserRequest}', provide a final user facing answer.");
 
-                var res = await llm.GetStreamedResponse(convo, ToolCallMode.None, _mode, _model, _opts, ctx.CancellationToken, onChunk: chunk =>
-                {
-                    if (chunk.Kind == StreamKind.Text)
-                        ctx.Stream?.Invoke(chunk.AsText()!);
-                });
+                var res = await llm.GetResponseAsync(
+                    convo,
+                    _model,
+                    _mode,
+                    _opts,
+                    ctx.CancellationToken,
+                    onStream: s => ctx.Stream?.Invoke(s));
+
                 finalResponse = res.AssistantMessage ?? finalResponse;
             }
             ctx.Chat.AddAssistant(finalResponse);
@@ -104,14 +107,14 @@ namespace Agenty.AgentCore.Steps
         private readonly ReasoningMode _mode;
         private readonly ToolCallMode _toolMode;
         private readonly int _maxIterations;
-        private readonly LLMCallOptions? _opts;
+        private readonly LLMSamplingOptions? _opts;
 
         public ToolCallingStep(
             string? model = null,
             ReasoningMode mode = ReasoningMode.Balanced,
             ToolCallMode toolMode = ToolCallMode.Auto,
             int maxIterations = 10,
-            LLMCallOptions? opts = null)
+            LLMSamplingOptions? opts = null)
         {
             _model = model;
             _mode = mode;
@@ -130,18 +133,14 @@ namespace Agenty.AgentCore.Steps
             while (iteration < _maxIterations && !ctx.CancellationToken.IsCancellationRequested)
             {
                 // STREAM LIVE
-                var result = await llm.GetStreamedResponse(
+                var result = await llm.GetResponseAsync(
                     ctx.Chat,
                     _toolMode,
-                    _mode,
                     _model,
+                    _mode,
                     _opts,
                     ctx.CancellationToken,
-                    onChunk: chunk =>
-                    {
-                        if (chunk.Kind == StreamKind.Text)
-                            ctx.Stream?.Invoke(chunk.AsText()!);
-                    });
+                    s => ctx.Stream?.Invoke(s));
 
                 // text 
                 ctx.Chat.AddAssistant(result.AssistantMessage);

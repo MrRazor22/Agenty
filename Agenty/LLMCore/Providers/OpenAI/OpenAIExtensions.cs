@@ -4,6 +4,7 @@ using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
 using OpenAI;
 using OpenAI.Chat;
+using SharpToken;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -85,29 +86,47 @@ namespace Agenty.LLMCore.Providers.OpenAI
             }
         }
 
-        public static void ApplyLLMMode(this ChatCompletionOptions options, ReasoningMode mode)
+        public static void ApplySamplingOptions(this ChatCompletionOptions opts, LLMRequest? options)
         {
-            switch (mode)
+            if (options.Sampling == null)
+            {
+                ApplyReasoningMode(opts, options);
+                return;
+            }
+
+            if (options.Sampling.Temperature != null)
+                opts.Temperature = options.Sampling.Temperature;
+
+            if (options.Sampling.TopP != null)
+                opts.TopP = options.Sampling.TopP;
+
+            if (options.Sampling.MaxOutputTokens != null)
+                opts.MaxOutputTokenCount = options.Sampling.MaxOutputTokens;
+        }
+
+        private static void ApplyReasoningMode(ChatCompletionOptions opts, LLMRequest options)
+        {
+            switch (options.Reasoning)
             {
                 case ReasoningMode.Deterministic:
-                    options.Temperature = 0f;
-                    options.TopP = 1f;
+                    opts.Temperature = 0f;
+                    opts.TopP = 1f;
                     break;
                 case ReasoningMode.Planning:
-                    options.Temperature = 0.3f;
-                    options.TopP = 1f;
+                    opts.Temperature = 0.3f;
+                    opts.TopP = 1f;
                     break;
                 case ReasoningMode.Balanced:
-                    options.Temperature = 0.5f;
-                    options.TopP = 0.9f;
+                    opts.Temperature = 0.9f;
+                    opts.TopP = 0.5f;
                     break;
                 case ReasoningMode.Creative:
-                    options.Temperature = 0.9f;
-                    options.TopP = 1f;
+                    opts.Temperature = 0.9f;
+                    opts.TopP = 1f;
                     break;
                 default:
-                    options.Temperature = 0.5f;
-                    options.TopP = 1f;
+                    opts.Temperature = 0.5f;
+                    opts.TopP = 1f;
                     break;
             }
         }

@@ -20,7 +20,7 @@ namespace TestApp
                 {
                     opts.BaseUrl = "http://127.0.0.1:1234/v1";
                     opts.ApiKey = "lmstudio";
-                    opts.Model = "qwen@q5_k_m";
+                    opts.Model = "publisherme/qwen/qwen3-4b-thinking-2507-q4_k_m.gguf";
                 });
                 builder.AddRetryPolicy(o =>
                 {
@@ -40,37 +40,28 @@ namespace TestApp
                    .WithTools<ConversionTools>()
                    .WithTools<MathTools>()
                    .WithTools<SearchTools>()
-                   .Use(() => new ToolCallingStep())
+                   .Use(() => new ToolCallingStep(toolMode: ToolCallMode.OneTool))
                    .Use<PlanningStep>()
-                   .Use(async (ctx, next) =>
+               .Use(async (ctx, next) =>
+               {
+                   bool started = false;
+
+                   ctx.Stream = s =>
                    {
-                       bool started = false;
-                       StringBuilder line = new();
+                       if (string.IsNullOrWhiteSpace(s))
+                           return;
 
-                       ctx.Stream = chunk =>
+                       if (!started)
                        {
-                           // first time
-                           if (!started)
-                           {
-                               started = true;
-                               Console.Write("[stream] ");
-                           }
+                           Console.Write("[stream] ");
+                           started = true;
+                       }
 
-                           if (string.IsNullOrEmpty(chunk))
-                               return;
+                       Console.Write(s);
+                   };
 
-                           // accumulate
-                           line.Append(chunk);
-
-                           // print without newlines
-                           Console.Write(chunk);
-                       };
-
-                       await next(ctx);
-
-                       if (started)
-                           Console.WriteLine();
-                   });
+                   await next(ctx);
+               });
 
 
                 while (true)

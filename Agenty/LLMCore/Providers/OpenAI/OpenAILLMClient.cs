@@ -19,7 +19,7 @@ using System.Threading.Tasks;
 
 namespace Agenty.LLMCore.Providers.OpenAI
 {
-    internal sealed class OpenAILLMClient : BaseLLMClient
+    internal sealed class OpenAILLMClient : LLMClientBase
     {
         private OpenAIClient? _client;
         private readonly ConcurrentDictionary<string, ChatClient> _chatClients =
@@ -57,31 +57,23 @@ namespace Agenty.LLMCore.Providers.OpenAI
         }
 
         protected override async IAsyncEnumerable<LLMStreamChunk> GetProviderStreamingResponse(
-            Conversation prompt,
-            IEnumerable<Tool> tools,
-            ToolCallMode toolCallMode = ToolCallMode.Auto,
-            ReasoningMode mode = ReasoningMode.Deterministic,
-            string? model = null,
-            LLMCallOptions? opts = null,
+            LLMToolRequest request,
             [EnumeratorCancellation] CancellationToken ct = default)
         {
-            var chat = GetChatClient(model);
+            var chat = GetChatClient(request.Model);
 
             var options = new ChatCompletionOptions
             {
-                ToolChoice = toolCallMode.ToChatToolChoice(),
+                ToolChoice = request.ToolCallMode.ToChatToolChoice(),
                 AllowParallelToolCalls = false
             };
 
-            options.ApplyLLMMode(mode);
-            if (opts?.Temperature != null) options.Temperature = opts.Temperature;
-            if (opts?.TopP != null) options.TopP = opts.TopP;
-            if (opts?.MaxOutputTokens != null) options.MaxOutputTokenCount = opts.MaxOutputTokens;
+            options.ApplySamplingOptions(request);
 
-            foreach (var t in tools.ToChatTools())
+            foreach (var t in request.AllowedTools.ToChatTools())
                 options.Tools.Add(t);
 
-            var stream = chat.CompleteChatStreamingAsync(prompt.ToChatMessages(), options, ct);
+            var stream = chat.CompleteChatStreamingAsync(request.Prompt.ToChatMessages(), options, ct);
 
             string? toolId = null;
             string? toolName = null;
@@ -168,61 +160,37 @@ namespace Agenty.LLMCore.Providers.OpenAI
         }
 
 
-        protected override async Task<LLMStructuredResult> GetProviderStructuredResponse(
-            Conversation prompt,
-            JObject responseFormat,
-            ReasoningMode mode = ReasoningMode.Deterministic,
-            ToolCallMode toolCallMode = ToolCallMode.None,
-            string model = null,
-            LLMCallOptions opts = null,
-            CancellationToken ct = default,
-            params Tool[] tools)
+        protected override async Task<LLMStructuredResponse> GetProviderStructuredResponse(LLMStructuredRequest request, CancellationToken ct = default)
         {
-            var chat = GetChatClient(model);
+            var chat = GetChatClient(request.Model);
 
             var options = new ChatCompletionOptions
             {
                 ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
                     jsonSchemaFormatName: "structured_response",
                     jsonSchema: BinaryData.FromString(
-                        responseFormat.ToString(Newtonsoft.Json.Formatting.None)
+                    request.Schema.ToString(Newtonsoft.Json.Formatting.None)
                     ),
                     jsonSchemaIsStrict: true)
             };
 
-            // tool mode
-            options.ToolChoice = toolCallMode.ToChatToolChoice();
+            options.ToolChoice = request.ToolCallMode.ToChatToolChoice();
+            options.ApplySamplingOptions(request);
 
-            // attach tools
-            if (tools != null && tools.Length > 0)
-            {
-                foreach (var t in tools.ToChatTools())
-                    options.Tools.Add(t);
-            }
+            foreach (var t in request.AllowedTools.ToChatTools())
+                options.Tools.Add(t);
 
-            options.ApplyLLMMode(mode);
-
-            if (opts?.Temperature != null) options.Temperature = opts.Temperature;
-            if (opts?.TopP != null) options.TopP = opts.TopP;
-            if (opts?.MaxOutputTokens != null) options.MaxOutputTokenCount = opts.MaxOutputTokens;
-
-            // call
-            var response = await chat.CompleteChatAsync(prompt.ToChatMessages(), options, ct);
+            var response = await chat.CompleteChatAsync(request.Prompt.ToChatMessages(), options, ct);
             var result = response.Value;
 
-            // raw structured JSON
-            var raw = result.Content?[0]?.Text?.Trim();
+            string raw = result.Content?[0]?.Text?.Trim();
             JToken payload = null;
 
             if (!string.IsNullOrEmpty(raw))
             {
-                try
-                {
-                    payload = JToken.Parse(raw);
-                }
+                try { payload = JToken.Parse(raw); }
                 catch
                 {
-                    // fallback: allow quoted raw strings
                     if (raw.StartsWith("\"") && raw.EndsWith("\""))
                         payload = JValue.Parse(raw);
                     else
@@ -230,7 +198,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
                 }
             }
 
-            return new LLMStructuredResult(
+            return new LLMStructuredResponse(
                 payload,
                 result.FinishReason.ToString(),
                 result.Usage?.InputTokenCount ?? 0,

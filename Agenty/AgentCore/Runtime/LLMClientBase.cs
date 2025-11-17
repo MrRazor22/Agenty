@@ -5,7 +5,6 @@ using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Concurrent;
@@ -18,7 +17,7 @@ using System.Threading.Tasks;
 
 namespace Agenty.AgentCore.Runtime
 {
-    public abstract class BaseLLMClient : ILLMClient
+    public abstract class LLMClientBase : ILLMClient
     {
         private readonly IToolCatalog _tools;
         private readonly IToolRuntime _Runtime;
@@ -33,7 +32,7 @@ namespace Agenty.AgentCore.Runtime
 
         private static readonly ConcurrentDictionary<string, JObject> _schemaCache = new ConcurrentDictionary<string, JObject>();
 
-        public BaseLLMClient(
+        public LLMClientBase(
             string baseUrl,
             string apiKey,
             string defaultModel,
@@ -55,96 +54,42 @@ namespace Agenty.AgentCore.Runtime
             _logger = logger;
         }
 
-        #region abstract methods providers must implement
+        #region abstract methods providers must implement 
         protected abstract IAsyncEnumerable<LLMStreamChunk> GetProviderStreamingResponse(
-            Conversation prompt,
-            IEnumerable<Tool> tools,
-            ToolCallMode toolCallMode,
-            ReasoningMode mode,
-            string? model,
-            LLMCallOptions? opts,
+            LLMToolRequest request,
             CancellationToken ct);
+        protected abstract Task<LLMStructuredResponse> GetProviderStructuredResponse(
+            LLMStructuredRequest request,
+            CancellationToken ct);
+        #endregion
 
-        protected abstract Task<LLMStructuredResult> GetProviderStructuredResponse(
-            Conversation prompt,
-            JObject responseFormat,
-            ReasoningMode mode,
-            ToolCallMode toolCallMode,
-            string? model,
-            LLMCallOptions? opts,
-            CancellationToken ct,
-            params Tool[] tools);
-        #endregion 
-        public async Task<T> GetStructured<T>(
-            Conversation prompt,
-            ToolCallMode toolCallMode = ToolCallMode.None,
-            ReasoningMode mode = ReasoningMode.Deterministic,
-            string model = null,
-            LLMCallOptions opts = null,
-            CancellationToken ct = default,
-            params Tool[] tools)
+        public async Task<LLMStructuredResponse> ExecuteAsync(
+            LLMStructuredRequest request,
+            CancellationToken ct = default)
         {
-            var result = await GetStructuredResponse(
-                prompt,
-                typeof(T),
-                toolCallMode,
-                mode,
-                model,
-                opts,
-                ct,
-                tools);
-
-            var token = result.Payload as JToken;
-            if (token == null)
-                return default(T);
-
-            try
-            {
-                return token.ToObject<T>();
-            }
-            catch
-            {
-                return default(T);
-            }
-        }
-
-        public async Task<LLMStructuredResult> GetStructuredResponse(
-            Conversation prompt,
-            Type targetType,
-            ToolCallMode toolCallMode = ToolCallMode.None,
-            ReasoningMode mode = ReasoningMode.Deterministic,
-            string? model = null,
-            LLMCallOptions? opts = null,
-            CancellationToken ct = default,
-            params Tool[] tools)
-        {
-            _logger.LogTrace("Requesting structured response for {Type}", targetType.Name);
+            _logger.LogTrace("Requesting structured response for {Type}", request.ResultType.Name);
 
             return await _retryPolicy.ExecuteAsync(async intPrompt =>
             {
-                var typeKey = targetType.FullName!;
-                var schema = _schemaCache.GetOrAdd(typeKey, _ =>
+                var typeKey = request.ResultType.FullName!;
+                request.Schema = _schemaCache.GetOrAdd(typeKey, _ =>
                 {
                     _logger.LogTrace("Schema not cached. Building for {Type}", typeKey);
-                    return JsonSchemaExtensions.GetSchemaForType(targetType);
+                    return JsonSchemaExtensions.GetSchemaForType(request.ResultType);
                 });
 
-                var result = await GetProviderStructuredResponse(
-                    intPrompt,
-                    schema,
-                    mode,
-                    toolCallMode,
-                    model,
-                    opts,
-                    ct,
-                    tools);
+                request.AllowedTools = request.ToolCallMode == ToolCallMode.Disabled
+                    ? Array.Empty<Tool>()
+                    : request.AllowedTools?.ToArray() ?? _tools.RegisteredTools.ToArray();
+
+                var result = await GetProviderStructuredResponse(request, ct);
 
                 _tokenManager.Record(result.InputTokens, result.OutputTokens);
 
                 if (result.Payload == null)
                 {
                     _logger.LogWarning("Structured response for {Type} was null", typeKey);
-                    intPrompt.AddAssistant($"Return proper JSON for {targetType.Name}.");
+                    intPrompt.AddAssistant($"Return proper JSON for {request.ResultType.Name}.");
                     return result;
                 }
 
@@ -152,38 +97,34 @@ namespace Agenty.AgentCore.Runtime
                 if (token == null)
                 {
                     _logger.LogWarning("Payload for {Type} is not JToken", typeKey);
-                    intPrompt.AddAssistant($"Return valid JSON object for {targetType.Name}.");
+                    intPrompt.AddAssistant($"Return valid JSON object for {request.ResultType.Name}.");
                     return result;
                 }
 
-                var errors = _parser.ValidateAgainstSchema(token, schema, targetType.Name);
+                var errors = _parser.ValidateAgainstSchema(token, request.Schema, request.ResultType.Name);
                 if (errors.Count > 0)
                 {
                     var msg = string.Join("; ", errors.Select(e => $"{e.Path}: {e.Message}"));
                     _logger.LogWarning("Schema validation failed for {Type}: {Msg}", typeKey, msg);
 
-                    intPrompt.AddAssistant($"Validation failed: {msg}. Fix JSON for {targetType.Name}.");
+                    intPrompt.AddAssistant($"Validation failed: {msg}. Fix JSON for {request.ResultType.Name}.");
 
                     return result;
                 }
 
                 return result;
 
-            }, prompt);
+            }, request.Prompt);
         }
 
-        public async Task<LLMTextToolCallResult> GetStreamedResponse(
-            Conversation prompt,
-            ToolCallMode toolCallMode = ToolCallMode.Auto,
-            ReasoningMode mode = ReasoningMode.Balanced,
-            string? model = null,
-            LLMCallOptions? opts = null,
+        public async Task<LLMToolCallResponse> ExecuteAsync(
+            LLMToolRequest? request,
             CancellationToken ct = default,
-            Action<LLMStreamChunk>? onChunk = null,
-            params Tool[] tools)
+            Action<LLMStreamChunk>? onStream = null)
         {
-            tools = (tools.Length > 0) ? tools : _tools.RegisteredTools.ToArray();
-            bool limitOne = toolCallMode == ToolCallMode.OneTool;
+            request.AllowedTools = request.ToolCallMode == ToolCallMode.Disabled
+                    ? Array.Empty<Tool>()
+                    : request.AllowedTools?.ToArray() ?? _tools.RegisteredTools.ToArray();
 
             var sb = new StringBuilder();
             var toolCalls = new List<ToolCall>();
@@ -196,19 +137,11 @@ namespace Agenty.AgentCore.Runtime
             // MAIN STREAM (with retries)
             // -----------------------------
             await foreach (var chunk in _retryPolicy.ExecuteStreamAsync(
-                prompt,
-                clonedPrompt => ProduceValidatedStream(
-                    clonedPrompt,
-                    tools,
-                    toolCallMode,
-                    limitOne,
-                    mode,
-                    model,
-                    opts,
-                    ct),
+                request.Prompt,
+                clonedPrompt => ProduceValidatedStream(request, ct),
                 ct))
             {
-                onChunk?.Invoke(chunk);
+                onStream?.Invoke(chunk);
 
                 switch (chunk.Kind)
                 {
@@ -235,7 +168,7 @@ namespace Agenty.AgentCore.Runtime
 
             var finalText = sb.ToString().Trim();
 
-            return new LLMTextToolCallResult(
+            return new LLMToolCallResponse(
                 finalText,
                 toolCalls,
                 finish,
@@ -243,18 +176,10 @@ namespace Agenty.AgentCore.Runtime
                 output
             );
         }
-        private async IAsyncEnumerable<LLMStreamChunk> ProduceValidatedStream(
-            Conversation clonedPrompt,
-            Tool[] tools,
-            ToolCallMode toolCallMode,
-            bool limitOne,
-            ReasoningMode mode,
-            string? model,
-            LLMCallOptions? opts,
-            [EnumeratorCancellation] CancellationToken ct)
+        private async IAsyncEnumerable<LLMStreamChunk> ProduceValidatedStream(LLMToolRequest request, [EnumeratorCancellation] CancellationToken ct)
         {
-            await foreach (var rawChunk in GetProviderStreamingResponse(
-                clonedPrompt, tools, toolCallMode, mode, model, opts, ct))
+            bool limitOneTool = request.ToolCallMode == ToolCallMode.OneTool;
+            await foreach (var rawChunk in GetProviderStreamingResponse(request, ct))
             {
                 // TEXT ----------------------------------------------------
                 if (rawChunk.Kind == StreamKind.Text)
@@ -287,7 +212,7 @@ namespace Agenty.AgentCore.Runtime
                                 payload: validated
                             );
 
-                            if (limitOne)
+                            if (limitOneTool)
                                 yield break;
                         }
                     }
@@ -319,7 +244,7 @@ namespace Agenty.AgentCore.Runtime
                         payload: validated
                     );
 
-                    if (limitOne)
+                    if (limitOneTool)
                         yield break;
 
                     continue;
