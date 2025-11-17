@@ -25,16 +25,23 @@ namespace Agenty.LLMCore.BuiltInTools
         [Description("Get simple current weather for a city.")]
         public static async Task<string> GetCurrentWeather(
             [Description("City name")] string city,
-            [Description("Temperature unit")] TempUnit unit = TempUnit.Celsius)
+            [Description("Temperature unit")] TempUnit unit = TempUnit.Celsius,
+            CancellationToken ct = default)
         {
+            ct.ThrowIfCancellationRequested();
+
             var coord = await GetCoordinates(city);
+            ct.ThrowIfCancellationRequested();
+
             if (coord == null) return $"City '{city}' not found.";
 
             var url = $"https://api.open-meteo.com/v1/forecast" +
                       $"?latitude={coord.Value.lat}&longitude={coord.Value.lon}" +
                       $"&current_weather=true&temperature_unit={GetTempUnit(unit)}";
 
-            var json = JsonNode.Parse(await _http.GetStringAsync(url));
+            var json = JsonNode.Parse(await _http.GetStringAsync(url, ct));
+            ct.ThrowIfCancellationRequested();
+
             var current = json?["current_weather"];
             if (current == null) return "Weather unavailable.";
 

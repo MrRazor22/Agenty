@@ -52,7 +52,8 @@ namespace Agenty.LLMCore.ToolHandling
                 if (typeof(Task).IsAssignableFrom(returnType))
                 {
                     ct.ThrowIfCancellationRequested();
-                    var task = (Task)func.DynamicInvoke(toolCall.Parameters)!;
+                    object?[] finalArgs = InjectCancellationToken(toolCall, method, ct);
+                    var task = (Task)func.DynamicInvoke(finalArgs);
                     await task.ConfigureAwait(false);
 
                     if (returnType.IsGenericType &&
@@ -77,6 +78,28 @@ namespace Agenty.LLMCore.ToolHandling
                     $"Failed to invoke tool `{toolCall.Name}`: {ex.Message}",
                     ex);
             }
+        }
+
+        private static object?[] InjectCancellationToken(ToolCall toolCall, System.Reflection.MethodInfo method, CancellationToken ct)
+        {
+            var finalArgs = new object?[method.GetParameters().Length];
+
+            int jsonIndex = 0;
+            for (int i = 0; i < method.GetParameters().Length; i++)
+            {
+                var p = method.GetParameters()[i];
+
+                if (p.ParameterType == typeof(CancellationToken))
+                {
+                    finalArgs[i] = ct;
+                }
+                else
+                {
+                    finalArgs[i] = toolCall.Parameters[jsonIndex++];
+                }
+            }
+
+            return finalArgs;
         }
 
         public async Task<IReadOnlyList<ToolCallResult>> HandleToolCallsAsync(IEnumerable<ToolCall> toolCalls, CancellationToken ct = default)

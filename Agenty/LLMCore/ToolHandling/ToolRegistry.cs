@@ -6,6 +6,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Threading;
 
 namespace Agenty.LLMCore.ToolHandling
 {
@@ -163,6 +164,9 @@ namespace Agenty.LLMCore.ToolHandling
 
             foreach (var param in parameters)
             {
+                if (param.ParameterType == typeof(CancellationToken))
+                    continue; // skip it completely
+
                 var name = param.Name!;
                 var desc = param.GetCustomAttribute<DescriptionAttribute>()?.Description ?? name;
                 var typeSchema = param.ParameterType.GetSchemaForType();
