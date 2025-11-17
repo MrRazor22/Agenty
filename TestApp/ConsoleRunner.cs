@@ -2,6 +2,9 @@
 using Agenty.AgentCore.Steps;
 using Agenty.LLMCore;
 using Agenty.LLMCore.BuiltInTools;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Serilog;
 using System.Text;
 using System.Threading;
 
@@ -33,7 +36,21 @@ namespace TestApp
                     o.MaxRetries = 3;
                     o.Timeout = TimeSpan.FromMinutes(5);
                 });
-                builder.WithLogLevel(Microsoft.Extensions.Logging.LogLevel.Information);
+
+                Log.Logger = new LoggerConfiguration()
+                    .MinimumLevel.Information()
+                    .WriteTo.File("D:\\agent.log", rollingInterval: RollingInterval.Day)
+                    .CreateLogger();
+
+                builder.Services.AddLogging(logging =>
+                {
+                    logging.ClearProviders();
+                    logging.AddSerilog();
+                });
+
+                builder.WithLogLevel(LogLevel.Trace);
+
+                Log.Information("Logger initialized");
 
                 app = builder.Build();
                 await app.LoadHistoryAsync("default");
