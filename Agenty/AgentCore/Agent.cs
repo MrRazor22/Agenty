@@ -118,7 +118,7 @@ namespace Agenty.AgentCore
 
     public interface IAgent
     {
-        Task<AgentResponse> ExecuteAsync(string goal, CancellationToken cancellationToken = default);
+        Task<AgentResponse> InvokeAsync(string goal, CancellationToken cancellationToken = default);
     }
     // === 3. Agent (like WebApplication) ===
     public sealed class Agent : IAgent
@@ -179,9 +179,7 @@ namespace Agenty.AgentCore
             return this;
         }
         // default overload — supports DI and optional constructors 
-        // unified Use<TStep> — handles both DI and factory forms
-        private int _runningTotalTokens = 0;
-
+        // unified Use<TStep> — handles both DI and factory forms  
         public Agent Use<TStep>(Func<TStep>? factory = null) where TStep : IAgentStep
         {
             return Use(async (ctx, next) =>
@@ -222,7 +220,7 @@ namespace Agenty.AgentCore
         }
 
         // run
-        public async Task<AgentResponse> ExecuteAsync(string goal, CancellationToken ct = default)
+        public async Task<AgentResponse> InvokeAsync(string goal, CancellationToken ct = default)
         {
             using (var scope = _services.CreateScope())
             {

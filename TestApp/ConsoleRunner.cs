@@ -101,7 +101,7 @@ namespace TestApp
 
                     try
                     {
-                        var result = await app.ExecuteAsync(goal, cts.Token);
+                        var result = await app.InvokeAsync(goal, cts.Token);
 
                         var msg = result.Message?.Trim();
                         if (string.IsNullOrWhiteSpace(msg))
