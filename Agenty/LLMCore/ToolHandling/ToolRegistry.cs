@@ -64,7 +64,9 @@ namespace Agenty.LLMCore.ToolHandling
         }
         public void RegisterAll<T>(params string[] tags)
         {
-            var methods = typeof(T).GetMethods(BindingFlags.Public | BindingFlags.Static);
+            var methods = typeof(T)
+                .GetMethods(BindingFlags.Public | BindingFlags.Static)
+                .Where(m => m.GetCustomAttribute<ToolAttribute>() != null);
 
             foreach (var method in methods)
             {
@@ -91,7 +93,9 @@ namespace Agenty.LLMCore.ToolHandling
 
         public void RegisterAll<T>(T instance, params string[] tags)
         {
-            var methods = typeof(T).GetMethods(BindingFlags.Public | BindingFlags.Instance);
+            var methods = typeof(T)
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .Where(m => m.GetCustomAttribute<ToolAttribute>() != null);
 
             foreach (var method in methods)
             {
@@ -148,7 +152,10 @@ namespace Agenty.LLMCore.ToolHandling
         private Tool CreateToolFromDelegate(Delegate func)
         {
             var method = func.Method;
-            var description = method.GetCustomAttribute<DescriptionAttribute>()?.Description ?? method.Name;
+            var description =
+                 method.GetCustomAttribute<ToolAttribute>()?.Description
+                 ?? method.GetCustomAttribute<DescriptionAttribute>()?.Description
+                 ?? method.Name;
             var parameters = method.GetParameters();
 
             var properties = new JObject();

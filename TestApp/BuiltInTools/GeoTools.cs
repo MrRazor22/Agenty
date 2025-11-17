@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Agenty.LLMCore.ToolHandling;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -43,7 +44,7 @@ namespace Agenty.LLMCore.BuiltInTools
         {
             _http.DefaultRequestHeaders.Add("User-Agent", "Agenty.LLMCore/1.0");
         }
-
+        [Tool]
         [Description("Get information about any country by name.")]
         public static async Task<CountryInfo> GetCountryInfo(
             [Description("Country name (e.g., 'India', 'United States', 'UK')")] string countryName)
@@ -59,7 +60,7 @@ namespace Agenty.LLMCore.BuiltInTools
 
             return ParseCountry(countries[0]);
         }
-
+        [Tool]
         [Description("Search for countries by region (e.g., 'Europe', 'Asia').")]
         public static async Task<List<CountryInfo>> GetCountriesByRegion(
             [Description("Region name")] string region)

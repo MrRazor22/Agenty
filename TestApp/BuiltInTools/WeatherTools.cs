@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Agenty.LLMCore.ToolHandling;
+using System;
 using System.ComponentModel;
 using System.Net.Http;
 using System.Text;
@@ -20,7 +21,7 @@ namespace Agenty.LLMCore.BuiltInTools
         {
             Timeout = TimeSpan.FromSeconds(20)
         };
-
+        [Tool]
         [Description("Get simple current weather for a city.")]
         public static async Task<string> GetCurrentWeather(
             [Description("City name")] string city,
@@ -42,7 +43,7 @@ namespace Agenty.LLMCore.BuiltInTools
 
             return $"{city}: {temp}°{(unit == TempUnit.Celsius ? "C" : "F")} - {condition}";
         }
-
+        [Tool]
         [Description("Get forecast for multiple days (1–7).")]
         public static async Task<string> GetForecast(
             [Description("City name")] string city,
@@ -76,7 +77,7 @@ namespace Agenty.LLMCore.BuiltInTools
 
             return sb.ToString();
         }
-
+        [Tool]
         [Description("Compare current weather across cities.")]
         public static async Task<string> CompareWeather(
             [Description("Array of cities")] string[] cities,
@@ -90,7 +91,7 @@ namespace Agenty.LLMCore.BuiltInTools
             }
             return sb.ToString();
         }
-
+        [Tool]
         [Description("Convert temperature between Celsius and Fahrenheit.")]
         public static double ConvertTemperature(
             [Description("Temperature value")] double value,

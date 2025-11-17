@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Agenty.LLMCore.ToolHandling;
+using System;
 using System.ComponentModel;
 using System.Net.Http;
 using System.Text.Json;
@@ -13,6 +14,7 @@ namespace Agenty.LLMCore.BuiltInTools
             Timeout = TimeSpan.FromSeconds(10)
         };
 
+        [Tool]
         [Description("Converts currency amount using live exchange rates and returns a detailed result.")]
         public static async Task<CurrencyConversionResult> ConvertCurrency(
             [Description("Currency conversion request with source, target, and amount.")]
@@ -67,7 +69,7 @@ namespace Agenty.LLMCore.BuiltInTools
 
             return result;
         }
-
+        [Tool]
         [Description("Converts a local time in a given timezone to UTC.")]
         public static string ConvertToUtc(
             [Description("Local time string in format yyyy-MM-dd HH:mm")] string localTime,

@@ -6,6 +6,12 @@ using System.Linq;
 
 namespace Agenty.LLMCore.ToolHandling
 {
+    [AttributeUsage(AttributeTargets.Method)]
+    public sealed class ToolAttribute : Attribute
+    {
+        public string? Description { get; set; }
+    }
+
     public class Tool
     {
         public string Name { get; set; }

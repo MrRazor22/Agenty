@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Agenty.LLMCore.ToolHandling;
+using System;
 using System.ComponentModel;
 using System.Net.Http;
 using System.Text.Json.Nodes;
@@ -19,7 +20,7 @@ namespace Agenty.LLMCore.BuiltInTools
         {
             _http.DefaultRequestHeaders.UserAgent.ParseAdd(HttpDefaults.UserAgent);
         }
-
+        [Tool]
         [Description("Quick search the internet.")]
         public static async Task<string> Search(
             [Description("Search query text")] string query)
@@ -57,7 +58,7 @@ namespace Agenty.LLMCore.BuiltInTools
             }
         }
 
-
+        [Tool]
         [Description("Get a Wikipedia summary for a given topic.")]
         public static async Task<string> GetWikiSummary(
             [Description("Topic to search on Wikipedia")] string topic,
