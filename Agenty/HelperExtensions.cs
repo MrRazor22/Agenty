@@ -14,8 +14,8 @@ namespace Agenty
     internal static class Helpers
     {
         public static string ToJoinedString<T>(
-        this IEnumerable<T> source,
-        string separator = "\n")
+            this IEnumerable<T> source,
+            string separator = "\n")
         {
             if (source == null) return "<null>";
             var list = source.ToList();
@@ -24,24 +24,6 @@ namespace Agenty
                 : "<empty>";
         }
 
-        public static string AsPrettyJson(this object? obj)
-        {
-            if (obj is null)
-                return "null";
-
-            var settings = new JsonSerializerSettings
-            {
-                Formatting = Formatting.Indented,
-                NullValueHandling = NullValueHandling.Ignore,
-                Converters = { new StringEnumConverter() }
-            };
-
-            // flatten ToolCallResult for cleaner logs
-            if (obj is ToolCallResult t)
-                obj = new { CallId = t.Call.Id, Result = t.Result ?? new JObject() };
-
-            return JsonConvert.SerializeObject(obj, settings);
-        }
         public static bool TryParseCompleteJson(this string json, out JObject? result)
         {
             result = null;

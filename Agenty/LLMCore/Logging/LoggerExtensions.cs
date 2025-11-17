@@ -23,7 +23,7 @@ public static class LoggerExtensions
 
         conversation.OnChat += chat =>
         {
-            var readable = AsReadable(chat.Content);
+            var readable = chat.Content.AsReadable();
             var role = chat.Role.ToString().PadRight(10);
 
             var step = StepContext.Current.Value;
@@ -34,24 +34,5 @@ public static class LoggerExtensions
             logger.LogInformation($"{prefix} =>\n{readable}\n");
         };
 
-    }
-
-    private static string AsReadable(IMessageContent content)
-    {
-        if (content == null)
-            return "<empty>";
-
-        if (content is TextContent txt && !string.IsNullOrWhiteSpace(txt.Text))
-            return txt.Text.Trim(); // ← don’t replace newlines
-
-        // if JSON, pretty print it
-        try
-        {
-            return content.AsPrettyJson();
-        }
-        catch
-        {
-            return content.ToString() ?? "<unknown>";
-        }
     }
 }
