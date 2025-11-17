@@ -221,7 +221,7 @@ namespace Agenty.AgentCore.Runtime
             // -----------------------------
             await foreach (var chunk in _retryPolicy.ExecuteStreamAsync(
                 request,
-                clonedrequest => ProduceValidatedStream((LLMRequest)clonedrequest, ct),
+                clonedrequest => ValidateToolCallsAndStream((LLMRequest)clonedrequest, ct),
                 ct))
             {
                 onStream?.Invoke(chunk);
@@ -248,7 +248,7 @@ namespace Agenty.AgentCore.Runtime
                 _currOutTokensSoFar
             );
         }
-        private async IAsyncEnumerable<LLMStreamChunk> ProduceValidatedStream(LLMRequest request, [EnumeratorCancellation] CancellationToken ct)
+        private async IAsyncEnumerable<LLMStreamChunk> ValidateToolCallsAndStream(LLMRequest request, [EnumeratorCancellation] CancellationToken ct)
         {
             bool limitOneTool = request.ToolCallMode == ToolCallMode.OneTool;
             await foreach (var rawChunk in PrepareStreamAsync(request, ct))
@@ -257,8 +257,7 @@ namespace Agenty.AgentCore.Runtime
                 if (rawChunk.Kind == StreamKind.Text)
                 {
                     var text = rawChunk.AsText();
-                    if (string.IsNullOrEmpty(text))
-                        continue;
+                    if (string.IsNullOrEmpty(text)) continue;
 
                     yield return rawChunk; // emit as-is
 
@@ -267,30 +266,15 @@ namespace Agenty.AgentCore.Runtime
 
                     foreach (var call in extraction.Calls)
                     {
-                        if (!_tools.Contains(call.Name))
-                        {
-                            request.Prompt.AddUser(
-                                $"Tool `{call.Name}` is invalid. Use only: [{string.Join(", ", _tools.RegisteredTools.Select(t => t.Name))}]"
-                            );
-                            continue;
-                        }
-
-                        var parsed = _parser.ParseToolParams(_tools, call.Name, call.Arguments);
-
-                        var validated = new ToolCall(
-                            call.Id ?? Guid.NewGuid().ToString(),
-                            call.Name,
-                            call.Arguments,
-                            parsed
-                        );
+                        var validated = TryParseToolCalls(request, call);
+                        if (validated == null) continue;
 
                         yield return new LLMStreamChunk(
                             StreamKind.ToolCall,
                             payload: validated
                         );
 
-                        if (limitOneTool)
-                            yield break;
+                        if (limitOneTool) yield break;
                     }
 
                     continue;
@@ -300,35 +284,17 @@ namespace Agenty.AgentCore.Runtime
                 if (rawChunk.Kind == StreamKind.ToolCall)
                 {
                     var raw = rawChunk.AsToolCall();
-                    if (raw == null)
-                        continue;
+                    if (raw == null) continue;
 
-                    // UNKNOWN TOOL? -> correction prompt injection
-                    if (!_tools.Contains(raw.Name))
-                    {
-                        request.Prompt.AddUser(
-                            $"Tool `{raw.Name}` is invalid. Use only: [{string.Join(", ", _tools.RegisteredTools.Select(t => t.Name))}]"
-                        );
-                        continue; // don't emit bad call
-                    }
-
-                    // parse args
-                    var parsed = _parser.ParseToolParams(_tools, raw.Name, raw.Arguments);
-
-                    var validated = new ToolCall(
-                        raw.Id ?? Guid.NewGuid().ToString(),
-                        raw.Name,
-                        raw.Arguments,
-                        parsed
-                    );
+                    var validated = TryParseToolCalls(request, raw);
+                    if (validated == null) continue;
 
                     yield return new LLMStreamChunk(
                         StreamKind.ToolCall,
                         payload: validated
                     );
 
-                    if (limitOneTool)
-                        yield break;
+                    if (limitOneTool) yield break;
 
                     continue;
                 }
@@ -336,6 +302,25 @@ namespace Agenty.AgentCore.Runtime
                 // USAGE / FINISH ------------------------------------------
                 yield return rawChunk;
             }
+        }
+        private ToolCall? TryParseToolCalls(LLMRequest req, ToolCall raw)
+        {
+            if (!_tools.Contains(raw.Name))
+            {
+                req.Prompt.AddUser(
+                    $"Tool `{raw.Name}` is invalid. Use one of: {string.Join(", ", _tools.RegisteredTools.Select(t => t.Name))}."
+                );
+                return null;
+            }
+
+            var parsed = _parser.ParseToolParams(_tools, raw.Name, raw.Arguments);
+
+            return new ToolCall(
+                raw.Id ?? Guid.NewGuid().ToString(),
+                raw.Name,
+                raw.Arguments,
+                parsed
+            );
         }
 
         public Task<IReadOnlyList<ToolCallResult>> RunToolCalls(List<ToolCall> toolCalls, CancellationToken ct = default)
