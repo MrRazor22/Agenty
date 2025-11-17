@@ -111,13 +111,17 @@ namespace TestApp
                     {
                         Console.WriteLine("\n[Cancelled]\n");
                     }
+                    finally
+                    {
+                        if (app != null)
+                            await app.SaveHistoryAsync("default");
+                    }
 
                 }
             }
-            finally
+            catch (Exception ex)
             {
-                if (app != null)
-                    await app.SaveHistoryAsync("default");
+                Console.WriteLine(ex);
             }
         }
 
