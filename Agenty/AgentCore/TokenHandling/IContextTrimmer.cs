@@ -6,27 +6,6 @@ using System.Reflection;
 
 namespace Agenty.AgentCore.TokenHandling
 {
-    public interface ITokenizer
-    {
-        int Count(string text, string? model = null);
-    }
-
-    internal sealed class SharpTokenTokenizer : ITokenizer
-    {
-        private readonly string defaultModel;
-        public SharpTokenTokenizer(string? model = null)
-        {
-            defaultModel = model ?? "cl100k_base";
-        }
-        public int Count(string text, string? model = null)
-        {
-            var encoder = !string.IsNullOrWhiteSpace(model)
-                ? GptEncoding.GetEncodingForModel(model)
-                : GptEncoding.GetEncoding(defaultModel);
-
-            return encoder.Encode(text ?? string.Empty).Count;
-        }
-    }
     public sealed class ContextTrimOptions
     {
         public int MaxContextTokens { get; set; } = 8000;
