@@ -1,7 +1,5 @@
 ﻿using Agenty.AgentCore.Steps;
-using Agenty.AgentCore.Runtime;
 using Agenty.AgentCore.TokenHandling;
-using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.Providers.OpenAI;
@@ -15,8 +13,9 @@ using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Agenty.LLMCore.RuntIme;
 
-namespace Agenty.AgentCore
+namespace Agenty.AgentCore.Runtime
 {
     // === 1. Context (like HttpContext) ===
     public interface IAgentContext

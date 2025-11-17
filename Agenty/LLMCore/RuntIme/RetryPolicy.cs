@@ -1,5 +1,4 @@
-﻿using Agenty.LLMCore;
-using Agenty.LLMCore.ChatHandling;
+﻿using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.Options;
@@ -11,7 +10,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore.Runtime
+namespace Agenty.LLMCore.RuntIme
 {
     public sealed class RetryPolicyOptions
     {

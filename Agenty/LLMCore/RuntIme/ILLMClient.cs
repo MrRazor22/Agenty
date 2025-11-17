@@ -9,7 +9,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Agenty.LLMCore
+namespace Agenty.LLMCore.RuntIme
 {
     public abstract class LLMRequestBase
     {

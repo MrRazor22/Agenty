@@ -1,13 +1,12 @@
-﻿using Agenty.AgentCore.Runtime;
-using Agenty.AgentCore.TokenHandling;
-using Agenty.LLMCore;
+﻿using Agenty.AgentCore.TokenHandling;
 using Agenty.LLMCore.Providers.OpenAI;
+using Agenty.LLMCore.RuntIme;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
 
-namespace Agenty.AgentCore
+namespace Agenty.AgentCore.Runtime
 {
     public static class AgentExtensions
     {

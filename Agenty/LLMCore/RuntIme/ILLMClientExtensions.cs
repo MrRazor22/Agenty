@@ -1,5 +1,4 @@
-﻿using Agenty.LLMCore;
-using Agenty.LLMCore.ChatHandling;
+﻿using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.ToolHandling;
 using Newtonsoft.Json.Linq;
 using System;
@@ -8,7 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore.Runtime
+namespace Agenty.LLMCore.RuntIme
 {
     public static class LLMClientExtensions
     {

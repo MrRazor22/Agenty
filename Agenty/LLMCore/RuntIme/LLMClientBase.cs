@@ -1,5 +1,4 @@
 ﻿using Agenty.AgentCore.TokenHandling;
-using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Messages;
@@ -16,7 +15,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore.Runtime
+namespace Agenty.LLMCore.RuntIme
 {
     public abstract class LLMClientBase : ILLMClient
     {
@@ -145,14 +144,14 @@ namespace Agenty.AgentCore.Runtime
 
             request.Schema = _schemaCache.GetOrAdd(
                 typeKey,
-                _ => JsonSchemaExtensions.GetSchemaForType(request.ResultType));
+                _ => request.ResultType.GetSchemaForType());
 
             request.AllowedTools =
                 request.ToolCallMode == ToolCallMode.Disabled
                     ? new Tool[0]
-                    : (request.AllowedTools != null && request.AllowedTools.Any()
+                    : request.AllowedTools != null && request.AllowedTools.Any()
                         ? request.AllowedTools.ToArray()
-                        : _tools.RegisteredTools.ToArray());
+                        : _tools.RegisteredTools.ToArray();
 
             StringBuilder jsonBuffer = new StringBuilder();
 
@@ -215,9 +214,9 @@ namespace Agenty.AgentCore.Runtime
 
             request.AllowedTools = request.ToolCallMode == ToolCallMode.Disabled
                 ? Array.Empty<Tool>()
-                : (request.AllowedTools?.Any() == true
+                : request.AllowedTools?.Any() == true
                     ? request.AllowedTools.ToArray()
-                    : _tools.RegisteredTools.ToArray());
+                    : _tools.RegisteredTools.ToArray();
 
             var sb = new StringBuilder();
             var toolCalls = new List<ToolCall>();
@@ -345,7 +344,7 @@ namespace Agenty.AgentCore.Runtime
                 var lastResult = requestPrompt.GetLastToolCallResult(validated);
                 throw new RetryException(
                     $"Tool `{validated.Name}` was already called with same arguments. " +
-                    $"Last result: {(lastResult?.AsPrettyJson() ?? "null")}"
+                    $"Last result: {lastResult?.AsPrettyJson() ?? "null"}"
                 );
             }
         }

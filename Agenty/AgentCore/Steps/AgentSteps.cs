@@ -1,8 +1,8 @@
 ﻿using Agenty.AgentCore.Runtime;
-using Agenty.LLMCore;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Messages;
+using Agenty.LLMCore.RuntIme;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
