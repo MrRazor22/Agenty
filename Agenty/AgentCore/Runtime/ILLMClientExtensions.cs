@@ -12,9 +12,7 @@ namespace Agenty.AgentCore.Runtime
 {
     public static class LLMClientExtensions
     {
-        // -----------------------------
         // STRUCTURED
-        // -----------------------------
         public static Task<T> GetStructuredAsync<T>(
             this ILLMClient client,
             string userMessage,
@@ -54,10 +52,7 @@ namespace Agenty.AgentCore.Runtime
             return resp.Result;
         }
 
-        // -----------------------------
         // TEXT
-        // ----------------------------- 
-
         public static async Task<LLMResponse> GetResponseAsync(
             this ILLMClient client,
             Conversation prompt,

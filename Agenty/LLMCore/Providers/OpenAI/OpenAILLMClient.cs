@@ -65,44 +65,65 @@ namespace Agenty.LLMCore.Providers.OpenAI
             var options = new ChatCompletionOptions();
             options.ApplySamplingOptions(request);
 
-            // 1. Structured output strict mode
-            bool isStructured = request is LLMStructuredRequest sr;
-            if (isStructured)
-            {
-                var sreq = (LLMStructuredRequest)request;
+            // unified init
+            bool isStructured = false;
+            string? toolId = null;
+            string? toolName = null;
+            StringBuilder toolArgsSb = new StringBuilder();
+            StringBuilder? jsonBuffer = null;
 
-                options.ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
-                    jsonSchemaFormatName: "structured_response",
-                    jsonSchema: BinaryData.FromString(
-                        sreq.Schema.ToString(Newtonsoft.Json.Formatting.None)
-                    ),
-                    jsonSchemaIsStrict: true
-                );
+            // -------------------------------------------
+            // ONE switch to configure EVERYTHING
+            // -------------------------------------------
+            switch (request)
+            {
+                case LLMStructuredRequest sreq:
+                    isStructured = true;
+
+                    // structured config
+                    options.ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
+                        "structured_response",
+                        BinaryData.FromString(
+                            sreq.Schema.ToString(Newtonsoft.Json.Formatting.None)
+                        ),
+                        jsonSchemaIsStrict: true
+                    );
+
+                    // ALSO init json buffer
+                    jsonBuffer = new StringBuilder();
+
+                    // ALSO tools if allowed (Structured may allow tools)
+                    if (sreq.AllowedTools != null)
+                    {
+                        options.ToolChoice = sreq.ToolCallMode.ToChatToolChoice();
+                        options.AllowParallelToolCalls = false;
+
+                        foreach (var t in sreq.AllowedTools.ToChatTools())
+                            options.Tools.Add(t);
+                    }
+                    break;
+
+                case LLMRequest toolReq:
+                    // tool-only request
+                    options.ToolChoice = toolReq.ToolCallMode.ToChatToolChoice();
+                    options.AllowParallelToolCalls = false;
+
+                    foreach (var t in toolReq.AllowedTools.ToChatTools())
+                        options.Tools.Add(t);
+
+                    break;
+
+                default:
+                    // text-only request: nothing needed
+                    break;
             }
 
-            // 2. Tools if present
-            if (request is LLMRequest toolReq)
-            {
-                options.ToolChoice = toolReq.ToolCallMode.ToChatToolChoice();
-                options.AllowParallelToolCalls = false;
-
-                foreach (var t in toolReq.AllowedTools.ToChatTools())
-                    options.Tools.Add(t);
-            }
 
             var stream = chat.CompleteChatStreamingAsync(
                 request.Prompt.ToChatMessages(),
                 options,
                 ct
             );
-
-            // Tool assembly state
-            string? toolId = null;
-            string? toolName = null;
-            var toolArgsSb = new StringBuilder();
-
-            // Structured mode buffer
-            StringBuilder? jsonBuffer = isStructured ? new StringBuilder() : null;
 
             // Usage & finish
             int inputTokens = 0;

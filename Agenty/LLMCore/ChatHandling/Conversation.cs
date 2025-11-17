@@ -1,4 +1,6 @@
 ﻿using Agenty.LLMCore.Messages;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 
@@ -11,6 +13,17 @@ namespace Agenty.LLMCore.ChatHandling
         public Role Role { get; }
         public IMessageContent Content { get; }
 
+        [JsonConstructor] // ← this is the whole fix
+        private Chat(Role role, JObject content)
+        {
+            Role = role;
+
+            // minimal factory for ONE content type (TextContent)
+            if (content["Text"] != null)
+                Content = new TextContent((string)content["Text"]);
+            else
+                throw new Exception("Unknown content type.");
+        }
         public Chat(Role role, IMessageContent content)
         {
             Role = role;
