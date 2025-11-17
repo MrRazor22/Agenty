@@ -27,7 +27,7 @@ namespace Agenty.AgentCore.Steps
                 var logger = ctx.Services.GetService<ILogger<ErrorHandlingStep>>();
                 logger?.LogError(ex, "Unhandled agent pipeline exception.");
 
-                ctx.Chat.AddAssistant("An internal error occurred. Unable to continue.");
+                ctx.ScratchPad.AddAssistant("An internal error occurred. Unable to continue.");
                 ctx.Response.Set("Sorry, something went wrong while processing your request.");
             }
         }
@@ -66,7 +66,7 @@ namespace Agenty.AgentCore.Steps
             var planPrompt = @"Break my request into actionable steps based on the tools you got and information you know. If you dont know or have the information required ask the user DO NOT fabricate anything be honest about your limitations";
 
             var convo = new Conversation()
-                .Clone(ctx.Chat)
+                .AddUser(ctx.UserRequest)
                 .AddUser(planPrompt);
 
             var plan = await llm.GetStructuredAsync<Plan>(convo, model: _model, ct: ctx.CancellationToken);
@@ -74,7 +74,7 @@ namespace Agenty.AgentCore.Steps
             if (plan != null && plan.Steps.Count > 0)
             {
                 ctx.Items["plan"] = plan;
-                ctx.Chat.AddUser("For my request please follow these steps:\n" + ctx.Items["plan"]);
+                ctx.ScratchPad.AddUser("For my request please follow these steps:\n" + ctx.Items["plan"]);
             }
 
             await next(ctx);
@@ -83,7 +83,7 @@ namespace Agenty.AgentCore.Steps
             if (plan != null && plan.Steps.Count > 0)
             {
                 convo = new Conversation()
-               .Clone(ctx.Chat)
+               .Clone(ctx.ScratchPad)
                .AddUser($"With all the available info you gathered for my request: '{ctx.UserRequest}', provide a final user facing answer.");
 
                 var res = await llm.GetResponseAsync(
@@ -96,7 +96,7 @@ namespace Agenty.AgentCore.Steps
 
                 finalResponse = res.AssistantMessage ?? finalResponse;
             }
-            ctx.Chat.AddAssistant(finalResponse);
+            ctx.ScratchPad.AddAssistant(finalResponse);
             ctx.Response.Set(finalResponse);
         }
     }
@@ -134,7 +134,7 @@ namespace Agenty.AgentCore.Steps
             {
                 // STREAM LIVE
                 var result = await llm.GetResponseAsync(
-                    ctx.Chat,
+                    ctx.ScratchPad,
                     _toolMode,
                     _model,
                     _mode,
@@ -143,7 +143,7 @@ namespace Agenty.AgentCore.Steps
                     s => ctx.Stream?.Invoke(s));
 
                 // text 
-                ctx.Chat.AddAssistant(result.AssistantMessage);
+                ctx.ScratchPad.AddAssistant(result.AssistantMessage);
 
                 // toolcall?
                 var toolCall = result.ToolCalls.FirstOrDefault(); // result.Payload is List<ToolCall>
@@ -158,7 +158,7 @@ namespace Agenty.AgentCore.Steps
                     new List<ToolCall> { toolCall },
                     ctx.CancellationToken);
 
-                ctx.Chat.AppendToolCallAndResults(outputs);
+                ctx.ScratchPad.AppendToolCallAndResults(outputs);
 
                 iteration++;
             }

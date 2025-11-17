@@ -21,7 +21,7 @@ namespace Agenty.AgentCore
     // === 1. Context (like HttpContext) ===
     public interface IAgentContext
     {
-        Conversation Chat { get; }
+        Conversation ScratchPad { get; }
         string? UserRequest { get; set; }
         AgentResponse Response { get; }
         IServiceProvider Services { get; }
@@ -50,11 +50,11 @@ namespace Agenty.AgentCore
         {
             Services = services;
             CancellationToken = cancellationToken;
-            Chat = new Conversation();
+            ScratchPad = new Conversation();
             Items = new Dictionary<string, object?>();
         }
 
-        public Conversation Chat { get; }
+        public Conversation ScratchPad { get; }
         public string? UserRequest { get; set; }
         public AgentResponse Response => _response;
         public IServiceProvider Services { get; }
@@ -73,11 +73,17 @@ namespace Agenty.AgentCore
         {
             Services.AddSingleton<IConversationStore, FileConversationStore>();
             Services.AddSingleton<ITokenizer, SharpTokenTokenizer>();
-            Services.AddSingleton<IContextTrimmer, SlidingWindowTrimmer>();
             Services.AddSingleton<ToolRegistryCatalog>();
             Services.AddSingleton<IToolRegistry>(sp => sp.GetRequiredService<ToolRegistryCatalog>());
             Services.AddSingleton<IToolCatalog>(sp => sp.GetRequiredService<ToolRegistryCatalog>());
             Services.AddSingleton<IToolRuntime, ToolRuntime>();
+            Services.AddSingleton<IContextTrimmer>(sp =>
+            {
+                var tokenizer = sp.GetRequiredService<ITokenizer>();
+                var opts = new ContextTrimOptions(); // default: 8000, margin 0.8
+                return new SlidingWindowTrimmer(tokenizer, opts);
+            });
+
             Services.AddSingleton<ITokenManager, TokenManager>();
             Services.AddSingleton<IRetryPolicy, DefaultRetryPolicy>();
             Services.Configure<RetryPolicyOptions>(_ => { }); // default values
@@ -92,7 +98,6 @@ namespace Agenty.AgentCore
                 });
             });
         }
-
         public AgentBuilder WithLogLevel(LogLevel level)
         {
             Services.Configure<LoggerFilterOptions>(opts => opts.MinLevel = level);
@@ -115,13 +120,12 @@ namespace Agenty.AgentCore
     public sealed class Agent : IAgent
     {
         private readonly IServiceProvider _services;
-        private readonly Conversation _history = new Conversation();
+        private readonly Conversation _memory = new Conversation();
         private readonly IConversationStore? _store;
 
-        private int _maxContextTokens = 8000;
         private AgentStepDelegate _pipeline = ctx => Task.CompletedTask;
         public IServiceProvider Services => _services;
-        public Conversation ChatHistory => _history;
+        public Conversation ChatMemory => _memory;
 
         internal Agent(IServiceProvider services)
         {
@@ -144,15 +148,10 @@ namespace Agenty.AgentCore
 
         public Agent WithSystemPrompt(string prompt)
         {
-            _history.AddSystem(prompt);
+            _memory.AddSystem(prompt);
             return this;
         }
 
-        public Agent WithMaxContextWindow(int maxTokens)
-        {
-            _maxContextTokens = maxTokens;
-            return this;
-        }
 
         // === Load/save conversation history explicitly ===
         public async Task LoadHistoryAsync(string sessionId)
@@ -160,13 +159,13 @@ namespace Agenty.AgentCore
             if (_store == null) return;
             var past = await _store.LoadAsync(sessionId);
             if (past != null)
-                _history.Clone(past);
+                _memory.Clone(past);
         }
 
         public async Task SaveHistoryAsync(string sessionId)
         {
             if (_store == null) return;
-            await _store.SaveAsync(sessionId, _history);
+            await _store.SaveAsync(sessionId, _memory);
         }
         // app.Use(...)
         public Agent Use(Func<IAgentContext, AgentStepDelegate, Task> middleware)
@@ -227,35 +226,24 @@ namespace Agenty.AgentCore
 
                 try
                 {
-                    _history.AddUser(goal);
-                    ctx.Chat.Clone(_history);
+                    //load history to current context
+                    ctx.ScratchPad.Clone(_memory);
 
                     var logger = ctx.Services.GetService<ILogger<Agent>>();
-                    logger.AttachTo(ctx.Chat);
+                    logger.AttachTo(ctx.ScratchPad);
 
-                    var ctxTrimmer = ctx.Services.GetService<IContextTrimmer>();
-                    if (ctxTrimmer != null)
-                    {
-                        var usable = (int)(_maxContextTokens * 0.6);
-                        var beforeCount = ctx.Chat.Count;
-                        ctxTrimmer.Trim(ctx.Chat, usable);
-                        var afterCount = ctx.Chat.Count;
-
-                        if (afterCount < beforeCount)
-                            logger?.LogWarning("Context trimmed from {Before} to {After} messages (usable: {Usable} tokens)", beforeCount, afterCount, usable);
-                    }
-
+                    // Execute pipeline
                     await _pipeline(ctx);
 
-                    if (!string.IsNullOrWhiteSpace(ctx.Response.Message))
-                        _history.AddAssistant(ctx.Response.Message);
+                    // Update persistent history ONLY after success
+                    _memory.AddUser(goal);
+                    _memory.AddAssistant(ctx.Response.Message);
                 }
                 catch (Exception ex)
                 {
+                    // Failure = scratchpad discarded, memory unchanged
                     var logger = ctx.Services.GetService<ILogger<Agent>>();
-                    if (logger != null)
-                        logger.LogError(ex, "Agent execution failed");
-
+                    logger?.LogError(ex, "Agent execution failed");
                     ctx.SetResult("Error: " + ex.Message, null);
                 }
 
@@ -297,10 +285,21 @@ namespace Agenty.AgentCore
                 var logger = sp.GetRequiredService<ILogger<ILLMClient>>();
                 var registry = sp.GetRequiredService<IToolCatalog>();
                 var runtime = sp.GetRequiredService<IToolRuntime>();
+                var trimmer = sp.GetRequiredService<IContextTrimmer>();
                 var tokenManager = sp.GetRequiredService<ITokenManager>();
                 var parser = new ToolCallParser();
                 var retry = sp.GetRequiredService<IRetryPolicy>();
-                return new OpenAILLMClient(options.BaseUrl, options.ApiKey, options.Model, registry, runtime, parser, tokenManager, retry, logger);
+                return new OpenAILLMClient(
+                    options.BaseUrl,
+                    options.ApiKey,
+                    options.Model,
+                    registry,
+                    runtime,
+                    parser,
+                    trimmer,
+                    tokenManager,
+                    retry,
+                    logger);
             });
 
             return builder;
@@ -317,6 +316,25 @@ namespace Agenty.AgentCore
             return builder;
         }
     }
+    public static class ContextTrimExtensions
+    {
+        public static AgentBuilder AddContextTrimming(
+            this AgentBuilder builder,
+            Action<ContextTrimOptions> configure)
+        {
+            var options = new ContextTrimOptions();
+            configure(options);
+
+            builder.Services.AddSingleton<IContextTrimmer>(sp =>
+            {
+                var tokenizer = sp.GetRequiredService<ITokenizer>();
+                return new SlidingWindowTrimmer(tokenizer, options);
+            });
+
+            return builder;
+        }
+    }
+
 
     /// <summary>
     /// Tracks the current step name using AsyncLocal for implicit context flow.

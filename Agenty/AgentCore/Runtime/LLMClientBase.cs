@@ -22,6 +22,7 @@ namespace Agenty.AgentCore.Runtime
         private readonly IToolCatalog _tools;
         private readonly IToolRuntime _Runtime;
         private readonly IToolCallParser _parser;
+        private readonly IContextTrimmer _trimmer;
         private readonly ITokenManager _tokenManager;
         private readonly IRetryPolicy _retryPolicy;
         private readonly ILogger<ILLMClient> _logger;
@@ -39,6 +40,7 @@ namespace Agenty.AgentCore.Runtime
             IToolCatalog registry,
             IToolRuntime Runtime,
             IToolCallParser parser,
+            IContextTrimmer trimmer,
             ITokenManager tokenManager,
             IRetryPolicy retryPolicy,
             ILogger<ILLMClient> logger)
@@ -50,6 +52,7 @@ namespace Agenty.AgentCore.Runtime
             _Runtime = Runtime;
             _parser = parser;
             _tokenManager = tokenManager;
+            _trimmer = trimmer;
             _retryPolicy = retryPolicy;
             _logger = logger;
         }
@@ -59,6 +62,14 @@ namespace Agenty.AgentCore.Runtime
             LLMRequestBase request,
             CancellationToken ct);
         #endregion
+
+        private IAsyncEnumerable<LLMStreamChunk> PrepareStreamAsync(
+            LLMRequestBase request,
+            CancellationToken ct)
+        {
+            _trimmer.Trim(request.Prompt, null, request.Model ?? DefaultModel);
+            return StreamAsync(request, ct);
+        }
 
         public async Task<LLMStructuredResponse<T>> ExecuteAsync<T>(
             LLMStructuredRequest request,
@@ -89,7 +100,7 @@ namespace Agenty.AgentCore.Runtime
             // ------------ STREAM WITH RETRIES ------------
             await foreach (var chunk in _retryPolicy.ExecuteStreamAsync(
                 request,
-                clonedRequest => StreamAsync(clonedRequest, ct),
+                clonedRequest => PrepareStreamAsync(clonedRequest, ct),
                 ct))
             {
                 if (chunk.Kind == StreamKind.Text)
@@ -212,7 +223,7 @@ namespace Agenty.AgentCore.Runtime
         private async IAsyncEnumerable<LLMStreamChunk> ProduceValidatedStream(LLMRequest request, [EnumeratorCancellation] CancellationToken ct)
         {
             bool limitOneTool = request.ToolCallMode == ToolCallMode.OneTool;
-            await foreach (var rawChunk in StreamAsync(request, ct))
+            await foreach (var rawChunk in PrepareStreamAsync(request, ct))
             {
                 // TEXT ----------------------------------------------------
                 if (rawChunk.Kind == StreamKind.Text)

@@ -47,20 +47,20 @@ namespace Agenty.AgentCore.TokenHandling
         private readonly Dictionary<string, TokenUsage> _sources = new Dictionary<string, TokenUsage>();
         private readonly object _lock = new object();
 
-        public void Record(int inputTokens, int outputTokens, string? source = null)
+        public void Record(int totalInputTokensSoFar, int totalOutputTokensSoFar, string? source = null)
         {
             lock (_lock)
             {
                 // compute deltas automatically — in case caller passes cumulative totals
-                int inDelta = Math.Max(0, inputTokens - _lastTotal.InputTokens);
-                int outDelta = Math.Max(0, outputTokens - _lastTotal.OutputTokens);
+                int inDelta = Math.Max(0, totalInputTokensSoFar - _lastTotal.InputTokens);
+                int outDelta = Math.Max(0, totalOutputTokensSoFar - _lastTotal.OutputTokens);
 
                 if (inDelta == 0 && outDelta == 0)
                     return;
 
                 _input += inDelta;
                 _output += outDelta;
-                _lastTotal = new TokenUsage(inputTokens, outputTokens);
+                _lastTotal = new TokenUsage(totalInputTokensSoFar, totalOutputTokensSoFar);
 
                 var actualSource = source ?? StepContext.Current.Value ?? "Unknown";
                 if (!_sources.TryGetValue(actualSource, out var existing))
