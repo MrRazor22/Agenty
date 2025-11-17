@@ -9,7 +9,7 @@ using System;
 
 namespace Agenty.AgentCore
 {
-    internal static class AgentExtensions
+    public static class AgentExtensions
     {
         //Open AI
         public static AgentBuilder AddOpenAI(this AgentBuilder builder, Action<LLMInitOptions> configure)

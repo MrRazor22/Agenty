@@ -1,5 +1,6 @@
 ﻿using Agenty;
 using Agenty.AgentCore;
+using Agenty.AgentCore.Steps;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Messages;
