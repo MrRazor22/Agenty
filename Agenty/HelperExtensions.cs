@@ -13,6 +13,26 @@ namespace Agenty
 {
     internal static class Helpers
     {
+        public static string AsPrettyJson(this object content)
+        {
+            if (content == null)
+                return "<empty>";
+
+            // If it directly is a JToken payload (rare)
+            if (content is JToken jt)
+                return jt.ToString(Formatting.Indented);
+
+            // If it's a ToolCall — pretty its arguments
+            if (content is ToolCall tc)
+            {
+                if (tc.Arguments != null)
+                    return tc.Arguments.ToString(Formatting.Indented);
+            }
+
+            // fallback: serialize the object
+            var json = JsonConvert.SerializeObject(content, Formatting.Indented);
+            return json ?? "<unknown>";
+        }
         public static string ToJoinedString<T>(
             this IEnumerable<T> source,
             string separator = "\n")

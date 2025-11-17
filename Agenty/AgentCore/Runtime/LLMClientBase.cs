@@ -73,7 +73,7 @@ namespace Agenty.AgentCore.Runtime
             LLMRequestBase request,
             [EnumeratorCancellation] CancellationToken ct)
         {
-            _trimmer.Trim(request.Prompt, null, request.Model ?? DefaultModel);
+            request.Prompt = _trimmer.Trim(request.Prompt, null, request.Model ?? DefaultModel);
 
             _currInTokensSoFar = 0;
             _currOutTokensSoFar = 0;
@@ -82,8 +82,11 @@ namespace Agenty.AgentCore.Runtime
             var sb = new StringBuilder();
             var liveLog = new StringBuilder();   // <--- NEW
 
-            _logger.LogTrace("► Outbound Messages:\n{Json}",
-                JsonConvert.SerializeObject(request.Prompt.ToLogList(), Formatting.Indented));
+            if (_logger.IsEnabled(LogLevel.Trace))
+            {
+                _logger.LogTrace("► Outbound Messages:\n{Json}",
+                    JsonConvert.SerializeObject(request.Prompt.ToLogList(), Formatting.Indented));
+            }
 
             await foreach (var chunk in StreamAsync(request, ct))
             {
@@ -94,7 +97,8 @@ namespace Agenty.AgentCore.Runtime
                     liveLog.Append(txt);
 
                     // 🔥 single rolling log, no chunk flood
-                    _logger.LogTrace("◄ Inbound Stream: {Text}", liveLog.ToString());
+                    if (_logger.IsEnabled(LogLevel.Trace))
+                        _logger.LogTrace("◄ Inbound Stream: {Text}", liveLog.ToString());
                 }
 
                 if (chunk.Kind == StreamKind.Usage)
@@ -125,6 +129,7 @@ namespace Agenty.AgentCore.Runtime
                 output = _tokenizer.Count(sb.ToString(), request.Model ?? DefaultModel);
 
             _tokenManager.Record(input, output);
+            _logger.LogTrace("LLM Call Tokens: in={In}, out={Out}", input, output);
         }
 
         public async Task<LLMStructuredResponse<T>> ExecuteAsync<T>(
@@ -132,7 +137,7 @@ namespace Agenty.AgentCore.Runtime
             CancellationToken ct = default,
             Action<LLMStreamChunk>? onStream = null)
         {
-            _logger.LogTrace("Requesting structured response for {Type}", typeof(T).Name);
+            _logger.LogDebug("Structured request start: {Type}", typeof(T).Name);
 
             request.ResultType = typeof(T);
 
@@ -174,8 +179,7 @@ namespace Agenty.AgentCore.Runtime
             {
                 // INVALID JSON → retry driver will see assistant correction
                 _logger.LogWarning("Invalid JSON for structured response {Type}", typeKey);
-                request.Prompt.AddAssistant("Return valid JSON matching the schema.");
-                throw new Exception("Retry structured JSON parse");
+                throw new RetryException("Return valid JSON matching the schema.");
             }
 
             // ---------- SCHEMA VALIDATION ----------
@@ -186,12 +190,12 @@ namespace Agenty.AgentCore.Runtime
                 var msg = string.Join("; ", errors.Select(e => e.Path + ": " + e.Message));
                 _logger.LogWarning("Validation failed for {Type}: {Msg}", typeKey, msg);
 
-                request.Prompt.AddAssistant("Validation failed: " + msg + ". Fix JSON.");
-                throw new Exception("Retry structured validation");
+                throw new RetryException("Validation failed: " + msg + ". Fix JSON.");
             }
 
             T typed = json.ToObject<T>();
 
+            _logger.LogDebug("Structured request completed: {Type}", typeof(T).Name);
             return new LLMStructuredResponse<T>(
                 json,
                 typed,
@@ -207,6 +211,8 @@ namespace Agenty.AgentCore.Runtime
             CancellationToken ct = default,
             Action<LLMStreamChunk>? onStream = null)
         {
+            _logger.LogDebug("LLM request start");
+
             request.AllowedTools = request.ToolCallMode == ToolCallMode.Disabled
                 ? Array.Empty<Tool>()
                 : (request.AllowedTools?.Any() == true
@@ -234,12 +240,14 @@ namespace Agenty.AgentCore.Runtime
 
                     case StreamKind.ToolCall:
                         toolCalls.Add(chunk.AsToolCall());
+                        _logger.LogInformation("Tool call received: {Name}", chunk.AsToolCall()?.Name);
                         break;
                 }
             }
 
             var finalText = sb.ToString().Trim();
 
+            _logger.LogDebug("LLM request completed");
             return new LLMResponse(
                 finalText,
                 toolCalls,
@@ -250,6 +258,7 @@ namespace Agenty.AgentCore.Runtime
         }
         private async IAsyncEnumerable<LLMStreamChunk> ValidateToolCallsAndStream(LLMRequest request, [EnumeratorCancellation] CancellationToken ct)
         {
+            var currentStreamCalls = new List<ToolCall>();
             bool limitOneTool = request.ToolCallMode == ToolCallMode.OneTool;
             await foreach (var rawChunk in PrepareStreamAsync(request, ct))
             {
@@ -259,6 +268,9 @@ namespace Agenty.AgentCore.Runtime
                     var text = rawChunk.AsText();
                     if (string.IsNullOrEmpty(text)) continue;
 
+                    // repeated assistant message check (only once per stream) 
+                    CheckRepeatAssistantMessage(request.Prompt, text);
+
                     yield return rawChunk; // emit as-is
 
                     // inline extraction from assistant message
@@ -266,8 +278,12 @@ namespace Agenty.AgentCore.Runtime
 
                     foreach (var call in extraction.Calls)
                     {
-                        var validated = TryParseToolCalls(request, call);
+                        var validated = TryParseToolCalls(request.Prompt, call);
                         if (validated == null) continue;
+
+                        CheckRepeatToolCall(request.Prompt, validated, currentStreamCalls);
+
+                        currentStreamCalls.Add(validated);
 
                         yield return new LLMStreamChunk(
                             StreamKind.ToolCall,
@@ -286,8 +302,12 @@ namespace Agenty.AgentCore.Runtime
                     var raw = rawChunk.AsToolCall();
                     if (raw == null) continue;
 
-                    var validated = TryParseToolCalls(request, raw);
+                    var validated = TryParseToolCalls(request.Prompt, raw);
                     if (validated == null) continue;
+
+                    CheckRepeatToolCall(request.Prompt, validated, currentStreamCalls);
+
+                    currentStreamCalls.Add(validated);
 
                     yield return new LLMStreamChunk(
                         StreamKind.ToolCall,
@@ -303,14 +323,41 @@ namespace Agenty.AgentCore.Runtime
                 yield return rawChunk;
             }
         }
-        private ToolCall? TryParseToolCalls(LLMRequest req, ToolCall raw)
+
+        private void CheckRepeatAssistantMessage(Conversation requestPrompt, string? text)
+        {
+            if (requestPrompt.IsLastAssistantMessageSame(text))
+            {
+                _logger.LogWarning("Assistant repeated same message");
+
+                throw new RetryException(
+                    "You repeated the same assistant response. Don't repeat — refine or add new info."
+                );
+            }
+        }
+
+        private void CheckRepeatToolCall(Conversation requestPrompt, ToolCall validated, List<ToolCall> currentStreamTools)
+        {
+            if (validated.ExistsIn(requestPrompt, currentStreamTools))
+            {
+                _logger.LogWarning("Duplicate tool call ignored: {Tool}", validated.Name);
+
+                var lastResult = requestPrompt.GetLastToolCallResult(validated);
+                throw new RetryException(
+                    $"Tool `{validated.Name}` was already called with same arguments. " +
+                    $"Last result: {(lastResult?.AsPrettyJson() ?? "null")}"
+                );
+            }
+        }
+
+        private ToolCall? TryParseToolCalls(Conversation reqPrompt, ToolCall raw)
         {
             if (!_tools.Contains(raw.Name))
             {
-                req.Prompt.AddUser(
+                _logger.LogWarning("Invalid tool: {Name}", raw.Name);
+                throw new RetryException(
                     $"Tool `{raw.Name}` is invalid. Use one of: {string.Join(", ", _tools.RegisteredTools.Select(t => t.Name))}."
                 );
-                return null;
             }
 
             var parsed = _parser.ParseToolParams(_tools, raw.Name, raw.Arguments);

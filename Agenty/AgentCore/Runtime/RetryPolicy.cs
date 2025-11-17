@@ -29,6 +29,10 @@ namespace Agenty.AgentCore.Runtime
             Func<LLMRequestBase, IAsyncEnumerable<LLMStreamChunk>> factory,
             [EnumeratorCancellation] CancellationToken ct = default);
     }
+    public class RetryException : Exception
+    {
+        public RetryException(string message) : base(message) { }
+    }
 
     /// <summary>
     /// Default policy, preserves existing retry loops (JSON + Tool calls).
@@ -47,15 +51,17 @@ namespace Agenty.AgentCore.Runtime
             Func<LLMRequestBase, IAsyncEnumerable<LLMStreamChunk>> factory,
             [EnumeratorCancellation] CancellationToken ct = default)
         {
+            var workingRequest = originalRequest.DeepClone();
+
             for (int attempt = 0; attempt <= _options.MaxRetries; attempt++)
             {
-                var clonedRequest = originalRequest.DeepClone();
-
                 bool succeeded = true;
+                string? errorMessage = null;
 
                 using var timeoutCts = new CancellationTokenSource(_options.Timeout);
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
 
+                var clonedRequest = workingRequest.DeepClone();
                 var stream = factory(clonedRequest);
                 var enumerator = stream.GetAsyncEnumerator(linked.Token);
 
@@ -66,7 +72,16 @@ namespace Agenty.AgentCore.Runtime
                         bool moved;
 
                         try { moved = await enumerator.MoveNextAsync(); }
-                        catch { succeeded = false; break; }
+                        catch (RetryException retryEx)
+                        {
+                            succeeded = false;
+                            errorMessage = retryEx.Message;
+                            break;
+                        }
+                        catch (Exception ex)
+                        {
+                            throw; // real errors
+                        }
 
                         if (!moved) break;
 
@@ -84,9 +99,11 @@ namespace Agenty.AgentCore.Runtime
                 if (attempt == _options.MaxRetries)
                     yield break;
 
-                clonedRequest.Prompt.AddAssistant($"Retry {attempt + 1} due to error.");
+                // Use the exception message to guide the model
+                var retryMessage = $"Retry {attempt + 1} because: {errorMessage ?? "an error occurred"}";
+                workingRequest.Prompt.AddAssistant(retryMessage);
 
-                yield return new LLMStreamChunk(StreamKind.Text, $"[retry {attempt + 1}]");
+                yield return new LLMStreamChunk(StreamKind.Text, $"[retry {attempt + 1}]: {retryMessage}");
 
                 await Task.Delay(
                     TimeSpan.FromMilliseconds(_options.InitialDelay.TotalMilliseconds *

@@ -15,7 +15,7 @@ namespace Agenty.AgentCore.TokenHandling
 
     public interface IContextTrimmer
     {
-        void Trim(Conversation convo, int? maxTokens = null, string? model = null);
+        Conversation Trim(Conversation convo, int? maxTokens = null, string? model = null);
         int Estimate(Conversation convo, string? model = null);
     }
 
@@ -36,46 +36,59 @@ namespace Agenty.AgentCore.TokenHandling
                 _opts.Margin = 1.0;
         }
 
-        public void Trim(Conversation convo, int? maxTokens = null, string? model = null)
+        public Conversation Trim(
+            Conversation convo,
+            int? maxTokens = null,
+            string? model = null)
         {
-            if (convo == null) throw new ArgumentNullException(nameof(convo));
+            if (convo == null)
+                throw new ArgumentNullException(nameof(convo));
 
-            // choose override or default from options
+            // ---- Determine limits ----
             int effectiveMax = maxTokens ?? _opts.MaxContextTokens;
             int limit = (int)(effectiveMax * _opts.Margin);
+            string tokenizerModel = _opts.TokenizerModel ?? model;
 
-            // pick tokenizer model override
-            var tokenizerModel = _opts.TokenizerModel ?? model;
+            // We always work on a clone (NON-mutating behavior)
+            var trimmed = convo.Clone();
 
-            int count = Estimate(convo, tokenizerModel);
-
+            int count = Estimate(trimmed, tokenizerModel);
             if (count <= limit)
-                return;
+                return trimmed;
 
-            // keep system messages
-            var system = convo.Where(c => c.Role == Role.System).ToList();
+            // ---- Keep system messages ----
+            var systemMessages = trimmed
+                .Where(c => c.Role == Role.System)
+                .ToList();
 
-            // remove tool noise
-            convo.RemoveAll(c => c.Role == Role.Tool);
+            // ---- Remove tool noise ----
+            trimmed.RemoveAll(c => c.Role == Role.Tool);
 
-            count = Estimate(convo, tokenizerModel);
+            count = Estimate(trimmed, tokenizerModel);
             if (count <= limit)
-                return;
+                return trimmed;
 
-            // sliding window for U/A messages
-            var core = convo.Where(c => c.Role == Role.User || c.Role == Role.Assistant).ToList();
+            // ---- Sliding window for user/assistant context ----
+            var core = trimmed
+                .Where(c => c.Role == Role.User || c.Role == Role.Assistant)
+                .ToList();
 
-            while (count > limit && core.Count > 1)
+            int idx = 0;
+            while (count > limit && idx < core.Count - 1) // keep at least 1 turn
             {
-                convo.Remove(core[0]);
-                core.RemoveAt(0);
-                count = Estimate(convo, tokenizerModel);
+                trimmed.Remove(core[idx]);
+                idx++;
+                count = Estimate(trimmed, tokenizerModel);
             }
 
-            // restore system messages at top
-            foreach (var s in system)
-                if (!convo.Contains(s))
-                    convo.Insert(0, s);
+            // ---- Ensure system messages remain at the top ----
+            foreach (var sys in systemMessages)
+            {
+                if (!trimmed.Contains(sys))
+                    trimmed.Insert(0, sys);
+            }
+
+            return trimmed;
         }
 
         public int Estimate(Conversation convo, string? model = null)
