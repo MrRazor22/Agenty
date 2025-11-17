@@ -5,6 +5,7 @@ using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Concurrent;
@@ -69,8 +70,8 @@ namespace Agenty.AgentCore.Runtime
         #endregion
 
         private async IAsyncEnumerable<LLMStreamChunk> PrepareStreamAsync(
-             LLMRequestBase request,
-             [EnumeratorCancellation] CancellationToken ct)
+            LLMRequestBase request,
+            [EnumeratorCancellation] CancellationToken ct)
         {
             _trimmer.Trim(request.Prompt, null, request.Model ?? DefaultModel);
 
@@ -78,12 +79,23 @@ namespace Agenty.AgentCore.Runtime
             _currOutTokensSoFar = 0;
             _currFinishReason = "stop";
 
-            var sb = new StringBuilder(); // capture assistant text for fallback
+            var sb = new StringBuilder();
+            var liveLog = new StringBuilder();   // <--- NEW
+
+            _logger.LogTrace("► Outbound Messages:\n{Json}",
+                JsonConvert.SerializeObject(request.Prompt.ToLogList(), Formatting.Indented));
 
             await foreach (var chunk in StreamAsync(request, ct))
             {
                 if (chunk.Kind == StreamKind.Text)
-                    sb.Append(chunk.AsText());
+                {
+                    var txt = chunk.AsText();
+                    sb.Append(txt);
+                    liveLog.Append(txt);
+
+                    // 🔥 single rolling log, no chunk flood
+                    _logger.LogTrace("◄ Inbound Stream: {Text}", liveLog.ToString());
+                }
 
                 if (chunk.Kind == StreamKind.Usage)
                 {
@@ -103,7 +115,7 @@ namespace Agenty.AgentCore.Runtime
                 yield return chunk;
             }
 
-            // fallback estimation
+            // fallback
             int input = _currInTokensSoFar;
             if (input <= 0)
                 input = _tokenizer.Count(request.Prompt.ToJson(ChatFilter.All), request.Model ?? DefaultModel);

@@ -38,9 +38,14 @@ namespace TestApp
                 });
 
                 Log.Logger = new LoggerConfiguration()
-                    .MinimumLevel.Information()
+                    .MinimumLevel.Verbose()
                     .WriteTo.File("D:\\agent.log", rollingInterval: RollingInterval.Day)
                     .CreateLogger();
+
+                builder.Services.Configure<LoggerFilterOptions>(opts =>
+                {
+                    opts.MinLevel = LogLevel.Trace;
+                });
 
                 builder.Services.AddLogging(logging =>
                 {
@@ -48,7 +53,6 @@ namespace TestApp
                     logging.AddSerilog();
                 });
 
-                builder.WithLogLevel(LogLevel.Trace);
 
                 Log.Information("Logger initialized");
 

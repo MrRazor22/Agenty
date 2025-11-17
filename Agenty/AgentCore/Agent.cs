@@ -98,12 +98,6 @@ namespace Agenty.AgentCore
                 });
             });
         }
-        public AgentBuilder WithLogLevel(LogLevel level)
-        {
-            Services.Configure<LoggerFilterOptions>(opts => opts.MinLevel = level);
-            return this;
-        }
-
         public Agent Build()
         {
             var provider = Services.BuildServiceProvider(validateScopes: true);
@@ -230,9 +224,6 @@ namespace Agenty.AgentCore
                 {
                     //load history to current context
                     ctx.ScratchPad.Clone(_memory);
-
-                    var logger = ctx.Services.GetService<ILogger<Agent>>();
-                    logger.AttachTo(ctx.ScratchPad);
 
                     // Execute pipeline
                     await _pipeline(ctx);

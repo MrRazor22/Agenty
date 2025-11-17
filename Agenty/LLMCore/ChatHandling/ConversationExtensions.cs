@@ -225,6 +225,65 @@ namespace Agenty.LLMCore.ChatHandling
                 _ => false
             };
         }
+        public static List<Dictionary<string, object>> ToLogList(this Conversation convo)
+        {
+            var list = new List<Dictionary<string, object>>();
 
+            foreach (var chat in convo)
+            {
+                var item = new Dictionary<string, object>();
+                item["role"] = chat.Role.ToString();
+
+                object contentObj;
+
+                // TextContent
+                TextContent txt = chat.Content as TextContent;
+                if (txt != null)
+                {
+                    contentObj = txt.Text;
+                }
+                else
+                {
+                    // ToolCall
+                    ToolCall call = chat.Content as ToolCall;
+                    if (call != null)
+                    {
+                        var callDict = new Dictionary<string, object>();
+                        callDict["type"] = "tool_call";
+                        callDict["id"] = call.Id;
+                        callDict["name"] = call.Name;
+                        callDict["arguments"] = call.Arguments;
+
+                        contentObj = callDict;
+                    }
+                    else
+                    {
+                        // ToolCallResult
+                        ToolCallResult result = chat.Content as ToolCallResult;
+                        if (result != null)
+                        {
+                            var resDict = new Dictionary<string, object>();
+                            resDict["type"] = "tool_result";
+                            resDict["call"] = result.Call != null ? result.Call.Name : null;
+                            resDict["result"] = result.Result;
+
+                            contentObj = resDict;
+                        }
+                        else
+                        {
+                            // fallback
+                            contentObj = chat.Content != null
+                                ? chat.Content.ToString()
+                                : "<null>";
+                        }
+                    }
+                }
+
+                item["content"] = contentObj;
+                list.Add(item);
+            }
+
+            return list;
+        }
     }
 }
