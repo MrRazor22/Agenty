@@ -4,7 +4,7 @@
 
 Agenty is a minimal, extensible .NET framework for building single-agent LLM applications. Inspired by the need for simplicity in .NET ecosystems, it focuses on clean tool orchestration, structured reasoning, and low-overhead pipelines—without the bloat of full kernels. Perfect for internal tools, prototypes, or production micro-agents where you want full control without ceremony.
 
-Built for .NET 8+, it integrates seamlessly with OpenAI-compatible LLMs (e.g., Azure OpenAI, LM Studio) and supports easy provider swaps. No multi-agent complexity—just pure, reliable single-agent flows.
+Built for both .Net core and legacy .Net frameworks, it integrates seamlessly with OpenAI-compatible LLMs (e.g., Azure OpenAI, LM Studio) and supports easy provider swaps. No multi-agent complexity—just pure, reliable single-agent flows.
 
 ## 🚀 Features
 - **Tool-Centric Design**: Register tools via attributes or delegates; auto-generate JSON schemas for LLM calls.
