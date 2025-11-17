@@ -224,6 +224,7 @@ namespace Agenty.AgentCore
                 {
                     //load history to current context
                     ctx.ScratchPad.Clone(_memory);
+                    ctx.ScratchPad.AddUser(goal);
 
                     // Execute pipeline
                     await _pipeline(ctx);

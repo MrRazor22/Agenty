@@ -63,7 +63,9 @@ namespace Agenty.AgentCore.Steps
             var llm = ctx.Services.GetRequiredService<ILLMClient>();
             var tools = ctx.Services.GetRequiredService<IToolCatalog>();
 
-            var planPrompt = @"Break my request into actionable steps based on the tools you got and information you know. If you dont know or have the information required ask the user DO NOT fabricate anything be honest about your limitations";
+            var planPrompt = @"Break my request into actionable steps based on the tools you got and information you know. 
+If you dont know or have the information required ask the user DO NOT fabricate anything be honest about your limitations
+If the request is just continuation of previous conversation, then plan based on the original request previously user asked";
 
             var convo = new Conversation()
                 .AddUser(ctx.UserRequest)
