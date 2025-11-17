@@ -146,7 +146,7 @@ namespace Agenty.AgentCore.Steps
                 ctx.Chat.AddAssistant(result.AssistantMessage);
 
                 // toolcall?
-                var toolCall = result.Payload.FirstOrDefault(); // result.Payload is List<ToolCall>
+                var toolCall = result.ToolCalls.FirstOrDefault(); // result.Payload is List<ToolCall>
                 if (toolCall == null)
                 {
                     ctx.Response.Set(result.AssistantMessage);

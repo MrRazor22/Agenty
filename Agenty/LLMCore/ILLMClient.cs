@@ -51,7 +51,7 @@ namespace Agenty.LLMCore
 
     public sealed class LLMStructuredRequest : LLMRequest
     {
-        public Type ResultType { get; }
+        public Type ResultType { get; internal set; }
         public JObject Schema { get; internal set; }
 
         public IEnumerable<Tool> AllowedTools { get; internal set; }
@@ -75,12 +75,12 @@ namespace Agenty.LLMCore
 
     public interface ILLMClient
     {
-        Task<LLMToolCallResponse> ExecuteAsync(
+        Task<LLMTextAndToolCallResponse> ExecuteAsync(
             LLMToolRequest request,
             CancellationToken ct = default,
             Action<LLMStreamChunk>? onStream = null);
 
-        Task<LLMStructuredResponse> ExecuteAsync(
+        Task<LLMStructuredResponse<T>> ExecuteAsync<T>(
             LLMStructuredRequest request,
             CancellationToken ct = default);
 
@@ -113,57 +113,56 @@ namespace Agenty.LLMCore
         public int? MaxOutputTokens { get; set; }
     }
 
-    public class LLMResponse
+    public abstract class LLMResponse
     {
-        public string AssistantMessage { get; protected set; }   // ALWAYS present
-        public virtual object Payload { get; protected set; }    // optional extra
-        public string FinishReason { get; protected set; }
-        public int InputTokens { get; protected set; }
-        public int OutputTokens { get; protected set; }
+        public string FinishReason { get; }
+        public int InputTokens { get; }
+        public int OutputTokens { get; }
 
         protected LLMResponse(
-            string assistantMessage,
-            object payload,
             string finishReason,
             int inputTokens,
             int outputTokens)
         {
-            AssistantMessage = assistantMessage ?? "";
-            Payload = payload;
             FinishReason = finishReason ?? "stop";
             InputTokens = inputTokens;
             OutputTokens = outputTokens;
         }
     }
 
-    public sealed class LLMToolCallResponse : LLMResponse
+    public sealed class LLMTextAndToolCallResponse : LLMResponse
     {
-        public new List<ToolCall> Payload { get; }
+        public string? AssistantMessage { get; }
+        public List<ToolCall> ToolCalls { get; }
 
-        public LLMToolCallResponse(
-            string assistantMessage,
+        public LLMTextAndToolCallResponse(
+            string? assistantMessage,
             List<ToolCall> toolCalls,
             string finishReason,
             int input,
             int output)
-            : base(assistantMessage, toolCalls, finishReason, input, output)
+            : base(finishReason, input, output)
         {
-            Payload = toolCalls;
+            AssistantMessage = assistantMessage;
+            ToolCalls = toolCalls ?? throw new ArgumentNullException(nameof(toolCalls));
         }
     }
 
-    public sealed class LLMStructuredResponse : LLMResponse
+    public sealed class LLMStructuredResponse<T> : LLMResponse
     {
-        public new JToken Payload { get; }
+        public JToken RawJson { get; }
+        public T Result { get; }
 
         public LLMStructuredResponse(
-            JToken payload,
+            JToken rawJson,
+            T result,
             string finishReason,
-            int input,
-            int output)
-            : base(null, payload, finishReason, input, output)
+            int inputTokens,
+            int outputTokens)
+            : base(finishReason, inputTokens, outputTokens)
         {
-            Payload = payload;
+            RawJson = rawJson;
+            Result = result;
         }
     }
 
@@ -209,6 +208,7 @@ namespace Agenty.LLMCore
 
         public static ToolCall? AsToolCall(this LLMStreamChunk chunk)
             => chunk.Payload as ToolCall;
+
     }
 
 }

@@ -58,73 +58,75 @@ namespace Agenty.AgentCore.Runtime
         protected abstract IAsyncEnumerable<LLMStreamChunk> GetProviderStreamingResponse(
             LLMToolRequest request,
             CancellationToken ct);
-        protected abstract Task<LLMStructuredResponse> GetProviderStructuredResponse(
+        protected abstract Task<LLMStructuredResponse<T>> GetProviderStructuredResponse<T>(
             LLMStructuredRequest request,
-            CancellationToken ct);
+            CancellationToken ct = default);
         #endregion
 
-        public async Task<LLMStructuredResponse> ExecuteAsync(
-            LLMStructuredRequest request,
-            CancellationToken ct = default)
+        public async Task<LLMStructuredResponse<T>> ExecuteAsync<T>(
+    LLMStructuredRequest request,
+    CancellationToken ct = default)
         {
-            _logger.LogTrace("Requesting structured response for {Type}", request.ResultType.Name);
+            _logger.LogTrace("Requesting structured response for {Type}", typeof(T).Name);
+
+            // inject T into request
+            request.ResultType = typeof(T);
 
             return await _retryPolicy.ExecuteAsync(async intPrompt =>
             {
-                var typeKey = request.ResultType.FullName!;
+                string typeKey = typeof(T).FullName!;
+
                 request.Schema = _schemaCache.GetOrAdd(typeKey, _ =>
                 {
                     _logger.LogTrace("Schema not cached. Building for {Type}", typeKey);
-                    return JsonSchemaExtensions.GetSchemaForType(request.ResultType);
+                    return JsonSchemaExtensions.GetSchemaForType(typeof(T));
                 });
 
                 request.AllowedTools = request.ToolCallMode == ToolCallMode.Disabled
                     ? Array.Empty<Tool>()
-                    : request.AllowedTools?.ToArray() ?? _tools.RegisteredTools.ToArray();
+                    : (request.AllowedTools?.Any() == true
+                        ? request.AllowedTools.ToArray()
+                        : _tools.RegisteredTools.ToArray());
 
-                var result = await GetProviderStructuredResponse(request, ct);
+                var providerResponse = await GetProviderStructuredResponse<T>(request, ct);
 
-                _tokenManager.Record(result.InputTokens, result.OutputTokens);
+                _tokenManager.Record(providerResponse.InputTokens, providerResponse.OutputTokens);
 
-                if (result.Payload == null)
+                // Validations
+                var json = providerResponse.RawJson;
+                if (json == null)
                 {
-                    _logger.LogWarning("Structured response for {Type} was null", typeKey);
-                    intPrompt.AddAssistant($"Return proper JSON for {request.ResultType.Name}.");
-                    return result;
+                    _logger.LogWarning("Structured response null for {Type}", typeKey);
+                    intPrompt.AddAssistant($"Return valid JSON for {typeof(T).Name}.");
+                    return providerResponse;
                 }
 
-                var token = result.Payload as JToken;
-                if (token == null)
-                {
-                    _logger.LogWarning("Payload for {Type} is not JToken", typeKey);
-                    intPrompt.AddAssistant($"Return valid JSON object for {request.ResultType.Name}.");
-                    return result;
-                }
-
-                var errors = _parser.ValidateAgainstSchema(token, request.Schema, request.ResultType.Name);
+                var errors = _parser.ValidateAgainstSchema(json, request.Schema, typeof(T).Name);
                 if (errors.Count > 0)
                 {
                     var msg = string.Join("; ", errors.Select(e => $"{e.Path}: {e.Message}"));
-                    _logger.LogWarning("Schema validation failed for {Type}: {Msg}", typeKey, msg);
+                    _logger.LogWarning("Validation failed for {Type}: {Msg}", typeKey, msg);
 
-                    intPrompt.AddAssistant($"Validation failed: {msg}. Fix JSON for {request.ResultType.Name}.");
+                    intPrompt.AddAssistant($"Validation failed: {msg}. Fix JSON for {typeof(T).Name}.");
 
-                    return result;
+                    return providerResponse;
                 }
 
-                return result;
+                return providerResponse;
 
             }, request.Prompt);
         }
 
-        public async Task<LLMToolCallResponse> ExecuteAsync(
+        public async Task<LLMTextAndToolCallResponse> ExecuteAsync(
             LLMToolRequest? request,
             CancellationToken ct = default,
             Action<LLMStreamChunk>? onStream = null)
         {
             request.AllowedTools = request.ToolCallMode == ToolCallMode.Disabled
-                    ? Array.Empty<Tool>()
-                    : request.AllowedTools?.ToArray() ?? _tools.RegisteredTools.ToArray();
+                ? Array.Empty<Tool>()
+                : (request.AllowedTools?.Any() == true
+                    ? request.AllowedTools.ToArray()
+                    : _tools.RegisteredTools.ToArray());
 
             var sb = new StringBuilder();
             var toolCalls = new List<ToolCall>();
@@ -168,7 +170,7 @@ namespace Agenty.AgentCore.Runtime
 
             var finalText = sb.ToString().Trim();
 
-            return new LLMToolCallResponse(
+            return new LLMTextAndToolCallResponse(
                 finalText,
                 toolCalls,
                 finish,

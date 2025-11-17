@@ -49,31 +49,16 @@ namespace Agenty.AgentCore.Runtime
                 sampling: sampling
             );
 
-            var resp = await client.ExecuteAsync(req, ct);
+            var resp = await client.ExecuteAsync<T>(req, ct);
 
-            if (resp.Payload is JToken tok)
-                return tok.ToObject<T>();
-
-            return default;
+            return resp.Result;
         }
 
         // -----------------------------
         // TEXT
-        // -----------------------------
-        public static async Task<LLMResponse> GetTextAsync(
-            this ILLMClient client,
-            string userMessage,
-            string model = null,
-            ReasoningMode reasoning = ReasoningMode.Balanced,
-            LLMSamplingOptions sampling = null,
-            CancellationToken ct = default,
-            Action<string> onStream = null)
-        {
-            var convo = new Conversation().AddUser(userMessage);
-            return await client.GetResponseAsync(convo, model, reasoning, sampling, ct, onStream);
-        }
+        // ----------------------------- 
 
-        public static async Task<LLMResponse> GetResponseAsync(
+        public static async Task<LLMTextAndToolCallResponse> GetResponseAsync(
             this ILLMClient client,
             Conversation prompt,
             string model = null,
@@ -100,7 +85,7 @@ namespace Agenty.AgentCore.Runtime
         }
 
         //Tool call
-        public static async Task<LLMToolCallResponse> GetResponseAsync(
+        public static async Task<LLMTextAndToolCallResponse> GetResponseAsync(
             this ILLMClient client,
             Conversation convo,
             ToolCallMode toolMode = ToolCallMode.Auto,

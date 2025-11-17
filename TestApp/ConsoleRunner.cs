@@ -20,7 +20,7 @@ namespace TestApp
                 {
                     opts.BaseUrl = "http://127.0.0.1:1234/v1";
                     opts.ApiKey = "lmstudio";
-                    opts.Model = "publisherme/qwen/qwen3-4b-thinking-2507-q4_k_m.gguf";
+                    opts.Model = "qwen@q5_k_m";
                 });
                 builder.AddRetryPolicy(o =>
                 {

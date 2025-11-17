@@ -159,8 +159,9 @@ namespace Agenty.LLMCore.Providers.OpenAI
             );
         }
 
-
-        protected override async Task<LLMStructuredResponse> GetProviderStructuredResponse(LLMStructuredRequest request, CancellationToken ct = default)
+        protected override async Task<LLMStructuredResponse<T>> GetProviderStructuredResponse<T>(
+            LLMStructuredRequest request,
+            CancellationToken ct = default)
         {
             var chat = GetChatClient(request.Model);
 
@@ -169,7 +170,7 @@ namespace Agenty.LLMCore.Providers.OpenAI
                 ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
                     jsonSchemaFormatName: "structured_response",
                     jsonSchema: BinaryData.FromString(
-                    request.Schema.ToString(Newtonsoft.Json.Formatting.None)
+                        request.Schema.ToString(Newtonsoft.Json.Formatting.None)
                     ),
                     jsonSchemaIsStrict: true)
             };
@@ -180,26 +181,39 @@ namespace Agenty.LLMCore.Providers.OpenAI
             foreach (var t in request.AllowedTools.ToChatTools())
                 options.Tools.Add(t);
 
-            var response = await chat.CompleteChatAsync(request.Prompt.ToChatMessages(), options, ct);
+            var response = await chat.CompleteChatAsync(
+                request.Prompt.ToChatMessages(),
+                options,
+                ct);
+
             var result = response.Value;
 
             string raw = result.Content?[0]?.Text?.Trim();
-            JToken payload = null;
+            JToken token = null;
 
             if (!string.IsNullOrEmpty(raw))
             {
-                try { payload = JToken.Parse(raw); }
+                try { token = JToken.Parse(raw); }
                 catch
                 {
+                    // fallback to lenient parsing
                     if (raw.StartsWith("\"") && raw.EndsWith("\""))
-                        payload = JValue.Parse(raw);
+                        token = JValue.Parse(raw);
                     else
-                        payload = JValue.CreateString(raw);
+                        token = JValue.CreateString(raw);
                 }
             }
 
-            return new LLMStructuredResponse(
-                payload,
+            // and here's the actual typed parse
+            T typed = default;
+            if (token != null)
+            {
+                typed = token.ToObject<T>();
+            }
+
+            return new LLMStructuredResponse<T>(
+                token,
+                typed,
                 result.FinishReason.ToString(),
                 result.Usage?.InputTokenCount ?? 0,
                 result.Usage?.OutputTokenCount ?? 0
