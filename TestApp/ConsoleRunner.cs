@@ -109,7 +109,7 @@ namespace TestApp
                             continue;
                         }
 
-                        Console.WriteLine("\n───────── RESULT ─────────\n");
+                        Console.WriteLine("\n\n───────── RESULT ─────────\n");
                         Console.WriteLine(msg);
                         Console.WriteLine("\n──────────────────────────\n");
                     }
