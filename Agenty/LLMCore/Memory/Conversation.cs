@@ -13,7 +13,7 @@ namespace Agenty.LLMCore.ChatHandling
         public Role Role { get; }
         public IMessageContent Content { get; }
 
-        [JsonConstructor] // ← this is the whole fix
+        [JsonConstructor]
         private Chat(Role role, JObject content)
         {
             Role = role;
