@@ -9,7 +9,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore
+namespace Agenty.LLMCore.AgentCore
 {
     // === 1. Context ===
     public interface IAgentContext

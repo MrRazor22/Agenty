@@ -9,7 +9,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace Agenty.Utils
+namespace Agenty.src.Utils
 {
     public static class Helpers
     {

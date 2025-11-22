@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
 
-namespace Agenty.AgentCore
+namespace Agenty.LLMCore.AgentCore
 {
     public static class AgentExtensions
     {

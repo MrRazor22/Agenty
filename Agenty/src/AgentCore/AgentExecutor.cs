@@ -10,7 +10,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore
+namespace Agenty.LLMCore.AgentCore
 {
     public interface IAgentExecutor
     {
