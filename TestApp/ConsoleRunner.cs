@@ -36,7 +36,6 @@ namespace TestApp
                 builder.AddMemory(o =>
                 {
                     o.PersistDir = "D:\\agenty\\memory";
-                    o.Enabled = true;
                 });
 
                 Log.Logger = new LoggerConfiguration()

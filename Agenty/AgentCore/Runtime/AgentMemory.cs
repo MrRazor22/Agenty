@@ -10,7 +10,6 @@ namespace Agenty.AgentCore.Runtime
     {
         public string? PersistDir { get; set; }
             = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agenty");
-        public bool Enabled { get; set; } = true;
     }
     public interface IAgentMemory
     {
@@ -27,8 +26,7 @@ namespace Agenty.AgentCore.Runtime
         public FileMemory(MemoryOptions memoryOptions = null)
         {
             _memoryOptions = memoryOptions ?? new MemoryOptions();
-            if (_memoryOptions.Enabled)
-                Directory.CreateDirectory(_memoryOptions.PersistDir);
+            Directory.CreateDirectory(_memoryOptions.PersistDir);
         }
 
         private string GetFilePath(string sessionId) =>
@@ -36,8 +34,6 @@ namespace Agenty.AgentCore.Runtime
 
         public async Task<Conversation> RecallAsync(string sessionId, string userRequest)
         {
-            if (!_memoryOptions.Enabled) return await Task.FromResult(new Conversation());
-
             if (_cachedSessionId == sessionId && _cached != null)
                 return _cached;
 
@@ -57,8 +53,6 @@ namespace Agenty.AgentCore.Runtime
 
         public async Task UpdateAsync(string sessionId, string userRequest, string response)
         {
-            if (!_memoryOptions.Enabled) return;
-
             if (_cachedSessionId != sessionId || _cached == null)
                 _cached = await RecallAsync(sessionId, userRequest).ConfigureAwait(false);
 
