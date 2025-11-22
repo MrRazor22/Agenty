@@ -6,26 +6,25 @@ using System.Threading.Tasks;
 
 namespace Agenty.AgentCore.Runtime
 {
-    public class MemoryOptions
-    {
-        public string? PersistDir { get; set; }
-            = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agenty");
-    }
     public interface IAgentMemory
     {
         Task<Conversation> RecallAsync(string sessionId, string userRequest);
         Task UpdateAsync(string sessionId, string userRequest, string response);
     }
-
+    public class FileMemoryOptions
+    {
+        public string? PersistDir { get; set; }
+            = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Agenty");
+    }
     public sealed class FileMemory : IAgentMemory
     {
-        private readonly MemoryOptions _memoryOptions;
+        private readonly FileMemoryOptions _memoryOptions;
         private string? _cachedSessionId;
         private Conversation? _cached;
 
-        public FileMemory(MemoryOptions memoryOptions = null)
+        public FileMemory(FileMemoryOptions memoryOptions = null)
         {
-            _memoryOptions = memoryOptions ?? new MemoryOptions();
+            _memoryOptions = memoryOptions ?? new FileMemoryOptions();
             Directory.CreateDirectory(_memoryOptions.PersistDir);
         }
 

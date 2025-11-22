@@ -33,7 +33,7 @@ namespace TestApp
                     o.MaxRetries = 3;
                     o.Timeout = TimeSpan.FromMinutes(5);
                 });
-                builder.AddMemory(o =>
+                builder.AddFileMemory(o =>
                 {
                     o.PersistDir = "D:\\agenty\\memory";
                 });

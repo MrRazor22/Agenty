@@ -79,9 +79,9 @@ namespace Agenty.AgentCore.Runtime
         }
 
         // memory config
-        public static AgentBuilder AddMemory(this AgentBuilder builder, Action<MemoryOptions>? configure = null)
+        public static AgentBuilder AddFileMemory(this AgentBuilder builder, Action<FileMemoryOptions>? configure = null)
         {
-            var options = new MemoryOptions();
+            var options = new FileMemoryOptions();
             configure?.Invoke(options);
 
             builder.Services.AddSingleton<IAgentMemory>(sp => new FileMemory(options));
