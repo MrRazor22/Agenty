@@ -4,7 +4,7 @@ using System;
 using System.Linq;
 using System.Reflection;
 
-namespace Agenty.AgentCore.TokenHandling
+namespace Agenty.LLMCore.TokenHandling
 {
     public sealed class ContextTrimOptions
     {

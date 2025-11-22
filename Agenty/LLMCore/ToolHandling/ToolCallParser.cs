@@ -1,5 +1,4 @@
-﻿using Agenty.AgentCore.Runtime;
-using Agenty.LLMCore.ChatHandling;
+﻿using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Newtonsoft.Json.Linq;
 using System;

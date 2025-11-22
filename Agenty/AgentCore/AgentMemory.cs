@@ -4,7 +4,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore.Runtime
+namespace Agenty.AgentCore
 {
     public interface IAgentMemory
     {

@@ -1,10 +1,8 @@
-﻿using Agenty.AgentCore.Runtime;
-using Agenty.LLMCore.ChatHandling;
+﻿using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.ToolHandling;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 

@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace Agenty.AgentCore.TokenHandling
+namespace Agenty.LLMCore.TokenHandling
 {
     public readonly struct TokenUsage
     {
