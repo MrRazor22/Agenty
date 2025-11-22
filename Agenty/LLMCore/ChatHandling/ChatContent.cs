@@ -3,11 +3,11 @@ using Newtonsoft.Json.Linq;
 using System;
 using System.Linq;
 
-namespace Agenty.LLMCore.Messages
+namespace Agenty.LLMCore.ChatHandling
 {
-    public interface IMessageContent { }
+    public interface IChatContent { }
 
-    public sealed class TextContent : IMessageContent
+    public sealed class TextContent : IChatContent
     {
         public string Text { get; }
 
@@ -16,7 +16,7 @@ namespace Agenty.LLMCore.Messages
         public static implicit operator TextContent(string text) => new TextContent(text);
     }
 
-    public class ToolCall : IMessageContent
+    public class ToolCall : IChatContent
     {
         [JsonConstructor]
         public ToolCall(string id, string name, JObject arguments)
@@ -62,7 +62,7 @@ namespace Agenty.LLMCore.Messages
 
         public override string ToString()
         {
-            var argsStr = (Arguments != null && Arguments.Count > 0)
+            var argsStr = Arguments != null && Arguments.Count > 0
                 ? string.Join(", ", Arguments.Properties().Select(p => $"{p.Name}: {p.Value}"))
                 : "none";
 
@@ -70,7 +70,7 @@ namespace Agenty.LLMCore.Messages
         }
     }
 
-    public sealed class ToolCallResult : IMessageContent
+    public sealed class ToolCallResult : IChatContent
     {
         public ToolCall Call { get; }
         public object? Result { get; }

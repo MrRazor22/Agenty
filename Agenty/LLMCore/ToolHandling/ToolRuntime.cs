@@ -1,5 +1,5 @@
-﻿using Agenty.LLMCore.JsonSchema;
-using Agenty.LLMCore.Messages;
+﻿using Agenty.LLMCore.ChatHandling;
+using Agenty.LLMCore.JsonSchema;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;

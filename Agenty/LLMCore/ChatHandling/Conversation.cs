@@ -1,5 +1,4 @@
-﻿using Agenty.LLMCore.Messages;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
@@ -11,7 +10,7 @@ namespace Agenty.LLMCore.ChatHandling
     public class Chat
     {
         public Role Role { get; }
-        public IMessageContent Content { get; }
+        public IChatContent Content { get; }
 
         [JsonConstructor]
         private Chat(Role role, JToken content)
@@ -25,7 +24,7 @@ namespace Agenty.LLMCore.ChatHandling
             else
                 throw new Exception("Unknown content type.");
         }
-        public Chat(Role role, IMessageContent content)
+        public Chat(Role role, IChatContent content)
         {
             Role = role;
             Content = content;
@@ -48,9 +47,9 @@ namespace Agenty.LLMCore.ChatHandling
         public event Action<Chat>? OnChat;
         public Conversation Add(Role role, string text) => Add(role, new TextContent(text));
 
-        public Conversation Add(Role role, TextContent text) => Add(role, (IMessageContent)text);
+        public Conversation Add(Role role, TextContent text) => Add(role, (IChatContent)text);
 
-        public Conversation Add(Role role, IMessageContent content)
+        public Conversation Add(Role role, IChatContent content)
         {
             if (content == null) return this;
 
