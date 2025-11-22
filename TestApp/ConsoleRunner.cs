@@ -33,12 +33,16 @@ namespace TestApp
                     o.MaxRetries = 3;
                     o.Timeout = TimeSpan.FromMinutes(5);
                 });
+                builder.AddMemory(o =>
+                {
+                    o.PersistDir = "D:\\agenty\\memory";
+                    o.Enabled = true;
+                });
 
                 Log.Logger = new LoggerConfiguration()
                     .MinimumLevel.Verbose()
                     .WriteTo.File("D:\\agenty\\agent.log", rollingInterval: RollingInterval.Day)
                     .CreateLogger();
-
                 builder.Services.Configure<LoggerFilterOptions>(opts =>
                 {
                     opts.MinLevel = LogLevel.Trace;

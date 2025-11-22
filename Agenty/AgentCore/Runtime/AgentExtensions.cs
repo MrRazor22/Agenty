@@ -77,5 +77,15 @@ namespace Agenty.AgentCore.Runtime
 
             return builder;
         }
+
+        // memory config
+        public static AgentBuilder AddMemory(this AgentBuilder builder, Action<MemoryOptions>? configure = null)
+        {
+            var options = new MemoryOptions();
+            configure?.Invoke(options);
+
+            builder.Services.AddSingleton<IAgentMemory>(sp => new FileMemory(options));
+            return builder;
+        }
     }
 }

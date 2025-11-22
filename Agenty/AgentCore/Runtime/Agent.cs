@@ -1,5 +1,4 @@
-﻿using Agenty.AgentCore.Memory;
-using Agenty.AgentCore.TokenHandling;
+﻿using Agenty.AgentCore.TokenHandling;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.Runtime;
 using Agenty.LLMCore.ToolHandling;
@@ -65,7 +64,7 @@ namespace Agenty.AgentCore.Runtime
 
         public AgentBuilder()
         {
-            Services.AddSingleton<IMemoryStore, FileMemoryStore>();
+            Services.AddSingleton<IAgentMemory, FileMemory>();
             Services.AddSingleton<ITokenizer, SharpTokenTokenizer>();
             Services.AddSingleton<ToolRegistryCatalog>();
             Services.AddSingleton<IToolRegistry>(sp => sp.GetRequiredService<ToolRegistryCatalog>());
@@ -110,11 +109,9 @@ namespace Agenty.AgentCore.Runtime
     public class Agent : IAgent
     {
         private readonly IServiceProvider _services;
-        private readonly IMemoryStore _memoryStore;
+        private readonly IAgentMemory _memory;
         private Func<IAgentExecutor> _executorFactory;
         private string? _systemPrompt;
-        private Conversation _memory = new Conversation();
-        private bool _loaded;
 
         public IServiceProvider Services => _services;
         public string SessionId { get; }
@@ -123,7 +120,7 @@ namespace Agenty.AgentCore.Runtime
         {
             _services = services;
             SessionId = sessionId;
-            _memoryStore = services.GetService<IMemoryStore>() ?? NullMemoryStore.Instance;
+            _memory = services.GetService<IAgentMemory>() ?? throw new InvalidOperationException("No memory registered.");
             _executorFactory = () => services.GetRequiredService<IAgentExecutor>();
         }
 
@@ -165,28 +162,17 @@ namespace Agenty.AgentCore.Runtime
 
             try
             {
-                // Lazy load from store
-                if (!_loaded)
-                {
-                    var stored = await _memoryStore.LoadAsync(SessionId).ConfigureAwait(false);
-                    if (stored != null)
-                        _memory = stored;
-                    _loaded = true;
-                }
-
                 // Build scratchpad: system prompt first, then memory
-                if (_systemPrompt != null)
-                    ctx.ScratchPad.AddSystem(_systemPrompt);
-                ctx.ScratchPad.Append(_memory);
+                ctx.ScratchPad.AddSystem(_systemPrompt);
+                var memory = await _memory.RecallAsync(SessionId, goal).ConfigureAwait(false);
+                ctx.ScratchPad.Append(memory);
 
                 // Execute
                 var executor = _executorFactory();
                 await executor.ExecuteAsync(ctx).ConfigureAwait(false);
 
-                // Success: update memory and persist
-                _memory!.AddUser(goal);
-                _memory.AddAssistant(ctx.Response.Message);
-                await _memoryStore.SaveAsync(SessionId, (Conversation)_memory.Filter(~ChatFilter.System)).ConfigureAwait(false);
+                // Update memory
+                await _memory.UpdateAsync(SessionId, goal, ctx.Response.Message).ConfigureAwait(false);
 
                 return ctx.Response;
             }

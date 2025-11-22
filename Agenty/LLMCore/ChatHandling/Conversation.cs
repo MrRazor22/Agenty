@@ -14,13 +14,14 @@ namespace Agenty.LLMCore.ChatHandling
         public IMessageContent Content { get; }
 
         [JsonConstructor]
-        private Chat(Role role, JObject content)
+        private Chat(Role role, JToken content)
         {
             Role = role;
 
-            // minimal factory for ONE content type (TextContent)
-            if (content["Text"] != null)
-                Content = new TextContent((string)content["Text"]);
+            if (content.Type == JTokenType.String)
+                Content = new TextContent(content.Value<string>());
+            else if (content is JObject obj && obj["Text"] != null)
+                Content = new TextContent((string)obj["Text"]);
             else
                 throw new Exception("Unknown content type.");
         }
