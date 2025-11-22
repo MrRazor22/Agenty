@@ -1,7 +1,6 @@
 ﻿using Agenty.AgentCore.TokenHandling;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
-using Agenty.LLMCore.Messages;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
