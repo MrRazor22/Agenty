@@ -2,6 +2,7 @@
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.TokenHandling;
 using Agenty.LLMCore.ToolHandling;
+using Agenty.Utils;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
