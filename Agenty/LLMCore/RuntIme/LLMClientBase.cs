@@ -15,7 +15,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Agenty.LLMCore.RuntIme
+namespace Agenty.LLMCore.Runtime
 {
     public abstract class LLMClientBase : ILLMClient
     {
@@ -367,12 +367,6 @@ namespace Agenty.LLMCore.RuntIme
                 raw.Arguments,
                 parsed
             );
-        }
-
-        public Task<IReadOnlyList<ToolCallResult>> RunToolCalls(List<ToolCall> toolCalls, CancellationToken ct = default)
-        {
-            _logger.LogTrace("Executing {Count} tool calls", toolCalls.Count);
-            return _Runtime.HandleToolCallsAsync(toolCalls, ct);
         }
     }
 }

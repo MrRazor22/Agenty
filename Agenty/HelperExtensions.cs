@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace Agenty
 {
-    internal static class Helpers
+    public static class Helpers
     {
         public static string AsPrettyJson(this object content)
         {

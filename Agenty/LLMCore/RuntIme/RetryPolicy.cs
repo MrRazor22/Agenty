@@ -10,7 +10,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Agenty.LLMCore.RuntIme
+namespace Agenty.LLMCore.Runtime
 {
     public sealed class RetryPolicyOptions
     {

@@ -1,5 +1,4 @@
-﻿using Agenty.AgentCore.Steps;
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace Agenty.AgentCore.TokenHandling
@@ -63,7 +62,7 @@ namespace Agenty.AgentCore.TokenHandling
                 _output += outDelta;
                 _lastTotal = new TokenUsage(totalInputTokensSoFar, totalOutputTokensSoFar);
 
-                var actualSource = source ?? StepContext.Current.Value ?? "Unknown";
+                var actualSource = source ?? "Agent";
                 if (!_sources.TryGetValue(actualSource, out var existing))
                     existing = TokenUsage.Empty;
 

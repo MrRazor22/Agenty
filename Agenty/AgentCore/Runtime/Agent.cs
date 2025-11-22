@@ -1,19 +1,13 @@
-﻿using Agenty.AgentCore.Steps;
-using Agenty.AgentCore.TokenHandling;
+﻿using Agenty.AgentCore.TokenHandling;
 using Agenty.LLMCore.ChatHandling;
-using Agenty.LLMCore.Messages;
-using Agenty.LLMCore.Providers.OpenAI;
+using Agenty.LLMCore.Runtime;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Agenty.LLMCore.RuntIme;
 
 namespace Agenty.AgentCore.Runtime
 {
@@ -25,7 +19,7 @@ namespace Agenty.AgentCore.Runtime
         AgentResponse Response { get; }
         IServiceProvider Services { get; }
         IDictionary<string, object?> Items { get; }
-        Action<string>? Stream { get; set; }
+        Action<object>? Stream { get; set; }
         CancellationToken CancellationToken { get; }
     }
 
@@ -41,7 +35,7 @@ namespace Agenty.AgentCore.Runtime
         }
     }
 
-    internal sealed class AgentContext : IAgentContext
+    public sealed class AgentContext : IAgentContext
     {
         private readonly AgentResponse _response = new AgentResponse();
 
@@ -58,7 +52,7 @@ namespace Agenty.AgentCore.Runtime
         public AgentResponse Response => _response;
         public IServiceProvider Services { get; }
         public IDictionary<string, object?> Items { get; }
-        public Action<string>? Stream { get; set; }
+        public Action<object>? Stream { get; set; }
         public CancellationToken CancellationToken { get; }
         public void SetResult(string? message, object? payload) => _response.Set(message, payload);
     }
@@ -96,6 +90,7 @@ namespace Agenty.AgentCore.Runtime
                     options.IncludeScopes = false;
                 });
             });
+            Services.AddSingleton<IAgentExecutor, ToolCallingLoop>();
         }
         public Agent Build()
         {
@@ -111,23 +106,23 @@ namespace Agenty.AgentCore.Runtime
 
     public interface IAgent
     {
-        Task<AgentResponse> InvokeAsync(string goal, CancellationToken cancellationToken = default);
+        Task<AgentResponse> InvokeAsync(string goal, CancellationToken cancellationToken = default, Action<object>? stream = null);
     }
     // === 3. Agent (like WebApplication) ===
-    public sealed class Agent : IAgent
+    public class Agent : IAgent
     {
         private readonly IServiceProvider _services;
         private readonly Conversation _memory = new Conversation();
         private readonly IConversationStore? _store;
-
-        private AgentStepDelegate _pipeline = ctx => Task.CompletedTask;
+        private Func<IAgentExecutor>? _executorFactory;
         public IServiceProvider Services => _services;
         public Conversation ChatMemory => _memory;
 
         internal Agent(IServiceProvider services)
         {
             _services = services;
-            _store = services.GetService<IConversationStore>();
+            _store = _services.GetService<IConversationStore>();
+            _executorFactory = () => _services.GetRequiredService<IAgentExecutor>();
         }
 
         // Configure runtime (like app.MapXyz / app.UseXyz)
@@ -149,6 +144,11 @@ namespace Agenty.AgentCore.Runtime
             return this;
         }
 
+        public Agent UseExecutor(Func<IAgentExecutor> factory)
+        {
+            _executorFactory = factory ?? throw new ArgumentException(nameof(factory));
+            return this;
+        }
 
         // === Load/save conversation history explicitly ===
         public async Task LoadHistoryAsync(string sessionId)
@@ -164,57 +164,11 @@ namespace Agenty.AgentCore.Runtime
             if (_store == null) return;
             await _store.SaveAsync(sessionId, _memory);
         }
-        // app.Use(...)
-        public Agent Use(Func<IAgentContext, AgentStepDelegate, Task> middleware)
-        {
-            var next = _pipeline;
-            _pipeline = ctx => middleware(ctx, next);
-            return this;
-        }
-        // default overload — supports DI and optional constructors 
-        // unified Use<TStep> — handles both DI and factory forms  
-        public Agent Use<TStep>(Func<TStep>? factory = null) where TStep : IAgentStep
-        {
-            return Use(async (ctx, next) =>
-            {
-                var logger = ctx.Services.GetService<ILogger<Agent>>();
-                var tokenMgr = ctx.Services.GetService<ITokenManager>();
-                var stepName = typeof(TStep).Name;
-
-                var before = tokenMgr?.GetTotals() ?? TokenUsage.Empty;
-                var sw = Stopwatch.StartNew();
-
-                var prev = StepContext.Current.Value;
-                StepContext.Current.Value = stepName;
-
-                var step = factory != null
-                    ? factory()
-                    : (TStep)ActivatorUtilities.CreateInstance(ctx.Services, typeof(TStep));
-
-                await step.InvokeAsync(ctx, async innerCtx =>
-                {
-                    sw.Stop();
-                    var after = tokenMgr?.GetTotals() ?? TokenUsage.Empty;
-                    var delta = after - before;
-                    logger?.LogInformation(
-                        "│ Step: {Step,-20} │ Time: {Ms,6} ms │ In: {In,5} │ Out: {Out,5} │ Δ: {Delta,5} │ Total: {Total,6} │",
-                        stepName,
-                        sw.ElapsedMilliseconds,
-                        delta.InputTokens,
-                        delta.OutputTokens,
-                        delta.Total,
-                        after.Total);
-
-                    await next(innerCtx);
-                });
-
-                StepContext.Current.Value = prev;
-            });
-        }
 
         // run
-        public async Task<AgentResponse> InvokeAsync(string goal, CancellationToken ct = default)
+        public virtual async Task<AgentResponse> InvokeAsync(string goal, CancellationToken ct = default, Action<object>? stream = null)
         {
+            bool responseSet = false;
             using (var scope = _services.CreateScope())
             {
                 var ctx = new AgentContext(scope.ServiceProvider, ct) { UserRequest = goal };
@@ -223,14 +177,16 @@ namespace Agenty.AgentCore.Runtime
                 {
                     //load history to current context
                     ctx.ScratchPad.Clone(_memory);
-                    ctx.ScratchPad.AddUser(goal);
+                    ctx.Stream = stream;
 
                     // Execute pipeline
-                    await _pipeline(ctx);
+                    var executor = _executorFactory!();
+                    await executor.ExecuteAsync(ctx);
 
                     // Update persistent history ONLY after success
                     _memory.AddUser(goal);
                     _memory.AddAssistant(ctx.Response.Message);
+                    responseSet = true;
                 }
                 catch (Exception ex)
                 {
@@ -239,7 +195,22 @@ namespace Agenty.AgentCore.Runtime
                     logger?.LogError(ex, "Agent execution failed");
                     ctx.SetResult("Error: " + ex.Message, null);
                 }
-
+                finally
+                {
+                    if (ctx.CancellationToken.IsCancellationRequested)
+                    {
+                        ctx.ScratchPad.AddAssistant("Operation canceled by user");
+                        if (!responseSet)
+                        {
+                            ctx.SetResult("Error: Operation canceled by user.", null);
+                        }
+                    }
+                    else if (!responseSet)
+                    {
+                        // Ensure some response is set
+                        ctx.SetResult("Error: Agent failed to produce a response.", null);
+                    }
+                }
                 return ctx.Response;
             }
         }

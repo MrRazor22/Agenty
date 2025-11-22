@@ -1,6 +1,6 @@
 ﻿using Agenty.AgentCore.TokenHandling;
 using Agenty.LLMCore.Providers.OpenAI;
-using Agenty.LLMCore.RuntIme;
+using Agenty.LLMCore.Runtime;
 using Agenty.LLMCore.ToolHandling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

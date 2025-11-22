@@ -9,7 +9,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Agenty.LLMCore.RuntIme
+namespace Agenty.LLMCore.Runtime
 {
     public abstract class LLMRequestBase
     {
@@ -120,10 +120,6 @@ namespace Agenty.LLMCore.RuntIme
             LLMStructuredRequest request,
             CancellationToken ct = default,
             Action<LLMStreamChunk>? onStream = null);
-
-        Task<IReadOnlyList<ToolCallResult>> RunToolCalls(
-            List<ToolCall> calls,
-            CancellationToken ct = default);
     }
 
 
@@ -148,6 +144,8 @@ namespace Agenty.LLMCore.RuntIme
         public float? Temperature { get; set; }
         public float? TopP { get; set; }
         public int? MaxOutputTokens { get; set; }
+        public int? Seed { get; set; }
+        public IReadOnlyList<string>? StopSequences { get; set; }
     }
 
     public abstract class LLMResponseBase

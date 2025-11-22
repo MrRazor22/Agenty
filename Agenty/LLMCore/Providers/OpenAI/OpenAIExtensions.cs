@@ -1,7 +1,7 @@
 ﻿using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.JsonSchema;
 using Agenty.LLMCore.Messages;
-using Agenty.LLMCore.RuntIme;
+using Agenty.LLMCore.Runtime;
 using Agenty.LLMCore.ToolHandling;
 using OpenAI;
 using OpenAI.Chat;
@@ -87,22 +87,47 @@ namespace Agenty.LLMCore.Providers.OpenAI
             }
         }
 
-        public static void ApplySamplingOptions(this ChatCompletionOptions opts, LLMRequestBase? options)
+        public static void ApplySamplingOptions(
+    this ChatCompletionOptions opts,
+    LLMRequestBase? options)
         {
-            if (options.Sampling == null)
+            // No sampling → still apply reasoning mode
+            if (options?.Sampling == null)
             {
                 ApplyReasoningMode(opts, options);
                 return;
             }
 
-            if (options.Sampling.Temperature != null)
-                opts.Temperature = options.Sampling.Temperature;
+            var s = options.Sampling;
 
-            if (options.Sampling.TopP != null)
-                opts.TopP = options.Sampling.TopP;
+            // --- Temperature ---
+            if (s.Temperature != null)
+                opts.Temperature = s.Temperature;
 
-            if (options.Sampling.MaxOutputTokens != null)
-                opts.MaxOutputTokenCount = options.Sampling.MaxOutputTokens;
+            // --- TopP ---
+            if (s.TopP != null)
+                opts.TopP = s.TopP;
+
+            // --- Max tokens ---
+            if (s.MaxOutputTokens != null)
+                opts.MaxOutputTokenCount = s.MaxOutputTokens;
+
+            // --- Seed (deterministic output) ---
+            // Suppress diagnostic OPENAI001: 'OpenAI.Chat.ChatCompletionOptions.Seed' is for evaluation purposes only and is subject to change or removal in future updates.
+#pragma warning disable OPENAI001
+            if (s.Seed != null)
+                opts.Seed = s.Seed;
+#pragma warning restore OPENAI001
+
+            // --- Stop sequences ---
+            if (s.StopSequences != null && s.StopSequences.Count > 0)
+            {
+                foreach (var stop in s.StopSequences)
+                    opts.StopSequences.Add(stop);
+            }
+
+            // Also allow reasoning mode to override if needed
+            ApplyReasoningMode(opts, options);
         }
 
         private static void ApplyReasoningMode(ChatCompletionOptions opts, LLMRequestBase options)

@@ -1,12 +1,9 @@
 ﻿using Agenty.AgentCore.Runtime;
-using Agenty.AgentCore.Steps;
 using Agenty.LLMCore.BuiltInTools;
-using Agenty.LLMCore.RuntIme;
+using Agenty.LLMCore.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
-using System.Text;
-using System.Threading;
 
 namespace TestApp
 {
@@ -21,7 +18,7 @@ namespace TestApp
 
                 builder.AddContextTrimming(o =>
                 {
-                    o.MaxContextTokens = 16000;
+                    o.MaxContextTokens = 8000;
                     o.Margin = 0.8;
                 });
 
@@ -39,7 +36,7 @@ namespace TestApp
 
                 Log.Logger = new LoggerConfiguration()
                     .MinimumLevel.Verbose()
-                    .WriteTo.File("D:\\agent.log", rollingInterval: RollingInterval.Day)
+                    .WriteTo.File("D:\\agenty\\agent.log", rollingInterval: RollingInterval.Day)
                     .CreateLogger();
 
                 builder.Services.Configure<LoggerFilterOptions>(opts =>
@@ -67,29 +64,8 @@ namespace TestApp
                    .WithTools<ConversionTools>()
                    .WithTools<MathTools>()
                    .WithTools<SearchTools>()
-                   .Use(() => new ToolCallingStep(toolMode: ToolCallMode.OneTool))
-                   .Use<PlanningStep>()
-                   .Use<ErrorHandlingStep>()
-               .Use(async (ctx, next) =>
-               {
-                   bool started = false;
 
-                   ctx.Stream = s =>
-                   {
-                       if (string.IsNullOrWhiteSpace(s))
-                           return;
-
-                       if (!started)
-                       {
-                           Console.Write("[stream] ");
-                           started = true;
-                       }
-
-                       Console.Write(s);
-                   };
-
-                   await next(ctx);
-               });
+                   .UseExecutor(() => new ToolCallingLoop(mode: ReasoningMode.Creative));
 
 
                 while (true)
@@ -118,11 +94,11 @@ namespace TestApp
                         }
                     });
 
-                    Console.WriteLine("\nProcessing...\n");
+                    Console.WriteLine("\nthinking...");
 
                     try
                     {
-                        var result = await app.InvokeAsync(goal, cts.Token);
+                        var result = await app.InvokeAsync(goal, cts.Token, s => Console.Write(s));
 
                         var msg = result.Message?.Trim();
                         if (string.IsNullOrWhiteSpace(msg))
