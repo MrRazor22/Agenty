@@ -1,11 +1,6 @@
-﻿using Agenty.LLMCore.ToolHandling;
-using System;
-using System.Collections.Generic;
+﻿using Agenty.ToolHandling;
 using System.ComponentModel;
-using System.Linq;
-using System.Net.Http;
 using System.Text.Json.Nodes;
-using System.Threading.Tasks;
 
 namespace Agenty.LLMCore.BuiltInTools
 {
