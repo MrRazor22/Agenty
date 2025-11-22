@@ -54,18 +54,6 @@ namespace Agenty.LLMCore.ChatHandling
             return convo.Add(Role.Tool, result);
         }
 
-        public static Conversation Clone(this Conversation target, Conversation source, ChatFilter filter = ChatFilter.All)
-        {
-            target.Clear();
-
-            foreach (var message in source)
-            {
-                if (!ShouldInclude(message, filter)) continue;
-                target.Add(message.Role, message.Content);
-            }
-
-            return target;
-        }
         public static Conversation Clone(this Conversation source, ChatFilter filter = ChatFilter.All)
         {
             var copy = new Conversation();
@@ -140,16 +128,6 @@ namespace Agenty.LLMCore.ChatHandling
             return lastText != null &&
                    string.Equals(lastText.Text.Trim(), newMessage.Trim(), StringComparison.OrdinalIgnoreCase);
         }
-
-        public static bool IsToolAlreadyCalled(this Conversation chat, ToolCall toolCall)
-        {
-            var argKey = toolCall.Arguments != null ? toolCall.Arguments.NormalizeArgs() : "";
-
-            return chat.Any(m =>
-                m.Content is ToolCall &&
-                ((ToolCall)m.Content).Name == toolCall.Name &&
-                ((ToolCall)m.Content).Arguments.NormalizeArgs() == argKey);
-        }
         public static bool ExistsIn(this ToolCall call, Conversation chat, IEnumerable<ToolCall>? also = null)
         {
             var key = call.Arguments?.NormalizeArgs() ?? "";
@@ -191,24 +169,13 @@ namespace Agenty.LLMCore.ChatHandling
             }
             return chat;
         }
-
-        public static string? GetCurrentUserRequest(this Conversation chat)
+        public static IEnumerable<Chat> Filter(this Conversation convo, ChatFilter filter)
         {
-            var lastUser = chat.LastOrDefault(m => m.Role == Role.User);
-            var text = lastUser != null ? lastUser.Content as TextContent : null;
-            return text != null ? text.Text : null;
+            foreach (var msg in convo)
+                if (ShouldInclude(msg, filter))
+                    yield return msg;
         }
 
-        public static Conversation GetScopedFromLastUser(this Conversation chat)
-        {
-            var lastUserIndex = chat.FindLastIndex(m => m.Role == Role.User);
-            if (lastUserIndex < 0)
-                throw new InvalidOperationException("No user message found in conversation.");
-
-            return new Conversation(
-                chat.Skip(lastUserIndex).Where(m => m.Role != Role.System)
-            );
-        }
         private static bool ShouldInclude(Chat chat, ChatFilter filter)
         {
             return chat.Role switch

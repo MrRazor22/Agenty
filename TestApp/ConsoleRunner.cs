@@ -54,9 +54,8 @@ namespace TestApp
                 Log.Information("Logger initialized");
 
                 app = builder.Build();
-                await app.LoadHistoryAsync("default");
 
-                app.WithSystemPrompt(
+                app.WithInstructions(
                      "You are an AI agent, execute all user requests faithfully."
                  )
                    .WithTools<GeoTools>()
@@ -115,12 +114,6 @@ namespace TestApp
                     {
                         Console.WriteLine("\n[Cancelled]\n");
                     }
-                    finally
-                    {
-                        if (app != null)
-                            await app.SaveHistoryAsync("default");
-                    }
-
                 }
             }
             catch (Exception ex)

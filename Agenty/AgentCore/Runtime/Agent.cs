@@ -1,4 +1,5 @@
-﻿using Agenty.AgentCore.TokenHandling;
+﻿using Agenty.AgentCore.Memory;
+using Agenty.AgentCore.TokenHandling;
 using Agenty.LLMCore.ChatHandling;
 using Agenty.LLMCore.Runtime;
 using Agenty.LLMCore.ToolHandling;
@@ -11,7 +12,7 @@ using System.Threading.Tasks;
 
 namespace Agenty.AgentCore.Runtime
 {
-    // === 1. Context (like HttpContext) ===
+    // === 1. Context ===
     public interface IAgentContext
     {
         Conversation ScratchPad { get; }
@@ -39,10 +40,10 @@ namespace Agenty.AgentCore.Runtime
     {
         private readonly AgentResponse _response = new AgentResponse();
 
-        public AgentContext(IServiceProvider services, CancellationToken cancellationToken = default)
+        public AgentContext(IServiceProvider services, CancellationToken ct = default)
         {
             Services = services;
-            CancellationToken = cancellationToken;
+            CancellationToken = ct;
             ScratchPad = new Conversation();
             Items = new Dictionary<string, object?>();
         }
@@ -57,14 +58,14 @@ namespace Agenty.AgentCore.Runtime
         public void SetResult(string? message, object? payload) => _response.Set(message, payload);
     }
 
-    // === 2. AgentBuilder (like WebApplicationBuilder) ===
+    // === 2. AgentBuilder ===
     public sealed class AgentBuilder
     {
         public IServiceCollection Services { get; } = new ServiceCollection();
 
         public AgentBuilder()
         {
-            Services.AddSingleton<IConversationStore, FileConversationStore>();
+            Services.AddSingleton<IMemoryStore, FileMemoryStore>();
             Services.AddSingleton<ITokenizer, SharpTokenTokenizer>();
             Services.AddSingleton<ToolRegistryCatalog>();
             Services.AddSingleton<IToolRegistry>(sp => sp.GetRequiredService<ToolRegistryCatalog>());
@@ -73,144 +74,132 @@ namespace Agenty.AgentCore.Runtime
             Services.AddSingleton<IContextTrimmer>(sp =>
             {
                 var tokenizer = sp.GetRequiredService<ITokenizer>();
-                var opts = new ContextTrimOptions(); // default: 8000, margin 0.8
-                return new SlidingWindowTrimmer(tokenizer, opts);
+                return new SlidingWindowTrimmer(tokenizer, new ContextTrimOptions());
             });
-
             Services.AddSingleton<ITokenManager, TokenManager>();
             Services.AddSingleton<IRetryPolicy, DefaultRetryPolicy>();
-            Services.Configure<RetryPolicyOptions>(_ => { }); // default values
-            Services.AddLogging(builder =>
+            Services.Configure<RetryPolicyOptions>(_ => { });
+            Services.AddLogging(b => b.AddSimpleConsole(o =>
             {
-                builder.AddSimpleConsole(options =>
-                {
-                    options.SingleLine = false;
-                    options.TimestampFormat = "hh:mm:ss ";
-                    options.UseUtcTimestamp = false;
-                    options.IncludeScopes = false;
-                });
-            });
+                o.SingleLine = false;
+                o.TimestampFormat = "hh:mm:ss ";
+            }));
             Services.AddSingleton<IAgentExecutor, ToolCallingLoop>();
         }
-        public Agent Build()
+
+        public Agent Build() => Build("default");
+
+        public Agent Build(string sessionId)
         {
             var provider = Services.BuildServiceProvider(validateScopes: true);
-            var hasLLM = provider.GetService<ILLMClient>() != null;
 
-            if (!hasLLM)
-                Console.WriteLine("[Warning] No LLM client/coordinator registered. Tool calls or planning may fail.");
+            if (provider.GetService<ILLMClient>() == null)
+                Console.WriteLine("[Warning] No LLM client registered.");
 
-            return new Agent(provider);
+            return new Agent(provider, sessionId);
         }
     }
 
+    // === 3. Agent ===
     public interface IAgent
     {
-        Task<AgentResponse> InvokeAsync(string goal, CancellationToken cancellationToken = default, Action<object>? stream = null);
+        string SessionId { get; }
+        Task<AgentResponse> InvokeAsync(string goal, CancellationToken ct = default, Action<object>? stream = null);
     }
-    // === 3. Agent (like WebApplication) ===
+
     public class Agent : IAgent
     {
         private readonly IServiceProvider _services;
-        private readonly Conversation _memory = new Conversation();
-        private readonly IConversationStore? _store;
-        private Func<IAgentExecutor>? _executorFactory;
-        public IServiceProvider Services => _services;
-        public Conversation ChatMemory => _memory;
+        private readonly IMemoryStore _memoryStore;
+        private Func<IAgentExecutor> _executorFactory;
+        private string? _systemPrompt;
+        private Conversation _memory = new Conversation();
+        private bool _loaded;
 
-        internal Agent(IServiceProvider services)
+        public IServiceProvider Services => _services;
+        public string SessionId { get; }
+
+        internal Agent(IServiceProvider services, string sessionId)
         {
             _services = services;
-            _store = _services.GetService<IConversationStore>();
-            _executorFactory = () => _services.GetRequiredService<IAgentExecutor>();
+            SessionId = sessionId;
+            _memoryStore = services.GetService<IMemoryStore>() ?? NullMemoryStore.Instance;
+            _executorFactory = () => services.GetRequiredService<IAgentExecutor>();
         }
 
-        // Configure runtime (like app.MapXyz / app.UseXyz)
-        public Agent WithTools<T>(params string[] tags)
+        public Agent WithTools<T>()
         {
-            _services.GetRequiredService<IToolRegistry>().RegisterAll<T>(tags);
+            _services.GetRequiredService<IToolRegistry>().RegisterAll<T>();
             return this;
         }
 
-        public Agent WithTools<T>(T instance, params string[] tags)
+        public Agent WithTools<T>(T instance)
         {
-            _services.GetRequiredService<IToolRegistry>().RegisterAll(instance, tags);
+            _services.GetRequiredService<IToolRegistry>().RegisterAll(instance);
             return this;
         }
 
-        public Agent WithSystemPrompt(string prompt)
+        public Agent WithInstructions(string prompt)
         {
-            _memory.AddSystem(prompt);
+            _systemPrompt = prompt;
             return this;
         }
 
         public Agent UseExecutor(Func<IAgentExecutor> factory)
         {
-            _executorFactory = factory ?? throw new ArgumentException(nameof(factory));
+            _executorFactory = factory ?? throw new ArgumentNullException(nameof(factory));
             return this;
         }
 
-        // === Load/save conversation history explicitly ===
-        public async Task LoadHistoryAsync(string sessionId)
+        public virtual async Task<AgentResponse> InvokeAsync(
+            string goal,
+            CancellationToken ct = default,
+            Action<object>? stream = null)
         {
-            if (_store == null) return;
-            var past = await _store.LoadAsync(sessionId);
-            if (past != null)
-                _memory.Clone(past);
-        }
-
-        public async Task SaveHistoryAsync(string sessionId)
-        {
-            if (_store == null) return;
-            await _store.SaveAsync(sessionId, _memory);
-        }
-
-        // run
-        public virtual async Task<AgentResponse> InvokeAsync(string goal, CancellationToken ct = default, Action<object>? stream = null)
-        {
-            bool responseSet = false;
-            using (var scope = _services.CreateScope())
+            using var scope = _services.CreateScope();
+            var ctx = new AgentContext(scope.ServiceProvider, ct)
             {
-                var ctx = new AgentContext(scope.ServiceProvider, ct) { UserRequest = goal };
+                UserRequest = goal,
+                Stream = stream
+            };
 
-                try
+            try
+            {
+                // Lazy load from store
+                if (!_loaded)
                 {
-                    //load history to current context
-                    ctx.ScratchPad.Clone(_memory);
-                    ctx.Stream = stream;
+                    var stored = await _memoryStore.LoadAsync(SessionId).ConfigureAwait(false);
+                    if (stored != null)
+                        _memory = stored;
+                    _loaded = true;
+                }
 
-                    // Execute pipeline
-                    var executor = _executorFactory!();
-                    await executor.ExecuteAsync(ctx);
+                // Build scratchpad: system prompt first, then memory
+                if (_systemPrompt != null)
+                    ctx.ScratchPad.AddSystem(_systemPrompt);
+                ctx.ScratchPad.Append(_memory);
 
-                    // Update persistent history ONLY after success
-                    _memory.AddUser(goal);
-                    _memory.AddAssistant(ctx.Response.Message);
-                    responseSet = true;
-                }
-                catch (Exception ex)
-                {
-                    // Failure = scratchpad discarded, memory unchanged
-                    var logger = ctx.Services.GetService<ILogger<Agent>>();
-                    logger?.LogError(ex, "Agent execution failed");
-                    ctx.SetResult("Error: " + ex.Message, null);
-                }
-                finally
-                {
-                    if (ctx.CancellationToken.IsCancellationRequested)
-                    {
-                        ctx.ScratchPad.AddAssistant("Operation canceled by user");
-                        if (!responseSet)
-                        {
-                            ctx.SetResult("Error: Operation canceled by user.", null);
-                        }
-                    }
-                    else if (!responseSet)
-                    {
-                        // Ensure some response is set
-                        ctx.SetResult("Error: Agent failed to produce a response.", null);
-                    }
-                }
+                // Execute
+                var executor = _executorFactory();
+                await executor.ExecuteAsync(ctx).ConfigureAwait(false);
+
+                // Success: update memory and persist
+                _memory!.AddUser(goal);
+                _memory.AddAssistant(ctx.Response.Message);
+                await _memoryStore.SaveAsync(SessionId, (Conversation)_memory.Filter(~ChatFilter.System)).ConfigureAwait(false);
+
+                return ctx.Response;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                ctx.SetResult("Error: Operation canceled by user.", null);
+                return ctx.Response;
+            }
+            catch (Exception ex)
+            {
+                var logger = scope.ServiceProvider.GetService<ILogger<Agent>>();
+                logger?.LogError(ex, "Agent execution failed");
+                ctx.SetResult($"Error: {ex.Message}", null);
                 return ctx.Response;
             }
         }

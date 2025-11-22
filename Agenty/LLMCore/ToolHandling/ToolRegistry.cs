@@ -13,22 +13,15 @@ namespace Agenty.LLMCore.ToolHandling
     public interface IToolCatalog
     {
         IReadOnlyList<Tool> RegisteredTools { get; }
-        Tool Get(Delegate func);   // return null if not found
-        Tool Get(string toolName); // return null if not found
-
-        IEnumerable<Tool> GetTools(params Type[] toolTypes);
-        IEnumerable<Tool> GetByTags(bool include = true, params string[] tags);
-
+        Tool Get(string toolName); // return null if not found  
         bool Contains(string toolName);
     }
 
     internal interface IToolRegistry
     {
         void Register(params Delegate[] funcs);
-        void Register(Delegate func, params string[] tags);
-
-        void RegisterAll<T>(params string[] tags);
-        void RegisterAll<T>(T instance, params string[] tags);
+        void RegisterAll<T>();
+        void RegisterAll<T>(T instance);
     }
 
     internal class ToolRegistryCatalog : IToolRegistry, IToolCatalog
@@ -55,15 +48,7 @@ namespace Agenty.LLMCore.ToolHandling
                 _registeredTools.Add(tool);
             }
         }
-        public void Register(Delegate func, params string[] tags)
-        {
-            var tool = CreateToolFromDelegate(func);
-            if (tags?.Length > 0)
-                tool.Tags.AddRange(tags.Distinct(StringComparer.OrdinalIgnoreCase));
-
-            _registeredTools.Add(tool);
-        }
-        public void RegisterAll<T>(params string[] tags)
+        public void RegisterAll<T>()
         {
             var methods = typeof(T)
                 .GetMethods(BindingFlags.Public | BindingFlags.Static)
@@ -83,7 +68,7 @@ namespace Agenty.LLMCore.ToolHandling
                         method
                     );
 
-                    Register(del, tags);
+                    Register(del);
                 }
                 catch
                 {
@@ -92,7 +77,7 @@ namespace Agenty.LLMCore.ToolHandling
             }
         }
 
-        public void RegisterAll<T>(T instance, params string[] tags)
+        public void RegisterAll<T>(T instance)
         {
             var methods = typeof(T)
                 .GetMethods(BindingFlags.Public | BindingFlags.Instance)
@@ -115,7 +100,7 @@ namespace Agenty.LLMCore.ToolHandling
                     );
 
                     if (del != null)
-                        Register(del, tags);
+                        Register(del);
                 }
                 catch
                 {
@@ -123,28 +108,6 @@ namespace Agenty.LLMCore.ToolHandling
                 }
             }
         }
-
-        public Tool? Get(Delegate func)
-        {
-            if (func == null) throw new ArgumentNullException(nameof(func));
-            var method = func.Method;
-            return _registeredTools.FirstOrDefault(t => t.Function?.Method == method);
-        }
-        public IEnumerable<Tool> GetTools(params Type[] types)
-        {
-            return _registeredTools.Where(t =>
-                t.Function?.Method.DeclaringType != null &&
-                types.Contains(t.Function.Method.DeclaringType));
-        }
-        public IEnumerable<Tool> GetByTags(bool include = true, params string[] tags)
-        {
-            if (tags == null || tags.Length == 0) return _registeredTools;
-
-            return include
-                ? _registeredTools.Where(t => t.Tags.Any(tag => tags.Contains(tag, StringComparer.OrdinalIgnoreCase)))
-                : _registeredTools.Where(t => !t.Tags.Any(tag => tags.Contains(tag, StringComparer.OrdinalIgnoreCase)));
-        }
-
 
         public bool Contains(string toolName) => _registeredTools.Any(t =>
                 t.Name.Equals(toolName, StringComparison.OrdinalIgnoreCase));
@@ -187,11 +150,8 @@ namespace Agenty.LLMCore.ToolHandling
                 Name = method.Name,
                 Description = description,
                 ParametersSchema = schema, // already JObject
-                Function = func,
-                Tags = new List<string>()
+                Function = func
             };
         }
-
-        public override string ToString() => RegisteredTools.ToJoinedString();
     }
 }

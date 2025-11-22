@@ -21,9 +21,6 @@ namespace Agenty.LLMCore.ToolHandling
         [JsonIgnore]
         public Delegate? Function { get; set; }
 
-        [JsonIgnore]
-        public List<string> Tags { get; set; } = new List<string>();
-
         public override string ToString()
         {
             var props = ParametersSchema?["properties"] as JObject;
