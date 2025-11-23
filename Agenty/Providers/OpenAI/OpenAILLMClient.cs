@@ -170,7 +170,16 @@ namespace Agenty.Providers.OpenAI
 
                         var delta = tcu.FunctionArgumentsUpdate?.ToString();
                         if (!string.IsNullOrEmpty(delta))
+                        {
                             toolArgsSb.Append(delta);
+
+                            // Emit delta
+                            // Emit
+                            yield return new LLMStreamChunk(
+                                StreamKind.ToolCallDelta,
+                                new ToolCallDelta { Name = toolName, Delta = delta }
+                                );
+                        }
                     }
                 }
 

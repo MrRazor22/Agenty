@@ -201,8 +201,8 @@ namespace Agenty.LLMCore
     public enum StreamKind
     {
         Text,
-        ToolCall,
         ToolCallDelta,
+        ToolCall,
         Usage,
         Finish,
         // future:
@@ -241,7 +241,13 @@ namespace Agenty.LLMCore
 
         public static ToolCall? AsToolCall(this LLMStreamChunk chunk)
             => chunk.Payload as ToolCall;
-
+        public static ToolCallDelta AsToolCallDelta(this LLMStreamChunk chunk)
+            => chunk.Payload as ToolCallDelta;
+    }
+    public class ToolCallDelta
+    {
+        public string? Name { get; set; }
+        public string? Delta { get; set; }
     }
 
 }

@@ -14,11 +14,13 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 
 namespace Agenty.LLMCore
 {
     public abstract class LLMClientBase : ILLMClient
     {
+        string? loggedToolName = null;
         private int _currInTokensSoFar;
         private int _currOutTokensSoFar;
         private string _currFinishReason;
@@ -89,7 +91,15 @@ namespace Agenty.LLMCore
                     if (_logger.IsEnabled(LogLevel.Trace))
                         _logger.LogTrace("◄ Inbound Stream: {Text}", liveLog.ToString());
                 }
+                // Log
+                else if (chunk.Kind == StreamKind.ToolCallDelta)
+                {
+                    var td = chunk.AsToolCallDelta();
+                    liveLog.Append(td.Delta);
 
+                    if (_logger.IsEnabled(LogLevel.Trace))
+                        _logger.LogTrace("◄ [{Name}] Args: {Args}", td.Name, liveLog.ToString());
+                }
                 if (chunk.Kind == StreamKind.Usage)
                 {
                     if (chunk.InputTokens.HasValue)
