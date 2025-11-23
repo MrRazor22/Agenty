@@ -1,4 +1,4 @@
-﻿using Agenty.ChatHandling;
+﻿using Agenty.Chat;
 using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;

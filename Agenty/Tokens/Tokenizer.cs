@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace Agenty.TokenHandling
+namespace Agenty.Tokens
 {
     public interface ITokenizer
     {

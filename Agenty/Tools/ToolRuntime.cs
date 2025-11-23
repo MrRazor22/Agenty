@@ -1,4 +1,4 @@
-﻿using Agenty.ChatHandling;
+﻿using Agenty.Chat;
 using Agenty.JsonSchema;
 using Microsoft.Extensions.Logging;
 using System;
@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Agenty.ToolHandling
+namespace Agenty.Tools
 {
     public interface IToolRuntime
     {

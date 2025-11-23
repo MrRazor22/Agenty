@@ -1,7 +1,7 @@
-﻿using Agenty.ChatHandling;
+﻿using Agenty.Chat;
 using Agenty.LLMCore;
-using Agenty.TokenHandling;
-using Agenty.ToolHandling;
+using Agenty.Tokens;
+using Agenty.Tools;
 using Agenty.Utils;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;

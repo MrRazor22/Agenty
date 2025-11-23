@@ -1,4 +1,4 @@
-﻿using Agenty.ChatHandling;
+﻿using Agenty.Chat;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Linq;

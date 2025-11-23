@@ -1,6 +1,6 @@
-﻿using Agenty.ChatHandling;
+﻿using Agenty.Chat;
 using Agenty.LLMCore;
-using Agenty.ToolHandling;
+using Agenty.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using System.Collections.Generic;
 using System.Linq;

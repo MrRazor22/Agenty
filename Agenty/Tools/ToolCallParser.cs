@@ -1,4 +1,4 @@
-﻿using Agenty.ChatHandling;
+﻿using Agenty.Chat;
 using Agenty.JsonSchema;
 using Newtonsoft.Json.Linq;
 using System;
@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 
-namespace Agenty.ToolHandling
+namespace Agenty.Tools
 {
     public sealed class InlineTools
     {

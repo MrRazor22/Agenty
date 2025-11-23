@@ -1,7 +1,7 @@
-﻿using Agenty.ChatHandling;
+﻿using Agenty.Chat;
 using Agenty.JsonSchema;
 using Agenty.LLMCore;
-using Agenty.ToolHandling;
+using Agenty.Tools;
 using OpenAI;
 using OpenAI.Chat;
 using SharpToken;

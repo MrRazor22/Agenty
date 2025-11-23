@@ -3,7 +3,7 @@ using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 
-namespace Agenty.ChatHandling
+namespace Agenty.Chat
 {
     public enum Role { System, Assistant, User, Tool }
 

@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Agenty.ToolHandling
+namespace Agenty.Tools
 {
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class ToolAttribute : Attribute

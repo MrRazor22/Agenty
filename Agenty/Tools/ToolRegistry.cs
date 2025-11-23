@@ -8,7 +8,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading;
 
-namespace Agenty.ToolHandling
+namespace Agenty.Tools
 {
     public interface IToolCatalog
     {

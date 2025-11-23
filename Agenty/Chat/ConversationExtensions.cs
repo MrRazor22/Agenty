@@ -5,7 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Agenty.ChatHandling
+namespace Agenty.Chat
 {
     [Flags]
     public enum ChatFilter

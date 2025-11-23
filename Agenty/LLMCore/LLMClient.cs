@@ -1,5 +1,5 @@
-﻿using Agenty.ChatHandling;
-using Agenty.ToolHandling;
+﻿using Agenty.Chat;
+using Agenty.Tools;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
