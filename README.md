@@ -23,7 +23,7 @@ dotnet add package AgentCore
 ``` 
 
 ## ⚡ Quick Start
-Build an agent in ~20 lines:
+Build an agent in ~15 lines:
 
 ```csharp
 using AgentCore;
