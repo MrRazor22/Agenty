@@ -40,7 +40,7 @@ var builder = AgentCore.CreateBuilder()
 var agent = builder.Build("session-1")
     .WithInstructions("You are a helpful assistant.")
     .WithTools<MathTools>() // Register tools via attributes
-    .UseExecutor(new ToolCallingLoop(ReasoningMode.Balanced, maxIterations: 5)); // Core loop
+    .UseExecutor(new ToolCallingLoop(ReasoningMode.Creative, maxIterations: 5)); // Can be provided with custom executor
 
 var response = await agent.InvokeAsync("What's 15% of 250? Explain step-by-step.");
 Console.WriteLine(response.Message); // "37.5 - First, convert 15% to decimal..."
@@ -86,13 +86,19 @@ public class CalcTools
 ```
 
 ### 4. Custom Executor
-Extend `IAgentExecutor` for advanced flows (e.g., multi-tool parallel if your LLM supports it).
+Just implement the `IAgentExecutor` for building your own agent flow.
+```csharp
+interface IAgentExecutor
+{
+    Task ExecuteAsync(IAgentContext ctx);
+}
+```
 
 ### 5. Structured Responses
 ```csharp
 var person = await client.GetStructuredAsync<Person>(
     "Extract name and age from: John is 42.",
-    sampling: new() { Temperature = 0.1f }
+    mode: ReasoningMode.Deterministic
 );
 ```
 
