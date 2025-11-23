@@ -8,7 +8,6 @@ Built for both .Net core and legacy .Net frameworks, it integrates seamlessly wi
 
 ## 🚀 Features
 - **Tool-Centric Design**: Register tools via attributes or delegates; auto-generate JSON schemas for LLM calls.
-- **Reasoning Pipeline**: Composable steps (e.g., plan → tool call → finalize) with middleware for logging/metrics.
 - **Streaming & Retries**: Native token streaming, exponential backoff retries, and context trimming to stay under limits.
 - **Structured Outputs**: Typed responses with schema and Tool calls are validation—parse JSON safely or fallback gracefully.
 - **Memory via Chat History**: Episodic memory out-of-the-box; persist to files (no DB deps). Extend to custom memory solutions (e.g., Rag based mempry retrieval).
