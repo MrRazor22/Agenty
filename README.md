@@ -1,13 +1,13 @@
 # AgentCore - Lightweight C# Framework for creating LLM-Powered Agents
 
-[![NuGet Version](https://img.shields.io/nuget/v/Agenty.Core)](https://www.nuget.org/packages/Agenty.Core) [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/your-org/Agenty/actions) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![NuGet Version](https://img.shields.io/nuget/v/AgentyCore)](https://www.nuget.org/packages/Agenty.Core) [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/your-org/Agenty/actions) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Agenty is a minimal, extensible .NET framework for building single-agent LLM applications. Inspired by the need for simplicity in .NET ecosystems, it focuses on clean tool orchestration, structured reasoning, and low-overhead pipelines—without the bloat of full kernels. Perfect for internal tools, prototypes, or production micro-agents where you want full control without ceremony.
+Agenty is a minimal, extensible .NET framework for building single-agent LLM apps. Inspired by the need for simplicity in .NET ecosystems, it focuses on clean tool orchestration without the bloat of full kernels. Perfect for internal tools, prototypes, or production micro-agents where you want full control without ceremony.
 
-Built for both .Net core and legacy .Net frameworks, it integrates seamlessly with OpenAI-compatible LLMs (e.g., Azure OpenAI, LM Studio) and supports easy provider swaps. No multi-agent complexity—just pure, reliable single-agent flows.
+Runs on .NET Standard 2.0 (Core/Framework compat), it integrates seamlessly with OpenAI-compatible LLMs (e.g., Azure OpenAI, LM Studio) and supports easy provider swaps. No multi-agent complexity—just pure, reliable single-agent flows.
 
 ## 🚀 Features
-- **Tool-Centric Design**: Register tools via attributes or delegates; auto-generate JSON schemas for LLM calls.
+- **Tool-Centric Design**: Register tools via attributes `[Tool]`; auto-generate JSON schemas for LLM calls.
 - **Streaming & Retries**: Native token streaming, exponential backoff retries, and context trimming to stay under limits.
 - **Structured Outputs**: Typed responses with schema and Tool calls are validation—parse JSON safely or fallback gracefully.
 - **Memory via Chat History**: Episodic memory out-of-the-box; persist to files (no DB deps). Extend to custom memory solutions (e.g., Rag based mempry retrieval).
@@ -87,10 +87,12 @@ public class CalcTools
 ### 4. Custom Executor
 Just implement the `IAgentExecutor` for building your own agent flow.
 ```csharp
-interface IAgentExecutor
-{
-    Task ExecuteAsync(IAgentContext ctx);
+public class MyExecutor : IAgentExecutor {
+    public async Task ExecuteAsync(IAgentContext ctx) {
+        //In Agnet ctx you get all services required to build your Agnet
+    }
 }
+// agent.UseExecutor(new MyExecutor());
 ```
 
 ### 5. Structured Responses
@@ -102,14 +104,12 @@ var person = await client.GetStructuredAsync<Person>(
 ```
 
 ## 🏗 Architecture
-
 ```
-AgentBuilder ──> IServiceProvider ──> Agent
-                     │
-                     ├── ILLMClient (OpenAI/Anthropic/...)
-                     ├── IToolRuntime (Invoke + Validate)
-                     ├── IAgentMemory (File/Redis/...)
-                     └── IAgentExecutor (ToolCallingLoop)
+AgentBuilder → IServiceProvider → Agent
+                  ↓
+ILLMClient (calls) | IToolRuntime (runs) | IAgentMemory (saves)
+                  ↓
+IAgentExecutor (loops: reason → tool → repeat)
 ```
 
 - **IAgentContext**: Scratchpad, streaming, DI scope per invoke.
@@ -117,8 +117,7 @@ AgentBuilder ──> IServiceProvider ──> Agent
 - **LLMRequest/Response**: Unified for text/tools/structured.
 
 ## 🤝 Contributing
-Fork & clone, Issues? Open one. Ideas? Discuss!
+Any interest in this is appreciated and contributions are always welcome!
 
 ## 📄 License
-
 MIT. See [LICENSE](LICENSE).
