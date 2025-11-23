@@ -7,7 +7,7 @@ using System.Linq;
 using System.Reflection;
 using Newtonsoft.Json.Linq;
 
-namespace Agenty.JsonSchema
+namespace AgentCore.JsonSchema
 {
     public static class JsonSchemaExtensions
     {

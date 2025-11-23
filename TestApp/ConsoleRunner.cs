@@ -1,7 +1,7 @@
-﻿using Agenty.AgentCore;
-using Agenty.BuiltInTools;
-using Agenty.LLMCore;
-using Agenty.LLMCore.BuiltInTools;
+﻿using AgentCore.Runtime;
+using AgentCore.BuiltInTools;
+using AgentCore.LLMCore;
+using AgentCore.LLMCore.BuiltInTools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;

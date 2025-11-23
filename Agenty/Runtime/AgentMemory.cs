@@ -1,10 +1,10 @@
-﻿using Agenty.Chat;
+﻿using AgentCore.Chat;
 using Newtonsoft.Json;
 using System;
 using System.IO;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore
+namespace AgentCore.Runtime
 {
     public interface IAgentMemory
     {

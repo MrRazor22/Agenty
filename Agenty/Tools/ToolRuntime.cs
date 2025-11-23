@@ -1,12 +1,12 @@
-﻿using Agenty.Chat;
-using Agenty.JsonSchema;
+﻿using AgentCore.Chat;
+using AgentCore.JsonSchema;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Agenty.Tools
+namespace AgentCore.Tools
 {
     public interface IToolRuntime
     {

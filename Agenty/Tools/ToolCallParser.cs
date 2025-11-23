@@ -1,12 +1,12 @@
-﻿using Agenty.Chat;
-using Agenty.JsonSchema;
+﻿using AgentCore.Chat;
+using AgentCore.JsonSchema;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 
-namespace Agenty.Tools
+namespace AgentCore.Tools
 {
     public sealed class InlineTools
     {

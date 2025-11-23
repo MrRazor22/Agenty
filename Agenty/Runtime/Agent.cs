@@ -1,7 +1,7 @@
-﻿using Agenty.Chat;
-using Agenty.LLMCore;
-using Agenty.Tokens;
-using Agenty.Tools;
+﻿using AgentCore.Chat;
+using AgentCore.LLMCore;
+using AgentCore.Tokens;
+using AgentCore.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
@@ -9,7 +9,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore
+namespace AgentCore.Runtime
 {
     // === 1. Context ===
     public interface IAgentContext

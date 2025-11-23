@@ -1,12 +1,12 @@
-﻿using Agenty.Chat;
-using Agenty.LLMCore;
-using Agenty.Tools;
+﻿using AgentCore.Chat;
+using AgentCore.LLMCore;
+using AgentCore.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace Agenty.AgentCore
+namespace AgentCore.Runtime
 {
     public interface IAgentExecutor
     {

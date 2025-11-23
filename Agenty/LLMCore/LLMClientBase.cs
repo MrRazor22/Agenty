@@ -1,8 +1,8 @@
-﻿using Agenty.Chat;
-using Agenty.JsonSchema;
-using Agenty.Tokens;
-using Agenty.Tools;
-using Agenty.Utils;
+﻿using AgentCore.Chat;
+using AgentCore.JsonSchema;
+using AgentCore.Tokens;
+using AgentCore.Tools;
+using AgentCore.Utils;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -16,7 +16,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 
-namespace Agenty.LLMCore
+namespace AgentCore.LLMCore
 {
     public abstract class LLMClientBase : ILLMClient
     {

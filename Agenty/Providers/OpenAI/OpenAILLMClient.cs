@@ -1,8 +1,8 @@
-﻿using Agenty.Chat;
-using Agenty.LLMCore;
-using Agenty.Tokens;
-using Agenty.Tools;
-using Agenty.Utils;
+﻿using AgentCore.Chat;
+using AgentCore.LLMCore;
+using AgentCore.Tokens;
+using AgentCore.Tools;
+using AgentCore.Utils;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 using OpenAI;
@@ -17,7 +17,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Agenty.Providers.OpenAI
+namespace AgentCore.Providers.OpenAI
 {
     internal sealed class OpenAILLMClient : LLMClientBase
     {

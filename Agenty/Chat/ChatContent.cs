@@ -3,7 +3,7 @@ using Newtonsoft.Json.Linq;
 using System;
 using System.Linq;
 
-namespace Agenty.Chat
+namespace AgentCore.Chat
 {
     public interface IChatContent { }
 

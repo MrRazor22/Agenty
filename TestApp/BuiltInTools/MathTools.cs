@@ -1,7 +1,7 @@
-﻿using Agenty.Tools;
+﻿using AgentCore.Tools;
 using System.ComponentModel;
 
-namespace Agenty.BuiltInTools
+namespace AgentCore.BuiltInTools
 {
     class MathTools
     {

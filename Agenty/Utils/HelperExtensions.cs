@@ -1,4 +1,4 @@
-﻿using Agenty.Chat;
+﻿using AgentCore.Chat;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Linq;
@@ -9,7 +9,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace Agenty.Utils
+namespace AgentCore.Utils
 {
     public static class Helpers
     {

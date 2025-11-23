@@ -3,7 +3,7 @@ using RAGSharp.RAG;
 using RAGSharp.Stores;
 using System.ComponentModel;
 
-namespace Agenty.BuiltInTools
+namespace AgentCore.BuiltInTools
 {
     public class RAGTools
     {

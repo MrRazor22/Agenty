@@ -1,11 +1,11 @@
-﻿using Agenty.Tools;
+﻿using AgentCore.Tools;
 using System;
 using System.ComponentModel;
 using System.Net.Http;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 
-namespace Agenty.LLMCore.BuiltInTools
+namespace AgentCore.LLMCore.BuiltInTools
 {
     internal static class HttpDefaults
     {

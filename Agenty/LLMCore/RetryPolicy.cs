@@ -1,4 +1,4 @@
-﻿using Agenty.Chat;
+﻿using AgentCore.Chat;
 using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
@@ -6,7 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Agenty.LLMCore
+namespace AgentCore.LLMCore
 {
     public sealed class RetryPolicyOptions
     {

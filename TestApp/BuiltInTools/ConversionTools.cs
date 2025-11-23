@@ -1,8 +1,8 @@
-﻿using Agenty.Tools;
+﻿using AgentCore.Tools;
 using System.ComponentModel;
 using System.Text.Json;
 
-namespace Agenty.LLMCore.BuiltInTools
+namespace AgentCore.LLMCore.BuiltInTools
 {
     class ConversionTools
     {

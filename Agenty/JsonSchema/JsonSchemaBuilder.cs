@@ -1,7 +1,7 @@
 ﻿using Newtonsoft.Json.Linq;
 using System.Linq;
 
-namespace Agenty.JsonSchema
+namespace AgentCore.JsonSchema
 {
     public static class JsonSchemaConstants
     {

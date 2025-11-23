@@ -1,7 +1,7 @@
-﻿using Agenty.Chat;
-using Agenty.JsonSchema;
-using Agenty.LLMCore;
-using Agenty.Tools;
+﻿using AgentCore.Chat;
+using AgentCore.JsonSchema;
+using AgentCore.LLMCore;
+using AgentCore.Tools;
 using OpenAI;
 using OpenAI.Chat;
 using SharpToken;
@@ -9,7 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Agenty.Providers.OpenAI
+namespace AgentCore.Providers.OpenAI
 {
     public static class OpenAIExtensions
     {

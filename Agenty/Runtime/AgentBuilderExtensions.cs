@@ -1,12 +1,12 @@
-﻿using Agenty.LLMCore;
-using Agenty.Providers.OpenAI;
-using Agenty.Tokens;
-using Agenty.Tools;
+﻿using AgentCore.LLMCore;
+using AgentCore.Providers.OpenAI;
+using AgentCore.Tokens;
+using AgentCore.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
 
-namespace Agenty.AgentCore
+namespace AgentCore.Runtime
 {
     public static class AgentBuilderExtensions
     {

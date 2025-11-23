@@ -4,7 +4,7 @@ using System;
 using System.Linq;
 using System.Text.RegularExpressions;
 
-namespace Agenty.JsonSchema
+namespace AgentCore.JsonSchema
 {
     public static class JsonExtensions
     {

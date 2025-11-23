@@ -1,12 +1,12 @@
-﻿using Agenty.Chat;
-using Agenty.Tools;
+﻿using AgentCore.Chat;
+using AgentCore.Tools;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Agenty.LLMCore
+namespace AgentCore.LLMCore
 {
     public abstract class LLMRequestBase
     {

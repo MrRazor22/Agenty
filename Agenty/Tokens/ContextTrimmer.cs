@@ -1,10 +1,10 @@
-﻿using Agenty.Chat;
+﻿using AgentCore.Chat;
 using SharpToken;
 using System;
 using System.Linq;
 using System.Reflection;
 
-namespace Agenty.Tokens
+namespace AgentCore.Tokens
 {
     public sealed class ContextTrimOptions
     {
