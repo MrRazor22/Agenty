@@ -29,21 +29,20 @@ namespace Agenty.Providers.OpenAI
         public OpenAILLMClient(
             LLMInitOptions opts,
             IToolCatalog registry,
-            IToolRuntime runtime,
             IToolCallParser parser,
             ITokenizer tokenizer,
             IContextTrimmer trimmer,
             ITokenManager tokenManager,
             IRetryPolicy retryPolicy,
             ILogger<ILLMClient> logger
-        ) : base(opts, registry, runtime, parser, tokenizer, trimmer, tokenManager, retryPolicy, logger)
+        ) : base(opts, registry, parser, tokenizer, trimmer, tokenManager, retryPolicy, logger)
         {
             _client = new OpenAIClient(
-                credential: new ApiKeyCredential(ApiKey),
-                options: new OpenAIClientOptions { Endpoint = new Uri(BaseUrl) }
+                credential: new ApiKeyCredential(_initOptions.ApiKey),
+                options: new OpenAIClientOptions { Endpoint = new Uri(_initOptions.BaseUrl) }
             );
 
-            _defaultModel = DefaultModel;
+            _defaultModel = _initOptions.Model;
             _chatClients[_defaultModel] = _client.GetChatClient(_defaultModel);
         }
 

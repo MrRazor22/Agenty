@@ -23,24 +23,19 @@ namespace Agenty.LLMCore
         private int _currOutTokensSoFar;
         private string _currFinishReason;
         private readonly IToolCatalog _tools;
-        private readonly IToolRuntime _Runtime;
         private readonly IToolCallParser _parser;
         private readonly ITokenizer _tokenizer;
         private readonly IContextTrimmer _trimmer;
         private readonly ITokenManager _tokenManager;
         private readonly IRetryPolicy _retryPolicy;
         private readonly ILogger<ILLMClient> _logger;
-        protected string BaseUrl { get; }
-        protected string ApiKey { get; }
-        protected string DefaultModel { get; }
-
+        protected LLMInitOptions _initOptions;
 
         private static readonly ConcurrentDictionary<string, JObject> _schemaCache = new ConcurrentDictionary<string, JObject>();
 
         public LLMClientBase(
             LLMInitOptions opts,
             IToolCatalog registry,
-            IToolRuntime runtime,
             IToolCallParser parser,
             ITokenizer tokenizer,
             IContextTrimmer trimmer,
@@ -48,12 +43,8 @@ namespace Agenty.LLMCore
             IRetryPolicy retryPolicy,
             ILogger<ILLMClient> logger)
         {
-            BaseUrl = opts.BaseUrl;
-            ApiKey = opts.ApiKey;
-            DefaultModel = opts.Model;
-
+            _initOptions = opts;
             _tools = registry;
-            _Runtime = runtime;
             _parser = parser;
             _tokenizer = tokenizer;
             _trimmer = trimmer;
@@ -72,14 +63,14 @@ namespace Agenty.LLMCore
             LLMRequestBase request,
             [EnumeratorCancellation] CancellationToken ct)
         {
-            request.Prompt = _trimmer.Trim(request.Prompt, null, request.Model ?? DefaultModel);
+            request.Prompt = _trimmer.Trim(request.Prompt, null, request.Model ?? _initOptions.Model);
 
             _currInTokensSoFar = 0;
             _currOutTokensSoFar = 0;
             _currFinishReason = "stop";
 
             var sb = new StringBuilder();
-            var liveLog = new StringBuilder();   // <--- NEW
+            var liveLog = new StringBuilder();
 
             if (_logger.IsEnabled(LogLevel.Trace))
             {
@@ -95,7 +86,6 @@ namespace Agenty.LLMCore
                     sb.Append(txt);
                     liveLog.Append(txt);
 
-                    // 🔥 single rolling log, no chunk flood
                     if (_logger.IsEnabled(LogLevel.Trace))
                         _logger.LogTrace("◄ Inbound Stream: {Text}", liveLog.ToString());
                 }
@@ -121,11 +111,11 @@ namespace Agenty.LLMCore
             // fallback
             int input = _currInTokensSoFar;
             if (input <= 0)
-                input = _tokenizer.Count(request.Prompt.ToJson(ChatFilter.All), request.Model ?? DefaultModel);
+                input = _tokenizer.Count(request.Prompt.ToJson(ChatFilter.All), request.Model ?? _initOptions.Model);
 
             int output = _currOutTokensSoFar;
             if (output <= 0)
-                output = _tokenizer.Count(sb.ToString(), request.Model ?? DefaultModel);
+                output = _tokenizer.Count(sb.ToString(), request.Model ?? _initOptions.Model);
 
             _tokenManager.Record(input, output);
             _logger.LogTrace("LLM Call Tokens: in={In}, out={Out}", input, output);
@@ -273,7 +263,7 @@ namespace Agenty.LLMCore
                     yield return rawChunk; // emit as-is
 
                     // inline extraction from assistant message
-                    var extraction = _parser.TryExtractInlineToolCall(_tools, text);
+                    var extraction = _parser.ExtractInlineToolCall(_tools, text);
 
                     foreach (var call in extraction.Calls)
                     {
@@ -359,14 +349,26 @@ namespace Agenty.LLMCore
                 );
             }
 
-            var parsed = _parser.ParseToolParams(_tools, raw.Name, raw.Arguments);
+            try
+            {
+                var parsed = _parser.ParseToolParams(_tools, raw.Name, raw.Arguments);
 
-            return new ToolCall(
-                raw.Id ?? Guid.NewGuid().ToString(),
-                raw.Name,
-                raw.Arguments,
-                parsed
-            );
+                return new ToolCall(
+                    raw.Id ?? Guid.NewGuid().ToString(),
+                    raw.Name,
+                    raw.Arguments,
+                    parsed
+                );
+            }
+            catch (ToolValidationAggregateException vex)
+            {
+                var msg = vex.Errors.Select(e => e.Message).ToJoinedString("; ");
+                throw new RetryException($"Invalid arguments for tool `{raw.Name}`. {msg}");
+            }
+            catch (ToolValidationException vex)
+            {
+                throw new RetryException(vex.Message);
+            }
         }
     }
 }

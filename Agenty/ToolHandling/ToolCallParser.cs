@@ -8,12 +8,12 @@ using System.Text.RegularExpressions;
 
 namespace Agenty.ToolHandling
 {
-    public sealed class InlineToolExtraction
+    public sealed class InlineTools
     {
         public List<ToolCall> Calls { get; }
         public string AssistantMessage { get; }
 
-        public InlineToolExtraction(List<ToolCall> calls, string assistantMessage)
+        public InlineTools(List<ToolCall> calls, string assistantMessage)
         {
             Calls = calls;
             AssistantMessage = assistantMessage;
@@ -22,7 +22,7 @@ namespace Agenty.ToolHandling
 
     public interface IToolCallParser
     {
-        InlineToolExtraction TryExtractInlineToolCall(IToolCatalog tools, string content, bool strict = false);
+        InlineTools ExtractInlineToolCall(IToolCatalog tools, string content, bool strict = false);
         object[] ParseToolParams(IToolCatalog tools, string toolName, JObject arguments);
         List<ToolValidationError> ValidateAgainstSchema(JToken? node, JObject schema, string path = "");
     }
@@ -85,7 +85,7 @@ namespace Agenty.ToolHandling
         );
         #endregion
 
-        public InlineToolExtraction TryExtractInlineToolCall(IToolCatalog tools, string content, bool strict = false)
+        public InlineTools ExtractInlineToolCall(IToolCatalog tools, string content, bool strict = false)
         {
             var matches = ToolTagPattern.Matches(content).Cast<Match>()
                 .Concat(LooseToolJsonPattern.Matches(content).Cast<Match>())
@@ -108,7 +108,7 @@ namespace Agenty.ToolHandling
                 catch
                 {
                     if (strict)
-                        return new InlineToolExtraction(new List<ToolCall>(), $"Invalid JSON: `{jsonStr}`");
+                        return new InlineTools(new List<ToolCall>(), $"Invalid JSON: `{jsonStr}`");
                     continue;
                 }
                 if (node == null) continue;
@@ -124,10 +124,10 @@ namespace Agenty.ToolHandling
                     var message = node[ToolJsonAssistantMessageTag]?.ToString();
 
                     if (string.IsNullOrEmpty(name))
-                        return new InlineToolExtraction(new List<ToolCall>(), "Tool call missing 'name'.");
+                        return new InlineTools(new List<ToolCall>(), "Tool call missing 'name'.");
 
                     if (!tools.Contains(name))
-                        return new InlineToolExtraction(new List<ToolCall>(),
+                        return new InlineTools(new List<ToolCall>(),
                             $"Tool `{name}` not registered. Available: {string.Join(", ", tools.RegisteredTools.Select(t => t.Name))}");
 
                     var id = node.ContainsKey("id")
@@ -141,7 +141,7 @@ namespace Agenty.ToolHandling
                 if (!hasName && !hasArgs && hasMessage)
                 {
                     toolCalls.Add(new ToolCall(node[ToolJsonAssistantMessageTag]?.ToString() ?? fallback));
-                    return new InlineToolExtraction(toolCalls, assistantMessage);
+                    return new InlineTools(toolCalls, assistantMessage);
                 }
 
                 if (strict)
@@ -159,7 +159,7 @@ namespace Agenty.ToolHandling
             if (!string.IsNullOrWhiteSpace(fallback))
                 assistantMessage = fallback;
 
-            return new InlineToolExtraction(toolCalls, assistantMessage);
+            return new InlineTools(toolCalls, assistantMessage);
         }
 
         public object[] ParseToolParams(IToolCatalog tools, string toolName, JObject arguments)
@@ -306,7 +306,7 @@ public sealed class ToolValidationError
         ErrorType = errorType;
     }
 }
-
+//multiple parameters are wrong at the same time
 public sealed class ToolValidationAggregateException : Exception
 {
     public IReadOnlyList<ToolValidationError> Errors { get; }
@@ -318,7 +318,7 @@ public sealed class ToolValidationAggregateException : Exception
         => $"Validation failed for the following {Errors.Count} parameters:\n" +
         $" {string.Join(", ", Errors.Select(e => e.ToString()))}";
 }
-
+//on param wrong
 public sealed class ToolValidationException : Exception
 {
     public string ParamName { get; }

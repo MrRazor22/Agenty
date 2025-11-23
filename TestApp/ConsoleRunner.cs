@@ -39,10 +39,7 @@ namespace TestApp
                     o.PersistDir = "D:\\agenty\\memory";
                 });
 
-                Log.Logger = new LoggerConfiguration()
-                    .MinimumLevel.Verbose()
-                    .WriteTo.File("D:\\agenty\\agent.log", rollingInterval: RollingInterval.Day)
-                    .CreateLogger();
+
                 builder.Services.Configure<LoggerFilterOptions>(opts =>
                 {
                     opts.MinLevel = LogLevel.Trace;
@@ -51,25 +48,28 @@ namespace TestApp
                 builder.Services.AddLogging(logging =>
                 {
                     logging.ClearProviders();
+
+                    Log.Logger = new LoggerConfiguration()
+                    .MinimumLevel.Verbose()
+                    .WriteTo.File("D:\\agenty\\agent.log", rollingInterval: RollingInterval.Day)
+                    .CreateLogger();
+                    Log.Information("Logger initialized");
+
                     logging.AddSerilog();
                 });
-
-
-                Log.Information("Logger initialized");
 
                 app = builder.Build();
 
                 app.WithInstructions(
                      "You are an AI agent, execute all user requests faithfully."
                  )
-                   .WithTools<GeoTools>()
-                   .WithTools<WeatherTool>()
-                   .WithTools<ConversionTools>()
-                   .WithTools<MathTools>()
-                   .WithTools<SearchTools>()
+                .WithTools<GeoTools>()
+                .WithTools<WeatherTool>()
+                .WithTools<ConversionTools>()
+                .WithTools<MathTools>()
+                .WithTools<SearchTools>()
 
-                   .UseExecutor(() => new ToolCallingLoop(mode: ReasoningMode.Creative));
-
+                .UseExecutor(() => new ToolCallingLoop(mode: ReasoningMode.Creative));
 
                 while (true)
                 {
@@ -125,6 +125,5 @@ namespace TestApp
                 Console.WriteLine(ex);
             }
         }
-
     }
 }

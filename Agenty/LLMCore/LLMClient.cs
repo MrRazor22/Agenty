@@ -202,6 +202,7 @@ namespace Agenty.LLMCore
     {
         Text,
         ToolCall,
+        ToolCallDelta,
         Usage,
         Finish,
         // future:
